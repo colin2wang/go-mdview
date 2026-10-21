@@ -1,4 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect x="1" y="1" width="30" height="30" rx="7" fill="#2f6fed"/>
-  <path d="M8 22V10h3.4l4.6 6.4L20.6 10H24v12h-3v-7.2l-4.2 5.8h-1.6L11 14.8V22Z" fill="#fff"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#3474F4"/>
+      <stop offset="0.5" stop-color="#3474F4"/>
+      <stop offset="0.5" stop-color="#2B64E6"/>
+      <stop offset="1"   stop-color="#2B64E6"/>
+    </linearGradient>
+  </defs>
+  <rect x="28" y="28" width="968" height="968" rx="200" ry="200" fill="url(#bg)"/>
+  <text x="512" y="500"
+        text-anchor="middle"
+        dominant-baseline="central"
+        font-family="DejaVu Sans, Liberation Sans, Arial, Helvetica, sans-serif"
+        font-weight="700"
+        font-size="560"
+        fill="#FFFFFF">M</text>
 </svg>

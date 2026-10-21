@@ -7,7 +7,28 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "",
+    "name": "mdview",
     "email": ""
+  },
+  "info": {
+    "companyName": "mdview",
+    "productName": "mdview",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 mdview",
+    "comments": "轻量 Markdown 本地阅读工具",
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown 文档",
+        "description": "Markdown 文档",
+        "iconName": "mdview.markdown"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown 文档",
+        "description": "Markdown 文档",
+        "iconName": "mdview.markdown"
+      }
+    ]
   }
 }

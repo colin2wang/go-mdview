@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import type { Entry, FileContent, MNode, Settings, TocItem } from './types'
+import type { Entry, FileContent, MNode, Settings, TocItem, ViewMode } from './types'
 import { defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
 import { fileBase, fileToDir } from './demo'
@@ -30,10 +30,15 @@ export const store = reactive({
   favorites: [] as Entry[],
   toasts: [] as Toast[],
   settingsOpen: false,
-  showSource: false,
+  viewMode: 'render' as ViewMode,
   demoMode: false,
   rendering: false
 })
+
+/** 非法/缺失的 viewMode 回落到 render。 */
+function normalizeViewMode(v: unknown): ViewMode {
+  return v === 'source' || v === 'split' ? v : 'render'
+}
 
 let toastSeq = 0
 export function toast(text: string, kind: 'info' | 'error' = 'info') {
@@ -89,9 +94,7 @@ export async function openFile(path: string, opts: { pushHistory?: boolean } = {
     if (opts.pushHistory !== false) {
       api.PushHistory(path).then(() => api.GetHistory().then((h) => (store.history = h)))
     }
-    const st = { ...store.settings! }
-    st.lastFile = path
-    st.lastFolder = dir
+    const st = { ...(store.settings ?? defaultSettings), lastFile: path, lastFolder: dir }
     store.settings = st
     api.SaveSettings(st)
     api.SetWindowTitle(`${path} - mdview`)
@@ -135,7 +138,7 @@ export async function openFolder() {
   }
   store.rootName = dir
   store.tree = tree
-  const st = { ...store.settings!, lastFolder: dir }
+  const st = { ...(store.settings ?? defaultSettings), lastFolder: dir }
   store.settings = st
   api.SaveSettings(st)
   const mdCount = countMd(tree)
@@ -194,11 +197,13 @@ export async function clearHistory() {
   store.history = []
 }
 
-// ---------- 源码视图 ----------
+// ---------- 显示模式 ----------
 
-/** 标题栏「显示源码」：在渲染正文与 md 原始文本之间切换。 */
-export function toggleSource() {
-  store.showSource = !store.showSource
+/** 显示模式：仅渲染 / 仅源码 / 源码 ⇄ 渲染对照。设置随 settings 一起落盘。 */
+export function setViewMode(mode: ViewMode) {
+  if (store.viewMode === mode) return
+  store.viewMode = mode
+  patchSettings({ viewMode: mode })
 }
 
 // ---------- 设置 ----------
@@ -219,7 +224,7 @@ export async function applyTheme(theme: string) {
 }
 
 export async function setTheme(theme: string) {
-  store.settings = { ...store.settings!, theme }
+  store.settings = { ...(store.settings ?? defaultSettings), theme }
   await applySettings(store.settings)
   const api = await getApi()
   api.SetTheme(theme)
@@ -227,7 +232,7 @@ export async function setTheme(theme: string) {
 }
 
 export async function patchSettings(patch: Partial<Settings>) {
-  const st = { ...store.settings!, ...patch }
+  const st = { ...(store.settings ?? defaultSettings), ...patch }
   store.settings = st
   await applySettings(st)
   const api = await getApi()
@@ -238,7 +243,7 @@ export async function patchSettings(patch: Partial<Settings>) {
 // ---------- 窗口 ----------
 
 export async function togglePin() {
-  const st = { ...store.settings!, pinned: !store.settings!.pinned }
+  const st = { ...(store.settings ?? defaultSettings), pinned: !(store.settings ?? defaultSettings).pinned }
   store.settings = st
   const api = await getApi()
   api.WindowPin(st.pinned)
@@ -278,6 +283,7 @@ export async function initApp() {
   const api = await getApi()
   store.desktop = isDesktop()
   store.settings = await api.GetSettings()
+  store.viewMode = normalizeViewMode(store.settings?.viewMode)
   store.history = await api.GetHistory()
   store.favorites = await api.GetFavorites()
   // highlight.js 双主题样式：applySettings 靠 link.disabled 切换

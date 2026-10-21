@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { store, togglePin, toggleSource } from '../store'
+import { store, togglePin, setViewMode } from '../store'
 import { getApi } from '../api'
+import type { ViewMode } from '../types'
+import AppIcon from './AppIcon.vue'
+
+const modes: { key: ViewMode; label: string; title: string }[] = [
+  { key: 'render', label: '渲染', title: '只看渲染结果' },
+  { key: 'source', label: '源码', title: '只看 Markdown 源码' },
+  { key: 'split', label: '对照', title: '源码 ⇄ 渲染 左右对照' }
+]
 
 const title = computed(() => {
   if (store.current) return `${store.current.path} - mdview`
@@ -35,39 +43,25 @@ function dblMax() {
   <header class="titlebar" data-testid="titlebar" @dblclick="dblMax">
     <div class="tb-left">
       <span class="tb-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="16" height="16">
-          <rect x="1" y="1" width="22" height="22" rx="5" fill="#2563eb" />
-          <path
-            d="M6 17V7.2c0-.4.5-.6.8-.3l3.7 4.4c.3.3.7.3 1 0l3.7-4.4c.3-.3.8-.1.8.3V17"
-            stroke="#fff"
-            stroke-width="2.1"
-            fill="none"
-            stroke-linecap="round"
-          />
-        </svg>
+        <AppIcon :size="17" />
       </span>
       <span class="tb-title" :title="title" data-testid="win-title">{{ title }}</span>
     </div>
     <div class="tb-btns">
-      <button
-        class="tb-btn"
-        :class="{ on: store.showSource }"
-        :disabled="!store.current"
-        :title="store.showSource ? '返回渲染视图' : '显示源码'"
-        data-testid="btn-source"
-        @click="toggleSource"
-      >
-        <svg viewBox="0 0 16 16" width="15" height="15">
-          <path
-            d="M6 4 2.5 8 6 12M10 4l3.5 4-3.5 4"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
+      <span class="tb-mode" role="radiogroup" aria-label="显示模式">
+        <button
+          v-for="m in modes"
+          :key="m.key"
+          class="tb-mode-btn"
+          :class="{ on: store.viewMode === m.key }"
+          :disabled="!store.current"
+          :title="m.title"
+          :data-testid="'btn-mode-' + m.key"
+          @click="setViewMode(m.key)"
+        >
+          {{ m.label }}
+        </button>
+      </span>
       <button class="tb-btn" title="设置" data-testid="btn-settings" @click="openSettings">
         <svg viewBox="0 0 16 16" width="15" height="15">
           <path

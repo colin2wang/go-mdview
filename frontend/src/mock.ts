@@ -1,5 +1,5 @@
 import type { Api, } from './api'
-import type { Entry, FileContent, MNode, Settings } from './types'
+import type { AssocState, Entry, FileContent, MNode, Settings } from './types'
 import { DEMO_MD, DEMO_IMAGE_SVG, fileBase, fileToDir, mockTree } from './demo'
 
 /**
@@ -15,11 +15,21 @@ const state = {
     sidebarWidth: 280,
     lastFolder: 'C:\\Users\\wangb\\OneDrive\\Obsidian\\迷你狐的知识库\\01-计算机技术\\编程语言\\Java',
     lastFile: '',
-    pinned: false
+    pinned: false,
+    viewMode: 'render'
   } as Settings,
   history: [] as Entry[],
   favorites: [] as Entry[],
   openEvents: [] as string[]
+}
+
+// 浏览器/Mock 模式下没有注册表，关联状态只做内存态模拟
+export const mockAssoc: AssocState = {
+  supported: false,
+  exePath: '',
+  associated: false,
+  owner: '（未设置）',
+  message: '浏览器模式不支持文件关联'
 }
 
 function mdPath(title: string): string {
@@ -107,6 +117,15 @@ export const mockApi: Api = {
     } catch {
       /* 无头环境忽略 */
     }
+  },
+  GetAssocState: async () => ({ ...mockAssoc }),
+  AssociateMd: async () => {
+    mockAssoc.associated = true
+    mockAssoc.owner = 'mdview'
+  },
+  UnassociateMd: async () => {
+    mockAssoc.associated = false
+    mockAssoc.owner = '（未设置）'
   }
 }
 

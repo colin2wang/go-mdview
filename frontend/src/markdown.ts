@@ -17,6 +17,19 @@ export interface RenderResult {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+// ---------- 原始 HTML 清洗（防 XSS）----------
+// marked 会原样放行 md 里的 HTML token；来源不明的 .md 可能携带脚本，
+// 统一在插入 DOM 前去掉 <script>/<iframe>/<object>/<embed>、on* 事件
+// 属性与 javascript:/vbscript: 链接协议。
+function sanitizeHtml(html: string): string {
+  return html
+    .replace(/<(script|iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/<(script|iframe|object|embed)\b[^>]*\/?>/gi, '')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s(href|src|action|xlink:href)\s*=\s*("\s*(javascript|vbscript):[^"]*"|'\s*(javascript|vbscript):[^']*')/gi, '')
+    .replace(/\s(href|src|action|xlink:href)\s*=\s*(javascript|vbscript):[^\s>]*/gi, '')
+}
+
 function hexEncode(s: string): string {
   const bytes = new TextEncoder().encode(s)
   let out = ''
@@ -206,6 +219,98 @@ async function buildFootnotesHtml(footnotes: Footnote[]): Promise<string> {
   return `<div class="md-footnotes"><hr>\n<ol class="md-fn-list">\n${items}\n</ol>\n</div>`
 }
 
+// ---------- 图形卡片（Mermaid / SVG）----------
+
+export type DiagramKind = 'mermaid' | 'svg'
+
+const COPY_ICON =
+  `<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">` +
+  `<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>` +
+  `<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>` +
+  `</svg>`
+
+const DIAGRAM_TITLE: Record<string, string> = { mermaid: 'Mermaid 图表', svg: 'SVG 图形' }
+
+/** 代码块是否应渲染成图形卡片：mermaid / svg（含未标注语言但内容是 SVG 的情况）。 */
+export function diagramKindOf(lang: string, text: string): DiagramKind | '' {
+  const l = lang.toLowerCase()
+  if (l === 'mermaid') return 'mermaid'
+  if (l === 'svg' || l === 'svg+xml') return 'svg'
+  if (l === '' || l === 'xml' || l === 'html') {
+    return /<svg[\s>]/i.test(text.slice(0, 512)) ? 'svg' : ''
+  }
+  return ''
+}
+
+/** 内联 SVG 清洗：去掉脚本、外联对象与事件属性。 */
+export function sanitizeSvg(code: string): string {
+  return normalizeSvgRoot(
+    code
+      .replace(/<\s*(script|foreignObject)\b[\s\S]*?<\/\s*\1\s*>/gi, '')
+      .replace(/<\s*(script|foreignObject)\b[^>]*\/?\s*>/gi, '')
+      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+      .replace(/\s(href|xlink:href)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '')
+  )
+}
+
+/** 取根节点上某属性的值（仅用于 width/height 判断）。 */
+function svgAttr(attrs: string, name: string): string {
+  const m = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, 'i').exec(attrs)
+  return m ? (m[2] ?? m[3] ?? '').trim() : ''
+}
+
+/**
+ * 归一化 SVG 根节点尺寸。
+ * 很多工具导出的 SVG 是 width="100%"（或不带 viewBox），放进自适应容器里
+ * 宽高会同时算不出来，整张图塌成 0×0 —— 页面上就只剩一个空白卡片：
+ * - 有绝对宽高却没有 viewBox：按宽高补 viewBox，得到固有宽高比
+ * - 宽度是百分比/缺失：改写为 width="100%"，高度交给 CSS 按比例算
+ */
+function normalizeSvgRoot(svg: string): string {
+  if (!/<svg[\s>]/i.test(svg)) return svg
+  return svg.replace(/<svg\b([^>]*)>/i, (_m, attrs: string) => {
+    let a = attrs
+    const w = svgAttr(a, 'width')
+    const h = svgAttr(a, 'height')
+    const isAbs = (v: string) => /^\d+(\.\d+)?(px|pt|em|)?$/.test(v)
+    if (!/viewBox\s*=/i.test(a) && isAbs(w) && isAbs(h) && w !== '' && h !== '') {
+      a += ` viewBox="0 0 ${parseFloat(w)} ${parseFloat(h)}"`
+    }
+    if (!isAbs(w) || w === '') {
+      a = a.replace(/\swidth\s*=\s*("[^"]*"|'[^']*')/i, '')
+      a += ' width="100%"'
+    }
+    if (!isAbs(h) || h === '') {
+      a = a.replace(/\sheight\s*=\s*("[^"]*"|'[^']*')/i, '')
+    }
+    return `<svg${a}>`
+  })
+}
+
+/**
+ * 图形卡片：与 Mermaid 一致的卡片外观，头部带「源码」按钮，
+ * 可在渲染结果与原始代码之间来回切换（SVG 直接内联，Mermaid 挂载后异步出图）。
+ */
+export function diagramCard(kind: DiagramKind, label: string, code: string): string {
+  const enc = encodeURIComponent(code)
+  return (
+    `<div class="md-diagram" data-diagram="${kind}" data-${kind}="${enc}" data-src="${enc}">` +
+    `<div class="md-diagram-head">` +
+    `<span class="md-diagram-title">${DIAGRAM_TITLE[kind]}</span>` +
+    `<span class="md-diagram-tools">` +
+    `<span class="md-diagram-meta">${escapeHtml(label)}</span>` +
+    `<button type="button" class="md-diagram-btn" data-toggle-src title="查看源码">源码</button>` +
+    `<button type="button" class="md-diagram-btn" data-copy="${enc}" title="复制源码">${COPY_ICON}</button>` +
+    `</span>` +
+    `</div>` +
+    `<div class="md-diagram-body"><div class="md-diagram-src">` +
+    (kind === 'svg' ? sanitizeSvg(code) : '渲染中…') +
+    `</div></div>` +
+    `<pre class="md-diagram-code"><code>${escapeHtml(code)}</code></pre>` +
+    `</div>\n`
+  )
+}
+
 // ---------- 主渲染 ----------
 
 export async function renderMarkdown(src: string, baseDir: string): Promise<RenderResult> {
@@ -222,32 +327,30 @@ export async function renderMarkdown(src: string, baseDir: string): Promise<Rend
     },
     code(token: any) {
       const lang = (token.lang ?? '').trim().split(/\s+/)[0] ?? ''
-      if (lang.toLowerCase() === 'mermaid') {
-        return (
-          `<div class="md-diagram" data-mermaid="${encodeURIComponent(token.text)}">` +
-          `<div class="md-diagram-head"><span class="md-diagram-title">Mermaid 图表</span><span class="md-diagram-meta">mermaid</span></div>` +
-          `<div class="md-diagram-body"><div class="md-diagram-src">渲染中…</div></div></div>`
-        )
-      }
+      const text = token.text ?? ''
+      // mermaid / svg 走图形卡片（可切源码），其余走代码块卡片
+      const kind = diagramKindOf(lang, text)
+      if (kind) return diagramCard(kind, lang || kind, text)
+
       let body: string
       try {
         if (lang && hljs.getLanguage(lang)) {
-          body = hljs.highlight(token.text, { language: lang, ignoreIllegals: true }).value
+          body = hljs.highlight(text, { language: lang, ignoreIllegals: true }).value
         } else {
-          body = escapeHtml(token.text)
+          body = escapeHtml(text)
         }
       } catch {
-        body = escapeHtml(token.text)
+        body = escapeHtml(text)
       }
       const cls = lang ? ` class="hljs language-${escapeHtml(lang)}"` : ' class="hljs"'
-      // 语言标签与复制按钮统一放进 .code-tools（CSS 绝对定位到右上角，按钮悬停才显形）
+      // 头部工具条：语言标签 + 复制按钮（复制按钮悬停才显形）
       return (
         `<div class="code-block${lang ? ' has-lang' : ''}">` +
-        `<div class="code-tools">` +
-        (lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '') +
-        `<button type="button" class="code-copy" data-copy="${encodeURIComponent(token.text)}" title="复制代码">` +
-        `<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>` +
-        `</button>` +
+        `<div class="code-head">` +
+        `<span class="code-lang">${lang ? escapeHtml(lang) : 'text'}</span>` +
+        `<span class="code-tools">` +
+        `<button type="button" class="code-copy" data-copy="${encodeURIComponent(text)}" title="复制代码">${COPY_ICON}</button>` +
+        `</span>` +
         `</div>` +
         `<pre><code${cls}>${body}</code></pre></div>\n`
       )
@@ -276,6 +379,7 @@ export async function renderMarkdown(src: string, baseDir: string): Promise<Rend
   marked.use({ gfm: true, breaks: false, renderer })
 
   let html = String(marked.parse(md))
+  html = sanitizeHtml(html)
   html = postprocessAlerts(html)
   html += await buildFootnotesHtml(footnotes)
 
@@ -324,9 +428,17 @@ export async function renderMathIn(el: HTMLElement): Promise<void> {
 
 let mermaidSeq = 0
 
-/** 渲染页面中的 Mermaid 占位块。force=true 用于主题切换后的重绘。 */
-export async function renderMermaidIn(el: HTMLElement, dark: boolean, force = false): Promise<void> {
-  const blocks = el.querySelectorAll<HTMLElement>('[data-mermaid]')
+/** 图形卡片正文的容器选择器。 */
+function srcHolder(el: HTMLElement): HTMLElement | null {
+  return el.querySelector('.md-diagram-src')
+}
+
+/**
+ * 渲染页面中的图形卡片：Mermaid 出 SVG、内联 SVG 直接落地。
+ * force=true 用于主题切换后的重绘。
+ */
+export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = false): Promise<void> {
+  const blocks = el.querySelectorAll<HTMLElement>('[data-mermaid],[data-svg]')
   if (!blocks.length) return
   if (force) {
     // 主题变了要换色：清掉完成标记与状态类，允许重新渲染
@@ -335,15 +447,42 @@ export async function renderMermaidIn(el: HTMLElement, dark: boolean, force = fa
       b.classList.remove('ok', 'err')
     })
   }
+
+  // 内联 SVG：不需要外部库，直接落地（失败/非法内容降级为源码提示）
+  for (const block of Array.from(el.querySelectorAll<HTMLElement>('[data-svg]'))) {
+    if (block.dataset.done === '1') continue
+    const holder = srcHolder(block)
+    if (!holder) continue
+    let code = block.dataset.svg ?? ''
+    try {
+      code = decodeURIComponent(code)
+    } catch {
+      /* 源码里带了裸 % 时 decode 会抛错，保留原样即可 */
+    }
+    const safe = sanitizeSvg(code)
+    if (/<svg[\s>]/i.test(safe)) {
+      holder.innerHTML = safe
+      block.classList.add('ok')
+    } else {
+      holder.innerHTML =
+        `<div class="md-diagram-hint"><div class="md-diagram-hint-text">SVG 内容无法解析，已显示源码。</div>` +
+        `<pre class="md-diagram-src-code">${escapeHtml(code)}</pre></div>`
+      block.classList.add('err')
+    }
+    block.dataset.done = '1'
+  }
+
+  const mmBlocks = Array.from(el.querySelectorAll<HTMLElement>('[data-mermaid]'))
+  if (!mmBlocks.length) return
   try {
     await loadScript('/static/mermaid.min.js')
     const mermaid = (window as any).mermaid
     if (!mermaid) throw new Error('mermaid unavailable')
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'neutral' })
-    for (const block of Array.from(blocks)) {
+    for (const block of mmBlocks) {
       if (block.dataset.done === '1') continue
       const code = decodeURIComponent(block.dataset.mermaid ?? '')
-      const holder = block.querySelector('.md-diagram-src')
+      const holder = srcHolder(block)
       if (!holder) continue
       try {
         const id = `mdv-mm-${++mermaidSeq}`
@@ -351,7 +490,7 @@ export async function renderMermaidIn(el: HTMLElement, dark: boolean, force = fa
         holder.innerHTML = res.svg
         block.dataset.done = '1'
         block.classList.add('ok')
-      } catch (e) {
+      } catch {
         holder.innerHTML =
           `<div class="md-diagram-hint"><div class="md-diagram-hint-text">Mermaid 语法有误，已显示源码。</div>` +
           `<pre class="md-diagram-src-code">${escapeHtml(code)}</pre></div>`
@@ -360,11 +499,11 @@ export async function renderMermaidIn(el: HTMLElement, dark: boolean, force = fa
       }
     }
   } catch {
-    const blocks2 = el.querySelectorAll<HTMLElement>('[data-mermaid]:not([data-done="1"])')
-    blocks2.forEach((b) => {
-      const h = b.querySelector('.md-diagram-src')
+    for (const b of mmBlocks) {
+      if (b.dataset.done === '1') continue
+      const h = srcHolder(b)
       if (h) h.textContent = 'Mermaid 库加载失败'
       b.dataset.done = '1'
-    })
+    }
   }
 }

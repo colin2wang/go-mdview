@@ -19,7 +19,14 @@ if ($Clean) {
     if (Test-Path "$root\frontend\dist") { Remove-Item "$root\frontend\dist" -Recurse -Force }
 }
 
-# 1) Frontend
+# 1) Icons: docs/mdview-icon.svg -> build/appicon.png + build/windows/icon.ico
+Write-Host "==> Icon assets (genicon)"
+Push-Location $root
+go run ./tools/genicon
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "icon generation failed" }
+Pop-Location
+
+# 2) Frontend
 Write-Host "==> Frontend build (vue-tsc + vite)"
 Push-Location "$root\frontend"
 if (-not (Test-Path "node_modules")) { pnpm install --no-frozen-lockfile }
@@ -27,7 +34,7 @@ pnpm run build
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Frontend build failed" }
 Pop-Location
 
-# 2) Backend exe (prefer wails CLI, fall back to go build if missing)
+# 3) Backend exe (prefer wails CLI, fall back to go build if missing)
 $outDir = "$root\build\bin"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $wails = Get-Command wails -ErrorAction SilentlyContinue
@@ -49,7 +56,7 @@ if ($wails) {
 
 Write-Host "==> Output: $outDir\mdview.exe" -ForegroundColor Green
 
-# 3) Package
+# 4) Package
 if ($Package) {
     Write-Host "==> Packaging dist-zip"
     $pkgDir = "$root\..\mdview-dist"

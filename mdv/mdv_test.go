@@ -23,12 +23,22 @@ func TestSettingsDefaultsAndClamp(t *testing.T) {
 	if st.Theme != "light" || st.FontSize != 16 || st.SidebarWidth != 280 {
 		t.Fatalf("默认值不符: %+v", st)
 	}
+	if st.ViewMode != ViewModeRender {
+		t.Fatalf("默认视图模式不符: %q", st.ViewMode)
+	}
 	st.Theme = "night"
 	st.FontSize = 99
 	st.SidebarWidth = 10
+	st.ViewMode = "bogus"
 	got := s.SaveSettings(st)
 	if got.Theme != "light" || got.FontSize != 28 || got.SidebarWidth != 200 {
 		t.Fatalf("clamp 失败: %+v", got)
+	}
+	if got.ViewMode != ViewModeRender {
+		t.Fatalf("非法视图模式未回落: %q", got.ViewMode)
+	}
+	if s.GetSettings().ViewMode != ViewModeRender {
+		t.Fatal("视图模式未落盘")
 	}
 	if s.GetSettings().FontSize != 28 {
 		t.Fatal("设置未落盘")

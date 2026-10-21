@@ -93,12 +93,11 @@ func (a *App) GetHistory() []mdv.Entry             { return a.store.GetHistory()
 func (a *App) PushHistory(path string) []mdv.Entry { return a.store.PushHistory(path) }
 func (a *App) ClearHistory() []mdv.Entry           { return a.store.ClearHistory() }
 
-// GetFavorites / ToggleFavorite / IsFavorite 收藏。
+// GetFavorites / ToggleFavorite 收藏。
 func (a *App) GetFavorites() []mdv.Entry { return a.store.GetFavorites() }
 func (a *App) ToggleFavorite(path string) (bool, []mdv.Entry) {
 	return a.store.ToggleFavorite(path)
 }
-func (a *App) IsFavorite(path string) bool { return a.store.IsFavorite(path) }
 
 // GetSettings / SaveSettings 设置。
 func (a *App) GetSettings() mdv.Settings                { return a.store.GetSettings() }
@@ -118,10 +117,9 @@ func (a *App) SetTheme(theme string) {
 func (a *App) WindowPin(pin bool) { wruntime.WindowSetAlwaysOnTop(a.ctx, pin) }
 
 // WindowMin / WindowMaxToggle / WindowClose 无边框窗口控制。
-func (a *App) WindowMin()        { wruntime.WindowMinimise(a.ctx) }
-func (a *App) WindowMaxToggle()  { wruntime.WindowToggleMaximise(a.ctx) }
-func (a *App) WindowClose()      { wruntime.Quit(a.ctx) }
-func (a *App) WindowFullscreen() { wruntime.WindowFullscreen(a.ctx) }
+func (a *App) WindowMin()       { wruntime.WindowMinimise(a.ctx) }
+func (a *App) WindowMaxToggle() { wruntime.WindowToggleMaximise(a.ctx) }
+func (a *App) WindowClose()     { wruntime.Quit(a.ctx) }
 
 // WindowFullscreenToggle 全屏/退出全屏切换（标题栏 ⛶ 按钮）。
 func (a *App) WindowFullscreenToggle() {
@@ -150,6 +148,15 @@ func (a *App) RevealInShell(path string) {
 		_ = exec.Command("xdg-open", dir).Start()
 	}
 }
+
+// GetAssocState 读取 .md 文件关联状态（设置对话框用）。
+func (a *App) GetAssocState() mdv.AssocState { return mdv.GetAssocState() }
+
+// AssociateMd 把 .md/.markdown 关联到当前 mdview，并设置文件图标。
+func (a *App) AssociateMd() error { return mdv.AssociateMd() }
+
+// UnassociateMd 取消关联，还原接管前的默认打开方式。
+func (a *App) UnassociateMd() error { return mdv.UnassociateMd() }
 
 // SaveHtmlDialog 导出 HTML：弹保存框拿路径再落盘。
 func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {

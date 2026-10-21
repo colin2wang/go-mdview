@@ -5,7 +5,8 @@ export const DEMO_MD = `# JVM 与性能调优：从"背参数"到"讲清楚"
 
 > [!NOTE]
 > 这是一份 **mdview 渲染能力示例**。双击任意 \`.md\` 文件即可像这样阅读；
-> 深浅主题、字号、代码换行都在右上角 ⚙ 设置里。
+> 标题栏可在「渲染 / 源码 / 对照」之间切换，深浅主题、字号、代码换行与
+> .md 文件关联都在右上角 ⚙ 设置里。
 
 ## 一、知识点织网（速览）
 
@@ -97,6 +98,21 @@ graph LR
   C --> E[压测验证]
   E --> F[固化参数]
 \`\`\`
+
+### 内嵌 SVG 图形
+
+\`\`\`svg
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="150" viewBox="0 0 520 150">
+  <rect width="520" height="150" rx="12" fill="#f3f7ff"/>
+  <rect x="30" y="46" width="64" height="78" rx="8" fill="#3474f4" opacity="0.9"/>
+  <rect x="114" y="70" width="64" height="54" rx="8" fill="#3474f4" opacity="0.6"/>
+  <rect x="198" y="36" width="64" height="88" rx="8" fill="#2b64e6" opacity="0.8"/>
+  <rect x="282" y="86" width="64" height="38" rx="8" fill="#2b64e6" opacity="0.5"/>
+  <text x="30" y="30" font-family="sans-serif" font-size="14" fill="#1f4fd8">SVG 代码块会被直接渲染成图形</text>
+</svg>
+\`\`\`
+
+点卡片头部的「源码」按钮可以在图形与原始代码之间切换。
 
 ### 本地图片
 

@@ -1,5 +1,12 @@
 package mdv
 
+// ViewMode 正文显示模式。
+const (
+	ViewModeRender = "render" // 仅渲染结果
+	ViewModeSource = "source" // 仅 Markdown 源码
+	ViewModeSplit  = "split"  // 源码 ⇄ 渲染对照
+)
+
 // Settings 应用设置。全部有默认值，读取时零值补齐。
 type Settings struct {
 	Theme        string `json:"theme"`        // light | dark
@@ -9,6 +16,7 @@ type Settings struct {
 	LastFolder   string `json:"lastFolder"`   // 上次打开的目录
 	LastFile     string `json:"lastFile"`     // 上次打开的文件
 	Pinned       bool   `json:"pinned"`       // 窗口置顶
+	ViewMode     string `json:"viewMode"`     // render | source | split
 }
 
 var defaultSettings = Settings{
@@ -16,6 +24,17 @@ var defaultSettings = Settings{
 	FontSize:     16,
 	CodeWrap:     false,
 	SidebarWidth: 280,
+	ViewMode:     ViewModeRender,
+}
+
+// validViewMode 归一化显示模式，非法值回落到 render。
+func validViewMode(v string) string {
+	switch v {
+	case ViewModeSource, ViewModeSplit:
+		return v
+	default:
+		return ViewModeRender
+	}
 }
 
 func clampInt(v, lo, hi int) int {
@@ -43,6 +62,7 @@ func (s *Store) GetSettings() Settings {
 	if st.SidebarWidth < 200 || st.SidebarWidth > 520 {
 		st.SidebarWidth = defaultSettings.SidebarWidth
 	}
+	st.ViewMode = validViewMode(st.ViewMode)
 	return st
 }
 
@@ -54,6 +74,7 @@ func (s *Store) SaveSettings(in Settings) Settings {
 	}
 	st.FontSize = clampInt(st.FontSize, 12, 28)
 	st.SidebarWidth = clampInt(st.SidebarWidth, 200, 520)
+	st.ViewMode = validViewMode(st.ViewMode)
 	s.mu.Lock()
 	s.writeJSON("settings.json", &st)
 	s.mu.Unlock()

@@ -1,5 +1,25 @@
 export namespace mdv {
 	
+	export class AssocState {
+	    supported: boolean;
+	    exePath: string;
+	    associated: boolean;
+	    owner: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AssocState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supported = source["supported"];
+	        this.exePath = source["exePath"];
+	        this.associated = source["associated"];
+	        this.owner = source["owner"];
+	        this.message = source["message"];
+	    }
+	}
 	export class Entry {
 	    path: string;
 	    name: string;
@@ -88,6 +108,7 @@ export namespace mdv {
 	    lastFolder: string;
 	    lastFile: string;
 	    pinned: boolean;
+	    viewMode: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -102,6 +123,7 @@ export namespace mdv {
 	        this.lastFolder = source["lastFolder"];
 	        this.lastFile = source["lastFile"];
 	        this.pinned = source["pinned"];
+	        this.viewMode = source["viewMode"];
 	    }
 	}
 

@@ -11,6 +11,12 @@
   word-wrap: break-word;
 }
 
+/* 对照模式：分栏里不再居中留白，改为贴边紧凑排版 */
+.md-article.in-split {
+  max-width: none;
+  padding: 20px 24px 55vh 24px;
+}
+
 .md-article h1,
 .md-article h2,
 .md-article h3,
@@ -84,17 +90,29 @@
   font-size: 0.875em;
 }
 
-/* 代码块 */
+/* 代码块：卡片式（头部语言标签 + 复制按钮） */
 .md-article .code-block {
-  position: relative;
   margin: 16px 0;
+  border: 1px solid var(--md-pre-border);
+  border-radius: var(--md-corner);
+  background: var(--md-pre-bg);
+  overflow: hidden;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px 5px 12px;
+  background: var(--md-surface-2);
+  border-bottom: 1px solid var(--md-pre-border);
+  user-select: none;
 }
 .md-article .code-block pre {
-  background: var(--md-pre-bg);
-  border: 1px solid var(--md-pre-border);
-  border-left: 3px solid var(--md-pre-accent);
-  border-radius: var(--md-corner);
-  padding: 16px 20px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 14px 18px;
   overflow-x: auto;
   margin: 0;
   scrollbar-width: thin;
@@ -114,37 +132,36 @@
   word-break: break-all;
 }
 .code-tools {
-  position: absolute;
-  top: 5px;
-  right: 10px;
   display: flex;
   align-items: center;
   gap: 6px;
-  z-index: 2;
 }
 .code-lang {
-  font-size: 11px;
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
   color: var(--md-bq-text);
-  opacity: 0.6;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--md-text) 8%, transparent);
   user-select: none;
   pointer-events: none;
-  line-height: 14px;
+  line-height: 15px;
   text-transform: lowercase;
 }
 .code-copy {
   border: 0;
   background: transparent;
   color: var(--md-bq-text);
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--md-corner-sm);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
 .code-block:hover .code-copy,
 .code-block:focus-within .code-copy {
@@ -380,39 +397,112 @@
   text-decoration: none;
 }
 
-/* Mermaid 卡片 */
+/* 图形卡片（Mermaid / SVG）：头部带「源码」切换 */
 .md-article .md-diagram {
   margin: 16px 0;
   border: 1px solid var(--md-pre-border);
-  border-radius: 16px;
+  border-radius: var(--md-corner);
   background: var(--md-bg);
   overflow: hidden;
+  transition: box-shadow 0.18s;
+}
+.md-article .md-diagram:hover {
+  box-shadow: var(--md-shadow-sm);
 }
 .md-article .md-diagram-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
-  background: var(--md-pre-bg);
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  background: var(--md-surface-2);
   border-bottom: 1px solid var(--md-pre-border);
+  user-select: none;
 }
 .md-article .md-diagram-title {
   font-size: 12.5px;
   font-weight: 600;
+  white-space: nowrap;
+}
+.md-article .md-diagram-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
 }
 .md-article .md-diagram-meta {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--md-bq-text);
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--md-text) 8%, transparent);
   text-transform: lowercase;
 }
+.md-article .md-diagram-btn {
+  border: 1px solid var(--md-pre-border);
+  background: var(--md-bg);
+  color: var(--md-bq-text);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--md-corner-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+.md-article .md-diagram-btn:hover {
+  color: var(--md-link);
+  border-color: var(--md-link);
+}
 .md-article .md-diagram-body {
-  padding: 14px;
+  padding: 16px;
   display: flex;
   justify-content: center;
   overflow-x: auto;
+  background: var(--md-bg);
+}
+.md-article .md-diagram-src {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
 }
 .md-article .md-diagram-src svg {
   max-width: 100%;
+  height: auto; /* 配合 viewBox 的固有宽高比，避免 width="100%" 时塌成 0 高 */
+  display: block;
+}
+/* 连 viewBox 都没有的 SVG：浏览器算不出高度，给个可见的最小高度兜底 */
+.md-article .md-diagram-src svg:not([viewBox]) {
+  min-height: 200px;
+}
+/* 源码：默认隐藏，卡片加 .show-src 后与渲染结果互换 */
+.md-article .md-diagram-code {
+  display: none;
+  margin: 0;
+  padding: 14px 18px;
+  background: var(--md-pre-bg);
+  font-family: var(--md-code-font);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  user-select: text;
+}
+.md-article .md-diagram-code code {
+  background: transparent;
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+}
+.md-article .md-diagram.show-src .md-diagram-body {
+  display: none;
+}
+.md-article .md-diagram.show-src .md-diagram-code {
+  display: block;
 }
 .md-article .md-diagram-hint {
   width: 100%;

@@ -1,4 +1,4 @@
-import type { MNode, FileContent, Entry, Settings } from './types'
+import type { MNode, FileContent, Entry, Settings, AssocState } from './types'
 
 /**
  * 前端唯一依赖的后端接口。桌面端由 window.go.main.App 提供，
@@ -29,6 +29,9 @@ export interface Api {
   RevealInShell(path: string): Promise<void>
   SaveHtmlDialog(title: string, html: string, defaultName: string): Promise<string>
   CopyText(text: string): Promise<void>
+  GetAssocState(): Promise<AssocState>
+  AssociateMd(): Promise<void>
+  UnassociateMd(): Promise<void>
 }
 
 export function isDesktop(): boolean {
@@ -61,7 +64,10 @@ function desktopApi(): Api {
     SetWindowTitle: (t) => a.SetWindowTitle(t),
     RevealInShell: (p) => a.RevealInShell(p),
     SaveHtmlDialog: (t, h, d) => a.SaveHtmlDialog(t, h, d),
-    CopyText: (t) => a.CopyText(t)
+    CopyText: (t) => a.CopyText(t),
+    GetAssocState: () => a.GetAssocState(),
+    AssociateMd: () => a.AssociateMd(),
+    UnassociateMd: () => a.UnassociateMd()
   }
 }
 

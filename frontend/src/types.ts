@@ -25,6 +25,9 @@ export interface Entry {
   openedAt: number
 }
 
+/** 正文显示模式：仅渲染 / 仅源码 / 左右对照。 */
+export type ViewMode = 'render' | 'source' | 'split'
+
 export interface Settings {
   theme: string // light | dark
   fontSize: number
@@ -33,6 +36,7 @@ export interface Settings {
   lastFolder: string
   lastFile: string
   pinned: boolean
+  viewMode: ViewMode
 }
 
 export const defaultSettings: Settings = {
@@ -42,11 +46,29 @@ export const defaultSettings: Settings = {
   sidebarWidth: 280,
   lastFolder: '',
   lastFile: '',
-  pinned: false
+  pinned: false,
+  viewMode: 'render'
 }
 
 export interface TocItem {
   id: string
   text: string
   depth: number
+}
+
+/** 文件关联状态（Go: mdv.AssocState）。 */
+export interface AssocState {
+  supported: boolean
+  exePath: string
+  associated: boolean
+  owner: string
+  message: string
+}
+
+export const defaultAssocState: AssocState = {
+  supported: false,
+  exePath: '',
+  associated: false,
+  owner: '（未设置）',
+  message: ''
 }
