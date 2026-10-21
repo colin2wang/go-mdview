@@ -1,0 +1,18 @@
+# Wails
+build/bin
+frontend/package.json.md5
+
+# Node.js
+frontend/node_modules
+frontend/dist
+
+# AI Coder
+.atomcode/
+
+# IDEs
+.idea/
+.vscode/
+
+# COMMIT.md
+COMMIT.md
+

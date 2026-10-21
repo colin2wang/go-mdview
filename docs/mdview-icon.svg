@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- mdview 应用图标：蓝色圆角方块 + 白色 M（对齐官网 logo 观感） -->
+  <defs>
+    <!-- 上下两档蓝：上亮下深，等价原代码的两段填充 -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#3474F4"/>
+      <stop offset="0.5" stop-color="#3474F4"/>
+      <stop offset="0.5" stop-color="#2B64E6"/>
+      <stop offset="1"   stop-color="#2B64E6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 蓝色圆角方块：边距28，半径200 -->
+  <rect x="28" y="28" width="968" height="968" rx="200" ry="200"
+        fill="url(#bg)"/>
+
+  <!-- 白色大写 M：粗体，居中，略上移 -->
+  <text x="512" y="500"
+        text-anchor="middle"
+        dominant-baseline="central"
+        font-family="DejaVu Sans, Liberation Sans, Arial, Helvetica, sans-serif"
+        font-weight="700"
+        font-size="560"
+        fill="#FFFFFF">M</text>
+</svg>
