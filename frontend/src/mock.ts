@@ -20,7 +20,8 @@ const state = {
   } as Settings,
   history: [] as Entry[],
   favorites: [] as Entry[],
-  openEvents: [] as string[]
+  openEvents: [] as string[],
+  saved: {} as Record<string, string>
 }
 
 // 浏览器/Mock 模式下没有注册表，关联状态只做内存态模拟
@@ -59,6 +60,11 @@ export const mockApi: Api = {
   OpenFileDialog: async () => mdPath('16-JVM 与性能调优.md'),
   ListTree: async (_dir) => mockTree() as unknown as MNode[],
   ReadMarkdown: async (path) => fakeContent(path),
+  SaveMarkdown: async (path, content) => {
+    const fc = fakeContent(path)
+    state.saved[path] = content
+    return { ...fc, content, size: content.length, modTime: Date.now() }
+  },
   FindByTitle: async (_root, title) => mdPath(title.endsWith('.md') ? title : title + '.md'),
   StatFile: async () => true,
   GetHistory: async () => [...state.history],

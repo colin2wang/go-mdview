@@ -73,6 +73,46 @@ async function renderCurrent(fc: FileContent) {
   }
 }
 
+/**
+ * 对照模式的源码编辑：用编辑中的草稿重渲染正文。
+ * 只改内存里的渲染结果，不写回文件、不记历史；解析失败时保留上一次结果。
+ */
+let draftSeq = 0
+export async function renderDraft(md: string) {
+  const fc = store.current
+  if (!fc) return
+  const seq = ++draftSeq
+  store.rendering = true
+  try {
+    const r = await renderMarkdown(md, fc.dir)
+    if (seq !== draftSeq) return // 已有更新的草稿，丢弃过期结果
+    store.html = r.html
+    store.toc = r.toc
+    store.hasMath = r.hasMath
+    store.hasMermaid = r.hasMermaid
+  } catch {
+    /* 输入中途解析失败：保留上一次渲染结果 */
+  } finally {
+    if (seq === draftSeq) store.rendering = false
+  }
+}
+
+/** 保存编辑后的正文回原文件（源码/对照模式的「保存」按钮）。 */
+export async function saveSource(md: string): Promise<boolean> {
+  const cur = store.current
+  if (!cur) return false
+  try {
+    const api = await getApi()
+    const fc = await api.SaveMarkdown(cur.path, md, cur.encoding)
+    store.current = fc
+    toast('已保存到文件')
+    return true
+  } catch (e) {
+    toast(`保存失败：${String(e)}`, 'error')
+    return false
+  }
+}
+
 // ---------- 打开 ----------
 
 export async function openFile(path: string, opts: { pushHistory?: boolean } = {}) {

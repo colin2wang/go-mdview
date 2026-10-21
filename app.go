@@ -85,6 +85,11 @@ func (a *App) StatFile(path string) bool {
 // ReadMarkdown 读取文件内容。
 func (a *App) ReadMarkdown(path string) (mdv.FileContent, error) { return a.store.ReadMarkdown(path) }
 
+// SaveMarkdown 把编辑后的正文写回文件（源码/对照模式的「保存」按钮）。
+func (a *App) SaveMarkdown(path, content, encoding string) (mdv.FileContent, error) {
+	return a.store.SaveMarkdown(path, content, encoding)
+}
+
 // FindByTitle wiki 链接解析。
 func (a *App) FindByTitle(root, title string) string { return a.store.FindByTitle(root, title) }
 

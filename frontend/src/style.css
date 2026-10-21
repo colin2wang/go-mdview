@@ -679,6 +679,45 @@ button {
 .pane-grow {
   flex: 1;
 }
+.pane-live {
+  flex: none;
+  font-size: 11px;
+  color: #1a7f37;
+}
+[data-theme='dark'] .pane-live {
+  color: #3fb950;
+}
+
+/* 源码编辑（对照模式） */
+.src-edit {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--md-surface);
+  color: var(--md-text);
+  font-family: var(--md-code-font);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre;
+  overflow: auto;
+  user-select: text;
+  tab-size: 2;
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-scrollbar-thumb) transparent;
+}
+.src-edit.__code_wrapped {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.src-edit:focus {
+  background: var(--md-bg);
+  box-shadow: inset 2px 0 0 var(--md-link);
+}
 
 /* 中缝拖拽条 */
 .split-bar {
@@ -739,6 +778,22 @@ button {
   border-color: var(--md-link);
   color: var(--md-link);
   background: color-mix(in srgb, var(--md-link) 10%, transparent);
+}
+.src-btn.primary {
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--md-accent), var(--md-accent-2));
+  color: #fff;
+}
+.src-btn.primary:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.06);
+}
+.src-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--md-pre-border);
+  color: var(--md-bq-text);
+  background: var(--md-surface-2);
 }
 
 .src-scroll {

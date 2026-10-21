@@ -1,8 +1,9 @@
 # mdview build script (run on Windows)
 # Usage:
-#   .\build.ps1            # incremental build (frontend + backend exe)
+#   .\build.ps1            # incremental build (icons + frontend + backend exe)
 #   .\build.ps1 -Clean     # clean before building
 #   .\build.ps1 -Package   # build and package dist-zip (with docs/source manifest)
+#   .\generate-icon.ps1    # regenerate icon assets only
 param(
     [switch]$Clean,
     [switch]$Package
@@ -19,12 +20,9 @@ if ($Clean) {
     if (Test-Path "$root\frontend\dist") { Remove-Item "$root\frontend\dist" -Recurse -Force }
 }
 
-# 1) Icons: docs/mdview-icon.svg -> build/appicon.png + build/windows/icon.ico
-Write-Host "==> Icon assets (genicon)"
-Push-Location $root
-go run ./tools/genicon
-if ($LASTEXITCODE -ne 0) { Pop-Location; throw "icon generation failed" }
-Pop-Location
+# 1) Icons (see generate-icon.ps1; can also be run standalone)
+Write-Host "==> Icon assets"
+& "$root\generate-icon.ps1"
 
 # 2) Frontend
 Write-Host "==> Frontend build (vue-tsc + vite)"

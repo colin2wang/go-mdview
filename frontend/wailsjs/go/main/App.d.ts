@@ -34,6 +34,8 @@ export function RevealInShell(arg1:string):Promise<void>;
 
 export function SaveHtmlDialog(arg1:string,arg2:string,arg3:string):Promise<string>;
 
+export function SaveMarkdown(arg1:string,arg2:string,arg3:string):Promise<mdv.FileContent>;
+
 export function SaveSettings(arg1:mdv.Settings):Promise<mdv.Settings>;
 
 export function SetStartupFile(arg1:string):Promise<void>;

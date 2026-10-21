@@ -10,6 +10,7 @@ export interface Api {
   OpenFileDialog(): Promise<string>
   ListTree(dir: string): Promise<MNode[]>
   ReadMarkdown(path: string): Promise<FileContent>
+  SaveMarkdown(path: string, content: string, encoding: string): Promise<FileContent>
   FindByTitle(root: string, title: string): Promise<string>
   StatFile(path: string): Promise<boolean>
   GetHistory(): Promise<Entry[]>
@@ -46,6 +47,7 @@ function desktopApi(): Api {
     OpenFileDialog: () => a.OpenFileDialog(),
     ListTree: (d) => a.ListTree(d),
     ReadMarkdown: (p) => a.ReadMarkdown(p),
+    SaveMarkdown: (p, c, e) => a.SaveMarkdown(p, c, e),
     FindByTitle: (r, t) => a.FindByTitle(r, t),
     StatFile: (p) => a.StatFile(p),
     GetHistory: () => a.GetHistory(),

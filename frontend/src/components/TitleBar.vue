@@ -6,9 +6,9 @@ import type { ViewMode } from '../types'
 import AppIcon from './AppIcon.vue'
 
 const modes: { key: ViewMode; label: string; title: string }[] = [
-  { key: 'render', label: '渲染', title: '只看渲染结果' },
   { key: 'source', label: '源码', title: '只看 Markdown 源码' },
-  { key: 'split', label: '对照', title: '源码 ⇄ 渲染 左右对照' }
+  { key: 'render', label: '渲染', title: '只看渲染结果（默认）' },
+  { key: 'split', label: '对照', title: '左源码 ⇄ 右渲染，可实时编辑预览' }
 ]
 
 const title = computed(() => {
@@ -84,16 +84,15 @@ function dblMax() {
       </button>
       <button
         class="tb-btn"
-        :class="{ on: store.settings?.pinned }"
-        title="置顶"
+        :class="{ 'pin-on': store.settings?.pinned }"
+        :title="store.settings?.pinned ? '取消置顶' : '窗口置顶'"
         data-testid="btn-pin"
         @click="pin"
       >
-        <svg viewBox="0 0 16 16" width="15" height="15">
+        <svg viewBox="0 0 24 24" width="15" height="15">
           <path
             fill="currentColor"
-            d="M9.5 1.5a.5.5 0 0 0-1 0v4.02L5.07 7.34c-.35.15-.57.5-.57.88v.28c0 .28.22.5.5.5h2.5v3.1l-1.1 1.6a.5.5 0 0 0 .4.8h2.9a.5.5 0 0 0 .4-.8l-1.1-1.6V9h2.5c.28 0 .5-.22.5-.5v-.28c0-.38-.22-.73-.57-.88L7.5 5.52V1.5h2Z"
-            transform="translate(0.5 0)"
+            d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H18v-2c-1.66 0-3-1.34-3-3z"
           />
         </svg>
       </button>

@@ -4,6 +4,8 @@ import {
   store,
   setTheme,
   setViewMode,
+  renderDraft,
+  saveSource,
   exportHtml,
   openEntry,
   openFolder,
@@ -20,6 +22,7 @@ const articleEl = ref<HTMLElement | null>(null)
 const renderScrollEl = ref<HTMLElement | null>(null)
 const srcScrollEl = ref<HTMLElement | null>(null)
 const splitWrapEl = ref<HTMLElement | null>(null)
+const editEl = ref<HTMLTextAreaElement | null>(null)
 
 const mode = computed<ViewMode>(() => store.viewMode)
 const showRender = computed(() => mode.value !== 'source')
@@ -140,6 +143,60 @@ function evenSplit() {
 const syncScroll = ref(true)
 let syncing = false
 
+// ---------- 源码编辑（对照模式） ----------
+// 只改内存里的渲染结果，不写回文件；关闭编辑或切换文件即还原为文件内容
+const editing = ref(false)
+const draft = ref('')
+let draftTimer: number | undefined
+
+async function toggleEdit() {
+  // 切换会换掉源码区的 DOM（列表 ⇄ textarea），先把滚动比例记下来
+  const prev = srcScroller()
+  const ratio = prev && prev.scrollHeight > prev.clientHeight
+    ? prev.scrollTop / (prev.scrollHeight - prev.clientHeight)
+    : 0
+
+  editing.value = !editing.value
+  if (editing.value) {
+    draft.value = sourceText.value
+  } else {
+    draft.value = ''
+    void renderDraft(sourceText.value) // 还原为文件内容
+  }
+
+  await nextTick()
+  const now = srcScroller()
+  if (now) now.scrollTop = ratio * Math.max(0, now.scrollHeight - now.clientHeight)
+  if (isSplit.value && syncScroll.value) mirror(now, renderScrollEl.value)
+}
+
+function onDraftInput() {
+  if (draftTimer) window.clearTimeout(draftTimer)
+  draftTimer = window.setTimeout(() => void renderDraft(draft.value), 300)
+}
+
+// 切换文件：有未保存改动时先提示，再还原编辑态
+watch(
+  () => store.current?.path,
+  () => {
+    if (draftTimer) window.clearTimeout(draftTimer)
+    if (editing.value && draft.value && draft.value !== sourceText.value) {
+      toast('已切换文件，未保存的修改已丢弃', 'error')
+    }
+    draft.value = editing.value ? sourceText.value : ''
+    if (editing.value) void renderDraft(draft.value)
+  }
+)
+
+/**
+ * 当前源码侧的滚动元素：编辑时是 textarea，否则是带行号的源码容器。
+ * 编辑态下 srcScrollEl 会被 v-if 卸载而为 null，同步滚动必须改取 textarea，
+ * 否则对照模式的同步会静默失效。
+ */
+function srcScroller(): HTMLElement | null {
+  return editing.value ? editEl.value : srcScrollEl.value
+}
+
 /** 按可滚动高度的比例镜像滚动位置。 */
 function mirror(from: HTMLElement | null, to: HTMLElement | null) {
   if (!from || !to || syncing) return
@@ -154,6 +211,7 @@ function mirror(from: HTMLElement | null, to: HTMLElement | null) {
 // ---------- 滚动 / 补充渲染 ----------
 let savedRatio = 0
 let savedFor = ''
+let lastRenderTop = 0
 // 跨文件锚点：点击 md 内链带 #anchor 时，渲染完成后再跳
 let pendingAnchor = ''
 // 正文隐藏期间无法出图（容器无尺寸），记账后切回补做
@@ -216,7 +274,10 @@ async function afterRender(redrawDiagram: boolean) {
   if (!sc) return
   if (redrawDiagram) return // 主题切换：保持滚动
   const path = store.current?.path ?? ''
-  if (savedFor === path) {
+  if (editing.value) {
+    // 编辑草稿重渲染：保持视口位置不变，避免跟着内容跳
+    sc.scrollTop = Math.min(lastRenderTop, Math.max(0, sc.scrollHeight - sc.clientHeight))
+  } else if (savedFor === path) {
     sc.scrollTop = savedRatio * (sc.scrollHeight - sc.clientHeight)
   } else {
     sc.scrollTo({ top: 0 })
@@ -233,15 +294,16 @@ async function afterRender(redrawDiagram: boolean) {
 function onRenderScroll() {
   const sc = renderScrollEl.value
   if (!sc) return
+  lastRenderTop = sc.scrollTop
   savedRatio = sc.scrollHeight > sc.clientHeight ? sc.scrollTop / (sc.scrollHeight - sc.clientHeight) : 0
   savedFor = store.current?.path ?? ''
   spyHeading(sc)
-  if (isSplit.value && syncScroll.value) mirror(sc, srcScrollEl.value)
+  if (isSplit.value && syncScroll.value) mirror(sc, srcScroller())
 }
 
 function onSrcScroll() {
   if (!isSplit.value || !syncScroll.value) return
-  mirror(srcScrollEl.value, renderScrollEl.value)
+  mirror(srcScroller(), renderScrollEl.value)
 }
 
 watch(
@@ -261,6 +323,12 @@ watch(
 // 显示模式切换：只在「正文重新可见」时补做图形/公式渲染
 watch(mode, async (to, from) => {
   const sc = renderScrollEl.value
+  if (to === 'render' && editing.value) {
+    // 只剩渲染视图时没有编辑入口，还原为文件内容
+    editing.value = false
+    draft.value = ''
+    await renderDraft(sourceText.value)
+  }
   if (to === 'source') {
     if (from !== 'source') renderScrollTop = sc?.scrollTop ?? 0
     return
@@ -272,7 +340,7 @@ watch(mode, async (to, from) => {
   }
   if (sc) {
     if (from === 'source') sc.scrollTop = renderScrollTop
-    if (isSplit.value && syncScroll.value) mirror(sc, srcScrollEl.value)
+    if (isSplit.value && syncScroll.value) mirror(sc, srcScroller())
   }
 })
 
@@ -369,16 +437,109 @@ function onKey(e: KeyboardEvent) {
     </div>
 
     <div v-else ref="splitWrapEl" class="viewer-body" :class="{ split: isSplit }">
+      <!-- 源码面板：对照模式下固定在左侧 -->
+      <section
+        v-show="showSource"
+        class="viewer-pane src-pane"
+        :class="{ 'is-split': isSplit }"
+        :style="isSplit ? { flex: `0 0 ${splitRatio * 100}%` } : {}"
+        data-testid="source-pane"
+      >
+        <header class="pane-head src-head">
+          <span class="pane-tag src">{{ isSplit ? '源码' : 'Markdown 源码' }}</span>
+          <span class="src-path" :title="sourcePath">{{ sourcePath }}</span>
+          <span class="src-meta">{{ sourceMeta }}</span>
+          <button
+            v-if="isSplit"
+            class="src-btn"
+            :class="{ on: syncScroll }"
+            title="同步两侧滚动"
+            @click="syncScroll = !syncScroll"
+          >
+            同步滚动
+          </button>
+          <button
+            class="src-btn"
+            :class="{ on: editing }"
+            :title="editing ? '退出编辑，还原为文件内容' : '编辑源码（仅预览，不写回文件）'"
+            data-testid="src-edit"
+            @click="toggleEdit"
+          >
+            编辑
+          </button>
+          <button
+            class="src-btn primary"
+            :disabled="!editing"
+            title="保存回原文件（需先开启编辑）"
+            data-testid="src-save"
+            @click="saveSource(draft)"
+          >
+            保存
+          </button>
+          <button class="src-btn" title="复制全文" data-testid="src-copy" @click="copySource">复制</button>
+          <button
+            v-if="!isSplit"
+            class="src-btn"
+            title="返回渲染视图"
+            data-testid="src-back"
+            @click="setViewMode('render')"
+          >
+            返回渲染
+          </button>
+        </header>
+        <textarea
+          v-if="editing"
+          ref="editEl"
+          v-model="draft"
+          class="src-edit"
+          :class="{ __code_wrapped: store.settings?.codeWrap }"
+          spellcheck="false"
+          placeholder="在这里编辑 Markdown，右侧实时预览（仅预览，不写回文件）"
+          data-testid="src-textarea"
+          @input="onDraftInput"
+          @scroll="onSrcScroll"
+        ></textarea>
+        <div
+          v-else
+          ref="srcScrollEl"
+          class="viewer-scroll src-scroll"
+          :class="{ __code_wrapped: store.settings?.codeWrap }"
+          data-testid="src-scroll"
+          @scroll="onSrcScroll"
+        >
+          <div v-if="srcTooBig" class="source-body" data-testid="source-body">{{ sourceText }}</div>
+          <div v-else class="source-body src-lines" data-testid="source-body">
+            <div v-for="l in srcLines" :key="l.n" class="src-line">
+              <span class="src-ln">{{ l.n }}</span>
+              <span class="src-lt" v-html="l.html"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 分栏拖拽条 -->
+      <div
+        v-if="isSplit"
+        class="split-bar"
+        :class="{ dragging }"
+        title="拖动调整比例，双击等分"
+        @mousedown="onSplitDown"
+        @dblclick="evenSplit"
+      >
+        <span class="split-grip"></span>
+      </div>
+
       <!-- 渲染正文：用 v-show 保持 DOM，切换源码回来时图形/滚动不丢 -->
       <section
         v-show="showRender"
         class="viewer-pane"
         :class="{ 'is-split': isSplit }"
-        :style="isSplit ? { flex: `0 0 ${splitRatio * 100}%` } : {}"
+        :style="isSplit ? { flex: '1 1 0' } : {}"
         data-testid="render-pane"
       >
         <header v-if="isSplit" class="pane-head">
           <span class="pane-tag">渲染结果</span>
+          <span v-if="editing" class="pane-live">● 实时预览</span>
           <span class="pane-grow"></span>
         </header>
         <div
@@ -397,55 +558,6 @@ function onKey(e: KeyboardEvent) {
             v-html="store.html"
             @click="onArtClick"
           ></article>
-        </div>
-      </section>
-
-      <!-- 分栏拖拽条 -->
-      <div
-        v-if="isSplit"
-        class="split-bar"
-        :class="{ dragging }"
-        title="拖动调整比例，双击等分"
-        @mousedown="onSplitDown"
-        @dblclick="evenSplit"
-      >
-        <span class="split-grip"></span>
-      </div>
-
-      <!-- 源码面板 -->
-      <section
-        v-show="showSource"
-        class="viewer-pane src-pane"
-        :class="{ 'is-split': isSplit }"
-        :style="isSplit ? { flex: '1 1 0' } : {}"
-        data-testid="source-pane"
-      >
-        <header class="pane-head src-head">
-          <span class="pane-tag src">Markdown 源码</span>
-          <span class="src-path" :title="sourcePath">{{ sourcePath }}</span>
-          <span class="src-meta">{{ sourceMeta }}</span>
-          <button v-if="isSplit" class="src-btn" :class="{ on: syncScroll }" title="同步两侧滚动" @click="syncScroll = !syncScroll">
-            同步滚动
-          </button>
-          <button class="src-btn" title="复制全文" data-testid="src-copy" @click="copySource">复制</button>
-          <button v-if="!isSplit" class="src-btn" title="返回渲染视图" data-testid="src-back" @click="setViewMode('render')">
-            返回渲染
-          </button>
-        </header>
-        <div
-          ref="srcScrollEl"
-          class="viewer-scroll src-scroll"
-          :class="{ __code_wrapped: store.settings?.codeWrap }"
-          data-testid="src-scroll"
-          @scroll="onSrcScroll"
-        >
-          <div v-if="srcTooBig" class="source-body" data-testid="source-body">{{ sourceText }}</div>
-          <div v-else class="source-body src-lines" data-testid="source-body">
-            <div v-for="l in srcLines" :key="l.n" class="src-line">
-              <span class="src-ln">{{ l.n }}</span>
-              <span class="src-lt" v-html="l.html"></span>
-            </div>
-          </div>
         </div>
       </section>
     </div>
