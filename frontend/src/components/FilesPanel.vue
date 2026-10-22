@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, provide, ref, watch } from 'vue'
 import { store, openFolder, refreshTree, countMd } from '../store'
+import { t } from '../i18n'
 import type { MNode } from '../types'
 import TreeItem from './TreeItem.vue'
 
@@ -64,29 +65,29 @@ function countAll(nodes: MNode[]): number {
 <template>
   <div class="panel files-panel" data-testid="files-panel">
     <div class="panel-head">
-      <span class="panel-title" :title="rootPath || '未选择目录'">{{ rootPath ? rootPath.split(/[\\/]/).pop() : '未选择目录' }}</span>
+      <span class="panel-title" :title="rootPath || t('files.none')">{{ rootPath ? rootPath.split(/[\\/]/).pop() : t('files.none') }}</span>
       <span class="panel-tools">
-        <button class="icon-btn" title="打开目录" data-testid="files-open-folder" @click="openFolder">
+        <button class="icon-btn" :title="t('files.openFolder')" data-testid="files-open-folder" @click="openFolder">
           <svg viewBox="0 0 16 16" width="14" height="14"><path d="M1.5 3.5h4l1.5 2h7.5v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9Zm1 3v6h11v-5H6.4L4.9 5.5H2.5Z" fill="currentColor" opacity=".85"/></svg>
         </button>
-        <button class="icon-btn" title="刷新" data-testid="files-refresh" @click="refreshTree">
+        <button class="icon-btn" :title="t('files.refresh')" data-testid="files-refresh" @click="refreshTree">
           <svg viewBox="0 0 16 16" width="14" height="14"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </button>
-        <button class="icon-btn" title="全部折叠" data-testid="files-collapse" @click="collapseAll">
+        <button class="icon-btn" :title="t('files.collapse')" data-testid="files-collapse" @click="collapseAll">
           <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6.5 8 10l4-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </button>
       </span>
     </div>
 
     <p v-if="!store.tree.length" class="panel-empty">
-      选择一个目录<br />
-      <button class="link-btn" @click="openFolder">打开目录…</button>
+      {{ t('files.pickFolder') }}<br />
+      <button class="link-btn" @click="openFolder">{{ t('empty.openFolder') }}</button>
     </p>
 
     <ul v-else class="tree" data-testid="file-tree">
       <TreeItem v-for="node in store.tree" :key="node.path" :node="node" />
     </ul>
 
-    <div class="panel-foot" v-if="store.tree.length">{{ countMd(store.tree) }} / {{ countAll(store.tree) }} 个文件可预览</div>
+    <div class="panel-foot" v-if="store.tree.length">{{ t('files.previewCount', { n: countMd(store.tree), m: countAll(store.tree) }) }}</div>
   </div>
 </template>

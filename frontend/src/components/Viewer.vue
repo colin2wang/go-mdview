@@ -15,6 +15,7 @@ import {
 import { showMenu, hideMenu } from './ContextMenu.vue'
 import { getApi } from '../api'
 import { renderDiagramsIn, renderMathIn } from '../markdown'
+import { t } from '../i18n'
 import type { ViewMode } from '../types'
 import AppIcon from './AppIcon.vue'
 import ImageLightbox from './ImageLightbox.vue'
@@ -24,6 +25,7 @@ const renderScrollEl = ref<HTMLElement | null>(null)
 const srcScrollEl = ref<HTMLElement | null>(null)
 const splitWrapEl = ref<HTMLElement | null>(null)
 const editEl = ref<HTMLTextAreaElement | null>(null)
+const gutterEl = ref<HTMLElement | null>(null)
 
 const mode = computed<ViewMode>(() => store.viewMode)
 const showRender = computed(() => mode.value !== 'source')
@@ -31,13 +33,15 @@ const showSource = computed(() => mode.value !== 'render')
 const isSplit = computed(() => mode.value === 'split')
 
 // ---------- 源码面板 ----------
-// 超大文件不做逐行 DOM，直接整段 <pre>，避免上万行把界面拖卡
+// 只读态与编辑态共用同一套渲染格式（行号槽 + 等宽正文），切换时视觉一致
+// 超大文件不做逐行 DOM，直接整段文本，避免上万行把界面拖卡
 const SRC_MAX_LINES = 6000
 const SRC_MAX_CHARS = 400000
 
 interface SrcLine {
   n: number
-  html: string
+  text: string
+  heading: boolean
 }
 
 const sourceText = computed(() => store.current?.content ?? '')
@@ -46,7 +50,7 @@ const sourceMeta = computed(() => {
   const c = store.current
   if (!c) return ''
   const lines = c.content ? c.content.split('\n').length : 0
-  return `${lines} 行 · ${c.encoding} · ${(c.size / 1024).toFixed(1)} KB`
+  return `${t('src.metaLines', { n: lines })} · ${c.encoding} · ${(c.size / 1024).toFixed(1)} KB`
 })
 const srcTooBig = computed(() => {
   const c = store.current
@@ -55,58 +59,22 @@ const srcTooBig = computed(() => {
 })
 const srcLines = computed<SrcLine[]>(() => (srcTooBig.value ? [] : buildSrcLines(sourceText.value)))
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
-/** 逐行轻量着色：围栏/标题/引用/列表/表格/行内标记，够看清结构即可。 */
-function inlineMarks(t: string): string {
-  return t
-    .replace(/`[^`]+`/g, (m) => `<span class="s-inline">${m}</span>`)
-    .replace(/\*\*[^*\n]+\*\*/g, (m) => `<span class="s-strong">${m}</span>`)
-    .replace(/!?\[[^\]\n]*\]\([^)\n]*\)/g, (m) => `<span class="s-link">${m}</span>`)
-    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_m, p: string, u: string) => `${p}<span class="s-url">${u}</span>`)
-}
-
+/** 逐行切分源码，只标记围栏外的标题行（目录跳转用），不做着色。 */
 function buildSrcLines(src: string): SrcLine[] {
   const lines = src.split(/\r?\n/)
   const out: SrcLine[] = []
   let fence = ''
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i]
-    const n = i + 1
-    const t = esc(raw)
     const fm = raw.match(/^\s*(```+|~~~+)/)
     if (fm) {
       const mark = fm[1][0]
       if (!fence) fence = mark
       else if (raw.trimStart().startsWith(fence)) fence = ''
-      out.push({ n, html: `<span class="s-fence">${t}</span>` })
+      out.push({ n: i + 1, text: raw, heading: false })
       continue
     }
-    if (fence) {
-      out.push({ n, html: `<span class="s-code">${t}</span>` })
-      continue
-    }
-    if (/^\s{0,3}#{1,6}(\s|$)/.test(raw)) {
-      out.push({ n, html: `<span class="s-head">${t}</span>` })
-      continue
-    }
-    if (/^\s*>/.test(raw)) {
-      out.push({ n, html: `<span class="s-quote">${t}</span>` })
-      continue
-    }
-    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(raw)) {
-      out.push({ n, html: `<span class="s-hr">${t}</span>` })
-      continue
-    }
-    if (/^\s*\|.*\|\s*$/.test(raw)) {
-      out.push({ n, html: `<span class="s-table">${inlineMarks(t)}</span>` })
-      continue
-    }
-    if (/^\s*(?:[-*+]|\d+[.)])\s/.test(raw)) {
-      out.push({ n, html: `<span class="s-list">${inlineMarks(t)}</span>` })
-      continue
-    }
-    out.push({ n, html: inlineMarks(t) })
+    out.push({ n: i + 1, text: raw, heading: !fence && /^\s{0,3}#{1,6}(\s|$)/.test(raw) })
   }
   return out
 }
@@ -114,7 +82,7 @@ function buildSrcLines(src: string): SrcLine[] {
 async function copySource() {
   const api = await getApi()
   await api.CopyText(sourceText.value)
-  toast('源码已复制')
+  toast(t('toast.copiedSource'))
 }
 
 // ---------- 对照分栏 ----------
@@ -148,7 +116,24 @@ let syncing = false
 // 只改内存里的渲染结果，不写回文件；关闭编辑或切换文件即还原为文件内容
 const editing = ref(false)
 const draft = ref('')
+// 行号槽开关：统一由设置对话框控制，编辑/只读两种状态共用
+const showLineNo = computed(() => store.settings?.lineNo ?? true)
 let draftTimer: number | undefined
+
+// 行号槽内容：整段生成，行数与当前正文（草稿或文件内容）一致
+const shownText = computed(() => (editing.value ? draft.value : sourceText.value))
+let gutterFor = -1
+let gutterText = ''
+const lineNoText = computed(() => {
+  const n = shownText.value.split('\n').length
+  if (n !== gutterFor) {
+    const nums: string[] = []
+    for (let i = 1; i <= n; i++) nums.push(String(i))
+    gutterFor = n
+    gutterText = nums.join('\n')
+  }
+  return gutterText
+})
 
 async function toggleEdit() {
   // 切换会换掉源码区的 DOM（列表 ⇄ textarea），先把滚动比例记下来
@@ -168,6 +153,7 @@ async function toggleEdit() {
   await nextTick()
   const now = srcScroller()
   if (now) now.scrollTop = ratio * Math.max(0, now.scrollHeight - now.clientHeight)
+  syncGutter()
   if (isSplit.value && syncScroll.value) mirror(now, renderScrollEl.value)
 }
 
@@ -179,23 +165,39 @@ function onDraftInput() {
 // 切换文件：有未保存改动时先提示，再还原编辑态
 watch(
   () => store.current?.path,
-  () => {
+  async () => {
     if (draftTimer) window.clearTimeout(draftTimer)
     if (editing.value && draft.value && draft.value !== sourceText.value) {
-      toast('已切换文件，未保存的修改已丢弃', 'error')
+      toast(t('toast.discardedDraft'), 'error')
     }
     draft.value = editing.value ? sourceText.value : ''
     if (editing.value) void renderDraft(draft.value)
+    // 换文件后正文高度变化，行号槽跟随最终的滚动位置
+    await nextTick()
+    syncGutter()
   }
 )
 
+// 行号槽开关来自设置对话框：重新挂载后追平正文滚动位置
+watch(showLineNo, async () => {
+  await nextTick()
+  syncGutter()
+})
+
 /**
- * 当前源码侧的滚动元素：编辑时是 textarea，否则是带行号的源码容器。
+ * 当前源码侧的滚动元素：编辑时是 textarea，否则是只读源码容器。
  * 编辑态下 srcScrollEl 会被 v-if 卸载而为 null，同步滚动必须改取 textarea，
  * 否则对照模式的同步会静默失效。
  */
 function srcScroller(): HTMLElement | null {
   return editing.value ? editEl.value : srcScrollEl.value
+}
+
+/** 行号槽与正文共用纵向滚动位置。 */
+function syncGutter() {
+  const sc = srcScroller()
+  const gu = gutterEl.value
+  if (sc && gu) gu.scrollTop = sc.scrollTop
 }
 
 /** 按可滚动高度的比例镜像滚动位置。 */
@@ -312,6 +314,8 @@ function onRenderScroll() {
 }
 
 function onSrcScroll() {
+  // 行号槽跟随正文滚动（无论是否分栏同步）
+  syncGutter()
   if (!isSplit.value || !syncScroll.value || justMirrored()) return
   mirror(srcScroller(), renderScrollEl.value)
 }
@@ -361,7 +365,7 @@ async function openFileByDialog() {
     const p = await api.OpenFileDialog()
     if (p) await openEntry(p)
   } catch (e) {
-    toast(`打开文件失败：${String(e)}`, 'error')
+    toast(t('toast.openFailed', { e: String(e) }), 'error')
   }
 }
 
@@ -380,8 +384,8 @@ function closeLightbox() {
 
 /** 双击正文图片 / 图形卡片（Mermaid、SVG）→ 全屏灯箱 */
 function onArtDblClick(e: MouseEvent) {
-  const t = e.target as HTMLElement
-  const holder = t.closest('.md-diagram')
+  const tgt = e.target as HTMLElement
+  const holder = tgt.closest('.md-diagram')
   if (holder) {
     const svgEl = holder.querySelector('.md-diagram-src svg')
     if (svgEl) {
@@ -389,22 +393,22 @@ function onArtDblClick(e: MouseEvent) {
       return
     }
   }
-  const img = t.closest('img')
+  const img = tgt.closest('img')
   const src = img?.getAttribute('src')
   if (src) openLightboxUrl(src)
 }
 
 async function onArtClick(e: MouseEvent) {
-  const t = e.target as HTMLElement
+  const tgt = e.target as HTMLElement
   // 图形卡片「源码」：在渲染结果与源码之间切换
-  const tgl = t.closest('button[data-toggle-src]') as HTMLElement | null
+  const tgl = tgt.closest('button[data-toggle-src]') as HTMLElement | null
   if (tgl) {
     const card = tgl.closest('.md-diagram')
     card?.classList.toggle('show-src')
     return
   }
   // md 内链（渲染器产出 data-mdlink）
-  const mdl = t.closest('a[data-mdlink]') as HTMLElement | null
+  const mdl = tgt.closest('a[data-mdlink]') as HTMLElement | null
   if (mdl) {
     e.preventDefault()
     pendingAnchor = (mdl.getAttribute('data-anchor') ?? '').replace(/^#/, '')
@@ -412,18 +416,18 @@ async function onArtClick(e: MouseEvent) {
     return
   }
   // wikilink
-  const wiki = t.closest('a[data-wiki]') as HTMLElement | null
+  const wiki = tgt.closest('a[data-wiki]') as HTMLElement | null
   if (wiki) {
     e.preventDefault()
     await openWikiLink(wiki.getAttribute('data-wiki') ?? '')
     return
   }
   // 代码/源码复制
-  const btn = t.closest('button[data-copy]') as HTMLButtonElement | null
+  const btn = tgt.closest('button[data-copy]') as HTMLButtonElement | null
   if (btn) {
     const api = await getApi()
     await api.CopyText(decodeURIComponent(btn.getAttribute('data-copy') ?? ''))
-    toast('代码已复制')
+    toast(t('toast.codeCopied'))
     btn.classList.add('done')
     setTimeout(() => btn.classList.remove('done'), 1200)
   }
@@ -433,19 +437,19 @@ async function onContext(e: MouseEvent) {
   const api = await getApi()
   const items: { label: string; action: () => void }[] = [
     {
-      label: store.settings?.theme === 'dark' ? '浅色主题' : '深色主题',
+      label: store.settings?.theme === 'dark' ? t('menu.themeLight') : t('menu.themeDark'),
       action: () => setTheme(store.settings?.theme === 'dark' ? 'light' : 'dark')
     }
   ]
   if (store.current) {
     items.push(
       {
-        label: mode.value === 'split' ? '退出对照视图' : '源码 ⇄ 渲染对照',
+        label: mode.value === 'split' ? t('menu.exitSplit') : t('menu.split'),
         action: () => setViewMode(mode.value === 'split' ? 'render' : 'split')
       },
-      { label: '复制文件路径', action: () => api.CopyText(store.current!.path) },
-      { label: '打开所在文件夹', action: () => api.RevealInShell(store.current!.path) },
-      { label: '导出 HTML', action: () => exportHtml() }
+      { label: t('menu.copyPath'), action: () => api.CopyText(store.current!.path) },
+      { label: t('menu.reveal'), action: () => api.RevealInShell(store.current!.path) },
+      { label: t('menu.exportHtml'), action: () => exportHtml() }
     )
   }
   showMenu(e.clientX, e.clientY, items)
@@ -468,10 +472,10 @@ function onKey(e: KeyboardEvent) {
     <div v-if="!store.current" class="viewer-empty">
       <AppIcon :size="76" class="empty-logo" />
       <p class="empty-title">mdview</p>
-      <p class="empty-sub">把 .md 文件拖进窗口，或</p>
+      <p class="empty-sub">{{ t('empty.sub') }}</p>
       <div class="empty-actions">
-        <button class="empty-btn primary" @click="openFileByDialog">打开文件…</button>
-        <button class="empty-btn" @click="openFolder">打开目录…</button>
+        <button class="empty-btn primary" @click="openFileByDialog">{{ t('empty.openFile') }}</button>
+        <button class="empty-btn" @click="openFolder">{{ t('empty.openFolder') }}</button>
       </div>
     </div>
 
@@ -485,72 +489,78 @@ function onKey(e: KeyboardEvent) {
         data-testid="source-pane"
       >
         <header class="pane-head src-head">
-          <span class="pane-tag src">{{ isSplit ? '源码' : 'Markdown 源码' }}</span>
+          <span class="pane-tag src">{{ isSplit ? t('src.tag') : t('src.tagFull') }}</span>
           <span class="src-path" :title="sourcePath">{{ sourcePath }}</span>
           <span class="src-meta">{{ sourceMeta }}</span>
           <button
             v-if="isSplit"
             class="src-btn"
             :class="{ on: syncScroll }"
-            title="同步两侧滚动"
+            :title="t('src.sync.tip')"
             @click="syncScroll = !syncScroll"
           >
-            同步滚动
+            {{ t('src.sync') }}
           </button>
           <button
             class="src-btn"
             :class="{ on: editing }"
-            :title="editing ? '退出编辑，还原为文件内容' : '编辑源码（仅预览，不写回文件）'"
+            :title="editing ? t('src.edit.on.tip') : t('src.edit.tip')"
             data-testid="src-edit"
             @click="toggleEdit"
           >
-            编辑
+            {{ t('src.edit') }}
           </button>
           <button
             class="src-btn primary"
             :disabled="!editing"
-            title="保存回原文件（需先开启编辑）"
+            :title="t('src.save.tip')"
             data-testid="src-save"
             @click="saveSource(draft)"
           >
-            保存
+            {{ t('src.save') }}
           </button>
-          <button class="src-btn" title="复制全文" data-testid="src-copy" @click="copySource">复制</button>
+          <button class="src-btn" :title="t('src.copy.tip')" data-testid="src-copy" @click="copySource">{{ t('src.copy') }}</button>
           <button
             v-if="!isSplit"
             class="src-btn"
-            title="返回渲染视图"
+            :title="t('src.back.tip')"
             data-testid="src-back"
             @click="setViewMode('render')"
           >
-            返回渲染
+            {{ t('src.back') }}
           </button>
         </header>
-        <textarea
-          v-if="editing"
-          ref="editEl"
-          v-model="draft"
-          class="src-edit"
-          :class="{ __code_wrapped: store.settings?.codeWrap }"
-          spellcheck="false"
-          placeholder="在这里编辑 Markdown，右侧实时预览（仅预览，不写回文件）"
-          data-testid="src-textarea"
-          @input="onDraftInput"
-          @scroll="onSrcScroll"
-        ></textarea>
-        <div
-          v-else
-          ref="srcScrollEl"
-          class="viewer-scroll src-scroll"
-          :class="{ __code_wrapped: store.settings?.codeWrap }"
-          data-testid="src-scroll"
-          @scroll="onSrcScroll"
-        >
-          <div v-if="srcTooBig" class="source-body" data-testid="source-body">{{ sourceText }}</div>
-          <div v-else class="source-body src-lines" data-testid="source-body">
-            <div v-for="l in srcLines" :key="l.n" class="src-line">
-              <span class="src-ln">{{ l.n }}</span>
-              <span class="src-lt" v-html="l.html"></span>
+        <div v-if="editing" class="src-edit-wrap">
+          <pre v-if="showLineNo" ref="gutterEl" class="src-gutter" aria-hidden="true">{{ lineNoText }}</pre>
+          <textarea
+            ref="editEl"
+            v-model="draft"
+            class="src-edit"
+            :class="{ __code_wrapped: store.settings?.codeWrap }"
+            spellcheck="false"
+            :placeholder="t('src.placeholder')"
+            data-testid="src-textarea"
+            @input="onDraftInput"
+            @scroll="onSrcScroll"
+          ></textarea>
+        </div>
+        <div v-else class="src-edit-wrap">
+          <pre v-if="showLineNo" ref="gutterEl" class="src-gutter" aria-hidden="true">{{ lineNoText }}</pre>
+          <div
+            ref="srcScrollEl"
+            class="viewer-scroll src-scroll"
+            :class="{ __code_wrapped: store.settings?.codeWrap }"
+            data-testid="src-scroll"
+            @scroll="onSrcScroll"
+          >
+            <div v-if="srcTooBig" class="source-body" data-testid="source-body">{{ sourceText }}</div>
+            <div v-else class="source-body src-lines" data-testid="source-body">
+              <div
+                v-for="l in srcLines"
+                :key="l.n"
+                class="src-line"
+                :class="{ 'src-heading': l.heading }"
+              >{{ l.text }}</div>
             </div>
           </div>
         </div>
@@ -561,7 +571,7 @@ function onKey(e: KeyboardEvent) {
         v-if="isSplit"
         class="split-bar"
         :class="{ dragging }"
-        title="拖动调整比例，双击等分"
+        :title="t('split.tip')"
         @mousedown="onSplitDown"
         @dblclick="evenSplit"
       >
@@ -577,8 +587,8 @@ function onKey(e: KeyboardEvent) {
         data-testid="render-pane"
       >
         <header v-if="isSplit" class="pane-head">
-          <span class="pane-tag">渲染结果</span>
-          <span v-if="editing" class="pane-live">● 实时预览</span>
+          <span class="pane-tag">{{ t('render.tag') }}</span>
+          <span v-if="editing" class="pane-live">● {{ t('render.live') }}</span>
           <span class="pane-grow"></span>
         </header>
         <div

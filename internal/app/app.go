@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"mdview/mdv"
+	"mdview/internal/mdv"
 )
 
 // App Wails 绑定层：前端可调用的全部方法挂在这里。
@@ -21,7 +21,8 @@ type App struct {
 
 func NewApp() *App { return &App{store: mdv.NewStore()} }
 
-func (a *App) startup(ctx context.Context) {
+// Startup Wails 生命周期回调。
+func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	// 拖拽 .md 打开由前端 JS runtime.OnFileDrop 处理（store.ts initApp）：
 	// Windows 上 Go 端 OnFileDrop 必须依赖 JS 端监听才会触发（Wails v2 #3985），
@@ -42,8 +43,8 @@ var startupFile = func() string {
 	return ""
 }()
 
-// emitOpenFile 通知前端打开一个文件（拖拽/二次实例共用）。
-func (a *App) emitOpenFile(path string) {
+// EmitOpenFile 通知前端打开一个文件（拖拽/二次实例共用）。
+func (a *App) EmitOpenFile(path string) {
 	if a.ctx == nil {
 		return
 	}

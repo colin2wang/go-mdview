@@ -12,6 +12,7 @@ const state = {
     theme: 'light',
     fontSize: 16,
     codeWrap: false,
+    lineNo: true,
     sidebarWidth: 280,
     lastFolder: 'C:\\Users\\wangb\\OneDrive\\Obsidian\\迷你狐的知识库\\01-计算机技术\\编程语言\\Java',
     lastFile: '',

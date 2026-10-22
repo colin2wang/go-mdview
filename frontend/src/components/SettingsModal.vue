@@ -2,17 +2,18 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { store, patchSettings, setViewMode, togglePin, toast } from '../store'
 import { getApi } from '../api'
+import { t, LANGS } from '../i18n'
 import type { AssocState, ViewMode } from '../types'
 import { defaultAssocState } from '../types'
 
 const open = computed(() => store.settingsOpen)
 const st = computed(() => store.settings)
 
-const viewModes: { key: ViewMode; label: string }[] = [
-  { key: 'render', label: '渲染' },
-  { key: 'source', label: '源码' },
-  { key: 'split', label: '对照' }
-]
+const viewModes = computed<{ key: ViewMode; label: string }[]>(() => [
+  { key: 'render', label: t('mode.render') },
+  { key: 'source', label: t('mode.source') },
+  { key: 'split', label: t('mode.split') }
+])
 
 function close() {
   store.settingsOpen = false
@@ -41,12 +42,19 @@ function setFs(e: Event) {
 function setWrap(e: Event) {
   patchSettings({ codeWrap: (e.target as HTMLInputElement).checked })
 }
+function setLineNo(e: Event) {
+  patchSettings({ lineNo: (e.target as HTMLInputElement).checked })
+}
 function setPinned() {
   // 走 togglePin：既写设置也立刻应用到窗口
   void togglePin()
 }
 function setViewModeEvt(v: ViewMode) {
   setViewMode(v)
+}
+// 切语言：走 patchSettings 持久化，applySettings 里的 setLang 让全界面即时生效
+function setLangEvt(v: string) {
+  patchSettings({ language: v })
 }
 
 // ---------- 文件关联 ----------
@@ -69,13 +77,13 @@ async function toggleAssoc() {
     const api = await getApi()
     if (assoc.value.associated) {
       await api.UnassociateMd()
-      toast('已取消 .md 文件关联')
+      toast(t('toast.assocUndone'))
     } else {
       await api.AssociateMd()
-      toast('已将 .md 关联到 mdview')
+      toast(t('toast.assocDone'))
     }
   } catch (e) {
-    toast(`操作失败：${String(e)}`, 'error')
+    toast(t('toast.opFailed', { e: String(e) }), 'error')
   } finally {
     await refreshAssoc()
     assocBusy.value = false
@@ -83,15 +91,15 @@ async function toggleAssoc() {
 }
 
 const assocLabel = computed(() => {
-  if (!assoc.value.supported) return '当前系统不支持'
-  if (assocBusy.value) return '处理中…'
-  return assoc.value.associated ? '取消关联' : '关联到 mdview'
+  if (!assoc.value.supported) return t('assoc.unsupported')
+  if (assocBusy.value) return t('assoc.busy')
+  return assoc.value.associated ? t('assoc.unassociate') : t('assoc.associate')
 })
 const assocTip = computed(() => {
-  if (assoc.value.associated) return '还原为关联前的默认程序'
-  return assoc.value.owner && assoc.value.owner !== '（未设置）'
-    ? `当前默认打开方式：${assoc.value.owner}`
-    : '把 .md / .markdown 的默认打开方式设为 mdview'
+  if (assoc.value.associated) return t('assoc.tipRestore')
+  return assoc.value.owner && assoc.value.owner !== t('assoc.ownerNone')
+    ? t('assoc.tipOwner', { owner: assoc.value.owner })
+    : t('assoc.tipSet')
 })
 </script>
 
@@ -100,15 +108,15 @@ const assocTip = computed(() => {
     <div v-if="open" class="modal-mask" data-testid="settings-mask" @click.self="close">
       <div class="modal" data-testid="settings-modal" @keydown.esc="close">
         <div class="modal-head">
-          <h3>设置</h3>
-          <button class="modal-x" title="关闭" @click="close">✕</button>
+          <h3>{{ t('set.title') }}</h3>
+          <button class="modal-x" :title="t('tip.close')" @click="close">✕</button>
         </div>
         <div class="modal-body">
           <section class="set-block">
-            <h4 class="set-block-title">外观</h4>
+            <h4 class="set-block-title">{{ t('set.appearance') }}</h4>
             <!-- 用 div 而非 label：label 会把点击转发给首个可关联控件，导致点“主题”二字误触发浅色 -->
             <div class="set-row">
-              <span class="set-label">主题</span>
+              <span class="set-label">{{ t('set.theme') }}</span>
               <span class="set-seg" role="radiogroup">
                 <button
                   class="seg-btn"
@@ -116,7 +124,7 @@ const assocTip = computed(() => {
                   data-testid="theme-light"
                   @click="setThemeEvt('light')"
                 >
-                  浅色
+                  {{ t('set.light') }}
                 </button>
                 <button
                   class="seg-btn"
@@ -124,12 +132,27 @@ const assocTip = computed(() => {
                   data-testid="theme-dark"
                   @click="setThemeEvt('dark')"
                 >
-                  深色
+                  {{ t('set.dark') }}
                 </button>
               </span>
             </div>
             <div class="set-row">
-              <span class="set-label">正文字号</span>
+              <span class="set-label">{{ t('set.language') }}</span>
+              <span class="set-seg" role="radiogroup">
+                <button
+                  v-for="l in LANGS"
+                  :key="l.key"
+                  class="seg-btn"
+                  :class="{ on: (st?.language ?? 'zh-CN') === l.key }"
+                  :data-testid="'lang-' + l.key"
+                  @click="setLangEvt(l.key)"
+                >
+                  {{ l.label }}
+                </button>
+              </span>
+            </div>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.fontSize') }}</span>
               <span class="set-val">
                 <input
                   type="range"
@@ -144,7 +167,7 @@ const assocTip = computed(() => {
               </span>
             </div>
             <div class="set-row">
-              <span class="set-label">代码块自动换行</span>
+              <span class="set-label">{{ t('set.codeWrap') }}</span>
               <input
                 type="checkbox"
                 class="set-switch"
@@ -156,9 +179,9 @@ const assocTip = computed(() => {
           </section>
 
           <section class="set-block">
-            <h4 class="set-block-title">阅读</h4>
+            <h4 class="set-block-title">{{ t('set.reading') }}</h4>
             <div class="set-row">
-              <span class="set-label">默认视图</span>
+              <span class="set-label">{{ t('set.defaultView') }}</span>
               <span class="set-seg" role="radiogroup">
                 <button
                   v-for="m in viewModes"
@@ -172,9 +195,19 @@ const assocTip = computed(() => {
                 </button>
               </span>
             </div>
-            <p class="set-hint">「对照」为左右分栏：左侧 Markdown 源码、右侧渲染结果，可拖拽中缝调整比例。</p>
+            <p class="set-hint">{{ t('set.splitHint') }}</p>
             <div class="set-row">
-              <span class="set-label">窗口置顶</span>
+              <span class="set-label">{{ t('set.lineNo') }}</span>
+              <input
+                type="checkbox"
+                class="set-switch"
+                :checked="st?.lineNo ?? true"
+                data-testid="lineNo-check"
+                @change="setLineNo"
+              />
+            </div>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.pin') }}</span>
               <input
                 type="checkbox"
                 class="set-switch"
@@ -186,11 +219,11 @@ const assocTip = computed(() => {
           </section>
 
           <section class="set-block">
-            <h4 class="set-block-title">文件关联</h4>
+            <h4 class="set-block-title">{{ t('set.assoc.title') }}</h4>
             <div class="set-row">
               <span class="set-label">
-                .md / .markdown 默认用 mdview 打开
-                <em class="set-sub">（同时设置文件图标，可随时取消）</em>
+                {{ t('set.assoc.label') }}
+                <em class="set-sub">{{ t('set.assoc.sub') }}</em>
               </span>
               <button
                 class="set-btn"
@@ -204,15 +237,15 @@ const assocTip = computed(() => {
               </button>
             </div>
             <p class="set-hint" data-testid="assoc-state">
-              <span v-if="!assoc.supported">{{ assoc.message || '当前系统不支持文件关联' }}</span>
-              <span v-else-if="assoc.associated">已关联：双击 .md 文件会用 mdview 打开（图标取自 mdview.exe）</span>
-              <span v-else>未关联 · 当前默认打开方式：{{ assoc.owner || '（未设置）' }}</span>
+              <span v-if="!assoc.supported">{{ assoc.message || t('assoc.unsupportedMsg') }}</span>
+              <span v-else-if="assoc.associated">{{ t('assoc.stateAssociated') }}</span>
+              <span v-else>{{ t('assoc.stateUnassociated', { owner: assoc.owner || t('assoc.ownerNone') }) }}</span>
             </p>
           </section>
 
           <div class="set-about">
-            <p><b>mdview</b> · Go + Wails 构建的轻量 Markdown 阅读器</p>
-            <p class="sub">拖拽 .md 进窗口即可打开；右键菜单可切换主题、导出 HTML；标题栏可切换渲染/源码/对照。</p>
+            <p><b>mdview</b> · {{ t('set.about.desc') }}</p>
+            <p class="sub">{{ t('set.about.hint') }}</p>
           </div>
         </div>
       </div>

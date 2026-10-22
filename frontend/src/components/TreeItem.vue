@@ -3,6 +3,7 @@ import { inject, ref } from 'vue'
 import { store, openEntry, toggleFavorite } from '../store'
 import { showMenu } from './ContextMenu.vue'
 import { getApi } from '../api'
+import { t } from '../i18n'
 import type { MNode } from '../types'
 
 /**
@@ -19,18 +20,18 @@ async function menu(e: MouseEvent, node: MNode) {
   const api = await getApi()
   const fav = store.favorites.some((f) => f.path === node.path)
   const items = [
-    ...(!node.isDir && !supported(node) ? [] : [{ label: '打开', action: () => openEntry(node.path) }]),
-    { label: fav ? '取消收藏' : '收藏', action: () => toggleFavorite(node.path) },
+    ...(!node.isDir && !supported(node) ? [] : [{ label: t('menu.open'), action: () => openEntry(node.path) }]),
+    { label: fav ? t('menu.unfav') : t('menu.fav'), action: () => toggleFavorite(node.path) },
     {
-      label: '复制文件路径',
+      label: t('menu.copyPath'),
       action: async () => {
         await api.CopyText(node.path)
         const { toast } = await import('../store')
-        toast('已复制路径')
+        toast(t('toast.copiedPath'))
       }
     }
   ]
-  if (!node.isDir) items.push({ label: '打开所在文件夹', action: () => api.RevealInShell(node.path) })
+  if (!node.isDir) items.push({ label: t('menu.reveal'), action: () => api.RevealInShell(node.path) })
   showMenu(e.clientX, e.clientY, items)
 }
 
@@ -59,8 +60,8 @@ function supported(node: MNode): boolean {
     >
       <svg class="ficon" viewBox="0 0 16 16" width="14" height="14"><path d="M4 1.5h5L12.5 5v9.5h-8.5Z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9 1.5V5h3.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       <span class="tree-name">{{ node.name }}</span>
-      <span v-if="!supported(node)" class="no-preview">无法预览</span>
-      <span v-else-if="store.current?.path === node.path" class="cur-badge">当前</span>
+      <span v-if="!supported(node)" class="no-preview">{{ t('tree.noPreview') }}</span>
+      <span v-else-if="store.current?.path === node.path" class="cur-badge">{{ t('tree.current') }}</span>
     </a>
 
     <ul v-if="node.isDir && isOpen()" class="tree-sub">

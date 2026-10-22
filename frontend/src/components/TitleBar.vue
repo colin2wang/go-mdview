@@ -2,14 +2,15 @@
 import { computed } from 'vue'
 import { store, togglePin, setViewMode } from '../store'
 import { getApi } from '../api'
+import { t } from '../i18n'
 import type { ViewMode } from '../types'
 import AppIcon from './AppIcon.vue'
 
-const modes: { key: ViewMode; label: string; title: string }[] = [
-  { key: 'source', label: '源码', title: '只看 Markdown 源码' },
-  { key: 'render', label: '渲染', title: '只看渲染结果（默认）' },
-  { key: 'split', label: '对照', title: '左源码 ⇄ 右渲染，可实时编辑预览' }
-]
+const modes = computed<{ key: ViewMode; label: string; title: string }[]>(() => [
+  { key: 'source', label: t('mode.source'), title: t('mode.source.tip') },
+  { key: 'render', label: t('mode.render'), title: t('mode.render.tip') },
+  { key: 'split', label: t('mode.split'), title: t('mode.split.tip') }
+])
 
 const title = computed(() => {
   if (store.current) return `${store.current.path} - mdview`
@@ -48,7 +49,7 @@ function dblMax() {
       <span class="tb-title" :title="title" data-testid="win-title">{{ title }}</span>
     </div>
     <div class="tb-btns">
-      <span class="tb-mode" role="radiogroup" aria-label="显示模式">
+      <span class="tb-mode" role="radiogroup" :aria-label="t('aria.viewMode')">
         <button
           v-for="m in modes"
           :key="m.key"
@@ -62,7 +63,7 @@ function dblMax() {
           {{ m.label }}
         </button>
       </span>
-      <button class="tb-btn" title="设置" data-testid="btn-settings" @click="openSettings">
+      <button class="tb-btn" :title="t('tip.settings')" data-testid="btn-settings" @click="openSettings">
         <svg viewBox="0 0 16 16" width="15" height="15">
           <path
             fill="currentColor"
@@ -74,7 +75,7 @@ function dblMax() {
           />
         </svg>
       </button>
-      <button class="tb-btn" title="全屏" data-testid="btn-fullscreen" @click="fullscreen">
+      <button class="tb-btn" :title="t('tip.fullscreen')" data-testid="btn-fullscreen" @click="fullscreen">
         <svg viewBox="0 0 16 16" width="15" height="15">
           <path
             fill="currentColor"
@@ -85,7 +86,7 @@ function dblMax() {
       <button
         class="tb-btn"
         :class="{ 'pin-on': store.settings?.pinned }"
-        :title="store.settings?.pinned ? '取消置顶' : '窗口置顶'"
+        :title="store.settings?.pinned ? t('tip.unpin') : t('tip.pin')"
         data-testid="btn-pin"
         @click="pin"
       >
@@ -97,17 +98,17 @@ function dblMax() {
         </svg>
       </button>
       <span class="tb-sep"></span>
-      <button class="tb-btn" title="最小化" data-testid="btn-min" @click="min">
+      <button class="tb-btn" :title="t('tip.min')" data-testid="btn-min" @click="min">
         <svg viewBox="0 0 12 12" width="12" height="12">
           <rect x="1.5" y="5.4" width="9" height="1.2" rx="0.6" fill="currentColor" />
         </svg>
       </button>
-      <button class="tb-btn" title="最大化/还原" data-testid="btn-max" @click="maxToggle">
+      <button class="tb-btn" :title="t('tip.max')" data-testid="btn-max" @click="maxToggle">
         <svg viewBox="0 0 12 12" width="12" height="12">
           <rect x="2" y="2" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.2" />
         </svg>
       </button>
-      <button class="tb-btn tb-close" title="关闭" data-testid="btn-close" @click="close">
+      <button class="tb-btn tb-close" :title="t('tip.close')" data-testid="btn-close" @click="close">
         <svg viewBox="0 0 12 12" width="12" height="12">
           <path d="M2.3 2.3l7.4 7.4M9.7 2.3l-7.4 7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
         </svg>

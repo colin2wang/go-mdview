@@ -26,10 +26,14 @@ func TestSettingsDefaultsAndClamp(t *testing.T) {
 	if st.ViewMode != ViewModeRender {
 		t.Fatalf("默认视图模式不符: %q", st.ViewMode)
 	}
+	if !st.LineNo {
+		t.Fatalf("行号默认应开启: %+v", st)
+	}
 	st.Theme = "night"
 	st.FontSize = 99
 	st.SidebarWidth = 10
 	st.ViewMode = "bogus"
+	st.LineNo = false
 	got := s.SaveSettings(st)
 	if got.Theme != "light" || got.FontSize != 28 || got.SidebarWidth != 200 {
 		t.Fatalf("clamp 失败: %+v", got)
@@ -42,6 +46,19 @@ func TestSettingsDefaultsAndClamp(t *testing.T) {
 	}
 	if s.GetSettings().FontSize != 28 {
 		t.Fatal("设置未落盘")
+	}
+	if s.GetSettings().LineNo {
+		t.Fatal("行号开关未落盘")
+	}
+}
+
+func TestSettingsLineNoLegacyFile(t *testing.T) {
+	s := newTestStore(t)
+	// 旧版 settings.json 没有 lineNo 字段：应按默认值显示行号
+	_ = os.WriteFile(filepath.Join(s.base(), "settings.json"), []byte(`{"theme":"dark"}`), 0o644)
+	st := s.GetSettings()
+	if !st.LineNo || st.Theme != "dark" {
+		t.Fatalf("旧版设置补齐失败: %+v", st)
 	}
 }
 

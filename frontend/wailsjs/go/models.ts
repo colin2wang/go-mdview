@@ -106,11 +106,13 @@ export namespace mdv {
 	    theme: string;
 	    fontSize: number;
 	    codeWrap: boolean;
+	    lineNo: boolean;
 	    sidebarWidth: number;
 	    lastFolder: string;
 	    lastFile: string;
 	    pinned: boolean;
 	    viewMode: string;
+	    language: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -121,11 +123,13 @@ export namespace mdv {
 	        this.theme = source["theme"];
 	        this.fontSize = source["fontSize"];
 	        this.codeWrap = source["codeWrap"];
+	        this.lineNo = source["lineNo"];
 	        this.sidebarWidth = source["sidebarWidth"];
 	        this.lastFolder = source["lastFolder"];
 	        this.lastFile = source["lastFile"];
 	        this.pinned = source["pinned"];
 	        this.viewMode = source["viewMode"];
+	        this.language = source["language"];
 	    }
 	}
 

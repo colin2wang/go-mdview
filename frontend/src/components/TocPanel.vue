@@ -2,6 +2,7 @@
 import { computed, nextTick, watch } from 'vue'
 import { store } from '../store'
 import TocNode from './TocNode.vue'
+import { t } from '../i18n'
 import type { TocEntry } from '../types'
 
 const items = computed(() => store.toc)
@@ -38,11 +39,16 @@ function scrollHeadingInto(sc: HTMLElement | null, el: HTMLElement | null) {
   sc.scrollTo({ top: sc.scrollTop + top - 8, behavior: 'smooth' })
 }
 
-/** 源码面板里的标题行（.s-head 着色的行），按文档顺序排列。 */
+/** 同上的瞬时版本：对照模式下避免源码侧平滑滚动与同步镜像互相拉扯。 */
+function scrollHeadingInstant(sc: HTMLElement | null, el: HTMLElement | null) {
+  if (!sc || !el) return
+  const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top
+  sc.scrollTop = sc.scrollTop + top - 8
+}
+
+/** 只读源码里的标题行（.src-heading 标记），按文档顺序排列。 */
 function srcHeadingEls(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('.src-line .s-head')).map(
-    (s) => s.closest('.src-line') as HTMLElement
-  )
+  return Array.from(document.querySelectorAll<HTMLElement>('.src-lines .src-heading'))
 }
 
 /** 源码行未渲染（超大文件）时的兜底：按目录序号等比定位。 */
@@ -60,7 +66,8 @@ function jump(id: string) {
   const mode = store.viewMode
   const ordinal = items.value.findIndex((x) => x.id === id)
   const heads = srcHeadingEls()
-  const lineEl = ordinal >= 0 ? heads[ordinal] ?? null : null
+  // 标题行数与目录不一致（引用内标题、setext 等）时放弃精确跳转，退回比例定位
+  const lineEl = ordinal >= 0 && heads.length === items.value.length ? heads[ordinal] ?? null : null
 
   // 源码模式：渲染面板隐藏，跳源码面板对应标题行
   if (mode === 'source') {
@@ -72,7 +79,7 @@ function jump(id: string) {
   const el = document.getElementById(id)
   scrollHeadingInto(scroller(RENDER_SEL), el)
   if (mode === 'split') {
-    if (lineEl) scroller(SRC_SEL)?.scrollTo({ top: lineEl.offsetTop - 8, behavior: 'auto' })
+    if (lineEl) scrollHeadingInstant(scroller(SRC_SEL), lineEl)
     else proportionalSrcJump(ordinal)
   }
 }
@@ -101,8 +108,8 @@ watch(
 <template>
   <div class="panel toc-panel" data-testid="toc-panel">
     <template v-if="items.length">
-      <button class="toc-endpoint" data-testid="toc-top" title="滚动到文档开头" @click="toEdge(true)">
-        <span class="toc-endpoint-ico">⤒</span>回到开头
+      <button class="toc-endpoint" data-testid="toc-top" :title="t('toc.top.tip')" @click="toEdge(true)">
+        <span class="toc-endpoint-ico">⤒</span>{{ t('toc.top') }}
       </button>
       <ul class="toc-list">
         <TocNode
@@ -113,10 +120,10 @@ watch(
           @jump="jump"
         />
       </ul>
-      <button class="toc-endpoint" data-testid="toc-bottom" title="滚动到文档结尾" @click="toEdge(false)">
-        <span class="toc-endpoint-ico">⤓</span>回到结尾
+      <button class="toc-endpoint" data-testid="toc-bottom" :title="t('toc.bottom.tip')" @click="toEdge(false)">
+        <span class="toc-endpoint-ico">⤓</span>{{ t('toc.bottom') }}
       </button>
     </template>
-    <p v-else class="panel-empty">打开文档后显示大纲</p>
+    <p v-else class="panel-empty">{{ t('toc.empty') }}</p>
   </div>
 </template>

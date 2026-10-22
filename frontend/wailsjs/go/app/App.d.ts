@@ -8,6 +8,8 @@ export function ClearHistory():Promise<Array<mdv.Entry>>;
 
 export function CopyText(arg1:string):Promise<void>;
 
+export function EmitOpenFile(arg1:string):Promise<void>;
+
 export function FindByTitle(arg1:string,arg2:string):Promise<string>;
 
 export function GetAssocState():Promise<mdv.AssocState>;

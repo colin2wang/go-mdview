@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { store, patchSettings } from '../store'
+import { t } from '../i18n'
 import TocPanel from './TocPanel.vue'
 import HistoryPanel from './HistoryPanel.vue'
 import FavPanel from './FavPanel.vue'
 import FilesPanel from './FilesPanel.vue'
 
-const tabs: { key: 'toc' | 'history' | 'fav' | 'files'; label: string }[] = [
-  { key: 'toc', label: '目录' },
-  { key: 'history', label: '历史' },
-  { key: 'fav', label: '收藏' },
-  { key: 'files', label: '文件' }
-]
+const tabs = computed<{ key: 'toc' | 'history' | 'fav' | 'files'; label: string }[]>(() => [
+  { key: 'toc', label: t('tab.toc') },
+  { key: 'history', label: t('tab.history') },
+  { key: 'fav', label: t('tab.fav') },
+  { key: 'files', label: t('tab.files') }
+])
 
 const dragging = ref(false)
 let startX = 0

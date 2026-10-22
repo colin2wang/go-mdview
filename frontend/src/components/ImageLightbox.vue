@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { t } from '../i18n'
 
 /**
  * 全屏图片灯箱：滚轮缩放、拖拽平移，ESC / 右上角 ✕ 关闭。
@@ -79,7 +80,7 @@ onBeforeUnmount(() => {
         :style="{ transform: `translate(${tx}px, ${ty}px) scale(${scale})` }"
         v-html="svg"
       ></div>
-      <button class="lb-close" title="关闭 (Esc)" @click="emit('close')">✕</button>
+      <button class="lb-close" :title="t('lb.close')" @click="emit('close')">✕</button>
     </div>
   </Teleport>
 </template>

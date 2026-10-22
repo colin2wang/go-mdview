@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { store, openEntry, clearHistory, toggleFavorite } from '../store'
 import { showMenu } from './ContextMenu.vue'
 import { getApi } from '../api'
+import { t } from '../i18n'
 
 const q = ref('')
 const list = computed(() => {
@@ -14,10 +15,10 @@ const list = computed(() => {
 function relTime(ts: number): string {
   if (!ts) return ''
   const diff = Math.floor(Date.now() / 1000 - ts)
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前'
-  if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前'
-  if (diff < 7 * 86400) return Math.floor(diff / 86400) + ' 天前'
+  if (diff < 60) return t('time.now')
+  if (diff < 3600) return t('time.minAgo', { n: Math.floor(diff / 60) })
+  if (diff < 86400) return t('time.hourAgo', { n: Math.floor(diff / 3600) })
+  if (diff < 7 * 86400) return t('time.dayAgo', { n: Math.floor(diff / 86400) })
   const d = new Date(ts * 1000)
   return `${d.getMonth() + 1}-${d.getDate()}`
 }
@@ -26,16 +27,16 @@ async function menu(e: MouseEvent, path: string) {
   const api = await getApi()
   const fav = store.favorites.some((f) => f.path === path)
   showMenu(e.clientX, e.clientY, [
-    { label: '打开', action: () => openEntry(path) },
-    { label: fav ? '取消收藏' : '收藏', action: () => toggleFavorite(path) },
-    { label: '复制文件路径', action: () => copyPath(path) },
-    { label: '打开所在文件夹', action: () => api.RevealInShell(path) }
+    { label: t('menu.open'), action: () => openEntry(path) },
+    { label: fav ? t('menu.unfav') : t('menu.fav'), action: () => toggleFavorite(path) },
+    { label: t('menu.copyPath'), action: () => copyPath(path) },
+    { label: t('menu.reveal'), action: () => api.RevealInShell(path) }
   ])
 }
 
 async function toastCopy() {
   const { toast } = await import('../store')
-  toast('已复制路径')
+  toast(t('toast.copiedPath'))
 }
 function copyPath(path: string) {
   getApi().then((api) => api.CopyText(path)).then(() => toastCopy())
@@ -45,18 +46,18 @@ function copyPath(path: string) {
 <template>
   <div class="panel" data-testid="history-panel">
     <div class="panel-head">
-      <span class="panel-title">最近打开</span>
-      <button class="link-btn" data-testid="history-clear" @click="clearHistory">清空</button>
+      <span class="panel-title">{{ t('hist.title') }}</span>
+      <button class="link-btn" data-testid="history-clear" @click="clearHistory">{{ t('hist.clear') }}</button>
     </div>
     <input
       v-if="store.history.length"
       v-model="q"
       class="search-input"
       type="search"
-      placeholder="搜索文件名或目录"
+      :placeholder="t('hist.search')"
       data-testid="history-search"
     />
-    <p v-if="!list.length" class="panel-empty">{{ q.trim() ? '没有匹配的历史记录' : '暂无历史记录' }}</p>
+    <p v-if="!list.length" class="panel-empty">{{ q.trim() ? t('hist.noMatch') : t('hist.empty') }}</p>
     <ul v-else class="entry-list">
       <li v-for="e in list" :key="e.path">
         <a

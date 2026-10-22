@@ -36,11 +36,14 @@ export interface Api {
 }
 
 export function isDesktop(): boolean {
-  return typeof window !== 'undefined' && (window as any).go !== undefined && (window as any).go?.main?.App !== undefined
+  // Wails 绑定命名空间随包名变化：main.App（迁移前）/ app.App（迁移后）
+  const g: any = typeof window !== 'undefined' ? (window as any).go : undefined
+  return g !== undefined && (g?.main?.App !== undefined || g?.app?.App !== undefined)
 }
 
 function desktopApi(): Api {
-  const a: any = (window as any).go.main.App
+  const g: any = (window as any).go
+  const a: any = g.app?.App ?? g.main?.App
   return {
     GetStartupFile: () => a.GetStartupFile(),
     OpenFolderDialog: () => a.OpenFolderDialog(),

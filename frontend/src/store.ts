@@ -4,6 +4,7 @@ import { defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
 import { fileBase, fileToDir } from './demo'
 import { renderMarkdown, resolveImgHref } from './markdown'
+import { setLang, t } from './i18n'
 
 export type TabKey = 'toc' | 'history' | 'fav' | 'files'
 
@@ -107,10 +108,10 @@ export async function saveSource(md: string): Promise<boolean> {
     const api = await getApi()
     const fc = await api.SaveMarkdown(cur.path, md, cur.encoding)
     store.current = fc
-    toast('已保存到文件')
+    toast(t('toast.saved'))
     return true
   } catch (e) {
-    toast(`保存失败：${String(e)}`, 'error')
+    toast(t('toast.opFailed', { e: String(e) }), 'error')
     return false
   }
 }
@@ -179,23 +180,23 @@ export async function openFile(path: string, opts: { pushHistory?: boolean; reRo
     api.SaveSettings(st)
     api.SetWindowTitle(`${path} - mdview`)
   } catch (e) {
-    toast(`打开失败：${fileBase(path)}`, 'error')
+    toast(t('toast.openFailed', { e: fileBase(path) }), 'error')
   }
 }
 
 export async function refreshTree() {
   const dir = store.rootName || store.settings?.lastFolder
   if (!dir) {
-    toast('先在「文件」页选择一个目录')
+    toast(t('toast.selectFolderFirst'))
     return
   }
   const api = await getApi()
   try {
     store.tree = await api.ListTree(dir)
     const mdCount = countMd(store.tree)
-    toast(mdCount ? `已刷新，找到 ${mdCount} 个可预览笔记` : '目录里没有可预览的笔记')
+    toast(mdCount ? t('toast.refreshed', { n: mdCount }) : t('toast.noNotes'))
   } catch {
-    toast('目录不可访问', 'error')
+    toast(t('toast.dirInaccessible'), 'error')
   }
 }
 
@@ -205,7 +206,7 @@ export async function openFolder() {
   try {
     dir = await api.OpenFolderDialog()
   } catch (e) {
-    toast(`打开目录失败：${String(e)}`, 'error')
+    toast(t('toast.openFolderFailed', { e: String(e) }), 'error')
     return
   }
   if (!dir) return
@@ -213,7 +214,7 @@ export async function openFolder() {
   try {
     tree = await api.ListTree(dir)
   } catch {
-    toast('目录不可访问', 'error')
+    toast(t('toast.dirInaccessible'), 'error')
     return
   }
   store.rootName = dir
@@ -222,7 +223,7 @@ export async function openFolder() {
   store.settings = st
   api.SaveSettings(st)
   const mdCount = countMd(tree)
-  toast(mdCount ? `已载入目录，找到 ${mdCount} 个可预览笔记` : '目录里没有可预览的笔记')
+  toast(mdCount ? t('toast.loadedFolder', { n: mdCount }) : t('toast.noNotes'))
 }
 
 export function countMd(nodes: MNode[]): number {
@@ -239,7 +240,7 @@ export async function openWikiLink(title: string) {
   const api = await getApi()
   const hit = await api.FindByTitle(fileToDir(store.current.path), title)
   if (hit) await openFile(hit)
-  else toast(`未找到笔记「${title}」`)
+  else toast(t('toast.noteNotFound', { title }))
 }
 
 // ---------- 收藏/历史 ----------
@@ -247,13 +248,13 @@ export async function openWikiLink(title: string) {
 /** 面板/右键菜单统一入口：文件不存在时给出提示。reRoot 透传给 openFile（切换文件夹树根）。 */
 export async function openEntry(path: string, opts: { pushHistory?: boolean; reRoot?: boolean } = {}) {
   if (!path) {
-    toast('该文件不提供路径信息（浏览器模式下拖拽受限）', 'error')
+    toast(t('toast.noPathInfo'), 'error')
     return
   }
   const api = await getApi()
   const ok = await api.StatFile(path)
   if (!ok) {
-    toast('文件不存在或已被移动', 'error')
+    toast(t('toast.fileMissing'), 'error')
     return
   }
   await openFile(path, opts)
@@ -267,7 +268,7 @@ export async function toggleFav(path: string) {
   const api = await getApi()
   const now = await api.ToggleFavorite(path)
   store.favorites = await api.GetFavorites()
-  toast(now ? '已加入收藏 ★' : '已取消收藏')
+  toast(now ? t('toast.favAdded') : t('toast.favRemoved'))
 }
 
 export function isFav(path: string): boolean {
@@ -296,6 +297,7 @@ export async function applySettings(st: Settings | null = store.settings) {
   const theme: string = st?.theme === 'dark' ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
   document.documentElement.style.setProperty('--md-fs', `${st?.fontSize ?? 16}px`)
+  setLang(st?.language)
   const hljsDark = document.getElementById('mdv-hljs-dark') as HTMLLinkElement | null
   const hljsLight = document.getElementById('mdv-hljs-light') as HTMLLinkElement | null
   if (hljsDark) hljsDark.disabled = theme !== 'dark'
@@ -337,7 +339,7 @@ export async function togglePin() {
 
 export async function exportHtml() {
   if (!store.current) {
-    toast('没有打开的文件', 'error')
+    toast(t('toast.noFile'), 'error')
     return
   }
   const api = await getApi()
@@ -348,11 +350,11 @@ export async function exportHtml() {
     inner,
     fileBase(store.current.path).replace(/\.md$/i, '') + '.html'
   )
-  if (out) toast(`已导出：${fileBase(out)}`)
+  if (out) toast(t('toast.exported', { name: fileBase(out) }))
 }
 
 export function copyPath(path: string) {
-  getApi().then((api) => api.CopyText(path)).then(() => toast('路径已复制'))
+  getApi().then((api) => api.CopyText(path)).then(() => toast(t('toast.copiedPath')))
 }
 
 // ---------- 初始化 ----------

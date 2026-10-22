@@ -35,22 +35,26 @@ export interface Settings {
   theme: string // light | dark
   fontSize: number
   codeWrap: boolean
+  lineNo: boolean // 源码区显示行号（编辑/只读共用）
   sidebarWidth: number
   lastFolder: string
   lastFile: string
   pinned: boolean
   viewMode: ViewMode
+  language: string // 界面语言 zh-CN | en | ja | de
 }
 
 export const defaultSettings: Settings = {
   theme: 'light',
   fontSize: 16,
   codeWrap: false,
+  lineNo: true,
   sidebarWidth: 280,
   lastFolder: '',
   lastFile: '',
   pinned: false,
-  viewMode: 'render'
+  viewMode: 'render',
+  language: 'zh-CN'
 }
 
 export interface TocItem {

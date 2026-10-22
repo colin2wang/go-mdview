@@ -1,5 +1,6 @@
 import type { TocItem } from './types'
 import { ensureHljs, ensureKatex, freshMarked, maybeMath, loadScript } from './vendor'
+import { t } from './i18n'
 
 /**
  * Markdown 渲染管线（样式对齐 mdview demo）：
@@ -231,7 +232,7 @@ async function buildFootnotesHtml(footnotes: Footnote[]): Promise<string> {
       if (/^<p>[\s\S]*<\/p>$/.test(inner) && (inner.match(/<p>/g) ?? []).length === 1) {
         inner = inner.slice(3, -4)
       }
-      return `<li id="fn-${escapeHtml(f.id)}" class="md-fn-item">${inner}<a href="#fnref-${escapeHtml(f.id)}" class="md-fn-backlink" title="返回">↩</a></li>`
+      return `<li id="fn-${escapeHtml(f.id)}" class="md-fn-item">${inner}<a href="#fnref-${escapeHtml(f.id)}" class="md-fn-backlink" title="${escapeHtml(t('fn.back'))}">↩</a></li>`
     })
     .join('\n')
   return `<div class="md-footnotes"><hr>\n<ol class="md-fn-list">\n${items}\n</ol>\n</div>`
@@ -247,7 +248,9 @@ const COPY_ICON =
   `<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>` +
   `</svg>`
 
-const DIAGRAM_TITLE: Record<string, string> = { mermaid: 'Mermaid 图表', svg: 'SVG 图形' }
+function diagTitle(kind: string): string {
+  return kind === 'mermaid' ? t('diag.mermaid') : t('diag.svg')
+}
 
 /** 代码块是否应渲染成图形卡片：mermaid / svg（含未标注语言但内容是 SVG 的情况）。 */
 export function diagramKindOf(lang: string, text: string): DiagramKind | '' {
@@ -314,15 +317,15 @@ export function diagramCard(kind: DiagramKind, label: string, code: string): str
   return (
     `<div class="md-diagram" data-diagram="${kind}" data-${kind}="${enc}" data-src="${enc}">` +
     `<div class="md-diagram-head">` +
-    `<span class="md-diagram-title">${DIAGRAM_TITLE[kind]}</span>` +
+    `<span class="md-diagram-title">${escapeHtml(diagTitle(kind))}</span>` +
     `<span class="md-diagram-tools">` +
     `<span class="md-diagram-meta">${escapeHtml(label)}</span>` +
-    `<button type="button" class="md-diagram-btn" data-toggle-src title="查看源码">源码</button>` +
-    `<button type="button" class="md-diagram-btn" data-copy="${enc}" title="复制源码">${COPY_ICON}</button>` +
+    `<button type="button" class="md-diagram-btn" data-toggle-src title="${escapeHtml(t('diag.viewSrc'))}">${escapeHtml(t('diag.src'))}</button>` +
+    `<button type="button" class="md-diagram-btn" data-copy="${enc}" title="${escapeHtml(t('diag.copySrc'))}">${COPY_ICON}</button>` +
     `</span>` +
     `</div>` +
     `<div class="md-diagram-body"><div class="md-diagram-src">` +
-    (kind === 'svg' ? sanitizeSvg(code) : '渲染中…') +
+    (kind === 'svg' ? sanitizeSvg(code) : escapeHtml(t('diag.rendering'))) +
     `</div></div>` +
     `<pre class="md-diagram-code"><code>${escapeHtml(code)}</code></pre>` +
     `</div>\n`
@@ -367,7 +370,7 @@ export async function renderMarkdown(src: string, baseDir: string): Promise<Rend
         `<div class="code-head">` +
         `<span class="code-lang">${lang ? escapeHtml(lang) : 'text'}</span>` +
         `<span class="code-tools">` +
-        `<button type="button" class="code-copy" data-copy="${encodeURIComponent(text)}" title="复制代码">${COPY_ICON}</button>` +
+        `<button type="button" class="code-copy" data-copy="${encodeURIComponent(text)}" title="${escapeHtml(t('code.copy.tip'))}">${COPY_ICON}</button>` +
         `</span>` +
         `</div>` +
         `<pre><code${cls}>${body}</code></pre></div>\n`
@@ -483,7 +486,7 @@ export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = f
       block.classList.add('ok')
     } else {
       holder.innerHTML =
-        `<div class="md-diagram-hint"><div class="md-diagram-hint-text">SVG 内容无法解析，已显示源码。</div>` +
+        `<div class="md-diagram-hint"><div class="md-diagram-hint-text">${escapeHtml(t('diag.svgErr'))}</div>` +
         `<pre class="md-diagram-src-code">${escapeHtml(code)}</pre></div>`
       block.classList.add('err')
     }
@@ -510,7 +513,7 @@ export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = f
         block.classList.add('ok')
       } catch {
         holder.innerHTML =
-          `<div class="md-diagram-hint"><div class="md-diagram-hint-text">Mermaid 语法有误，已显示源码。</div>` +
+          `<div class="md-diagram-hint"><div class="md-diagram-hint-text">${escapeHtml(t('diag.mermaidErr'))}</div>` +
           `<pre class="md-diagram-src-code">${escapeHtml(code)}</pre></div>`
         block.dataset.done = '1'
         block.classList.add('err')

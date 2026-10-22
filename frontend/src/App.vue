@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { store, initApp, openEntry, toggleFavorite, applySettings } from './store'
 import { getApi, isDesktop } from './api'
+import { t } from './i18n'
 import TitleBar from './components/TitleBar.vue'
 import SideBar from './components/SideBar.vue'
 import Viewer from './components/Viewer.vue'
@@ -51,7 +52,7 @@ watch(
       <SideBar />
       <Viewer />
     </div>
-    <div v-if="dropHint" class="drop-hint">松开以打开 Markdown 文件</div>
+    <div v-if="dropHint" class="drop-hint">{{ t('drop.hint') }}</div>
     <div class="toasts" data-testid="toasts">
       <div v-for="t in store.toasts" :key="t.id" class="toast" :class="t.kind" :data-testid="'toast-' + t.id">
         {{ t.text }}

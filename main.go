@@ -9,14 +9,15 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
-	"mdview/mdv"
+	mdvapp "mdview/internal/app"
+	"mdview/internal/mdv"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
-	app := NewApp()
+	app := mdvapp.NewApp()
 
 	err := wails.Run(&options.App{
 		Title:            "mdview",
@@ -30,7 +31,7 @@ func main() {
 			Assets:  assets,
 			Handler: mdv.ImgHandler, // /mdimg/{hexpath} 本地图片回放
 		},
-		OnStartup: app.startup,
+		OnStartup: app.Startup,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop:     true,
 			DisableWebViewDrop: false,
@@ -44,7 +45,7 @@ func main() {
 				for _, arg := range data.Args {
 					if l := strings.ToLower(arg); strings.HasSuffix(l, ".md") || strings.HasSuffix(l, ".markdown") {
 						app.SetStartupFile(arg)
-						app.emitOpenFile(arg)
+						app.EmitOpenFile(arg)
 						return
 					}
 				}
