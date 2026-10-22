@@ -1,8 +1,8 @@
 # mdview · User Guide
 
-A lightweight local Markdown reader (a clone of mdview.cn) — double-click a `.md` file and read it like a web page, no configuration needed.
+A lightweight local Markdown reader for Windows (a clone of mdview.cn) — double-click a `.md` file and read it like a web page, no configuration needed.
 
-> Tech stack: Go 1.25 + Wails v2.17 + Vue 3 + TypeScript · Ships as a single-file installer `mdview.exe` (~13MB)
+> Tech stack: Go 1.25 + Wails v2 + Vue 3 + TypeScript · Ships as a single-file `mdview.exe` (~13MB)
 
 ---
 
@@ -10,7 +10,7 @@ A lightweight local Markdown reader (a clone of mdview.cn) — double-click a `.
 
 | Method | How |
 | --- | --- |
-| Double-click | Associate `mdview.exe` with `.md` files, or drop a file onto the exe |
+| Double-click | Associate `mdview.exe` with `.md` files (one click in Settings), or drop a file onto the exe |
 | Drag & drop | Drag a `.md` file anywhere into the mdview window |
 | Send To | `Win+R` → `shell:sendto` → put an `mdview.exe` shortcut there, then right-click an md file → Send To → mdview |
 | Command line | `mdview.exe "D:\notes\xxx.md"` |
@@ -20,16 +20,9 @@ A lightweight local Markdown reader (a clone of mdview.cn) — double-click a `.
 
 ## 2. UI Tour
 
-```
-┌──────────────────────────────────────────────────┐
-│ [M] Full path of current file - mdview  Src Rnd Split ⚙  📌 ─ □  │ ← Custom title bar (draggable)
-├────────┬─────────────────────────────────────────┤
-│ TOC    │                                         │
-│ History│        Rendered Markdown content        │
-│ Favs   │      (900px centered · 40px top pad)    │
-│ Files  │                                         │
-└────────┴─────────────────────────────────────────┘
-```
+The whole window at a glance — custom draggable title bar up top, the four tabs down the left, content on the right (rendered body is centered at 900px with 40px top padding). Shown here in Split view, with the source-pane toolbar offering Sync scroll / Edit / Save / Copy:
+
+![Split view: source on the left, rendered result on the right](docs/images/split-view.png)
 
 ### The four tabs
 
@@ -50,14 +43,10 @@ Three view modes — `Source` · `Render` · `Split` (grayed out when no file is
 
 ### Context menus
 
-**Right-click on content**: light/dark theme toggle · enter/exit Split view · copy file path · open containing folder · export HTML
-**Right-click on Files/History/Favorites entries**: open · favorite/unfavorite · copy file path · open containing folder
+- **Right-click on content**: light/dark theme toggle · enter/exit Split view · copy file path · open containing folder · export HTML
+- **Right-click on Files/History/Favorites entries**: open · favorite/unfavorite · copy file path · open containing folder
 
 ### Screenshots
-
-**Split view** — Markdown source (with line numbers) on the left, live-rendered result on the right; the source-pane toolbar offers Sync scroll / Edit / Save / Copy:
-
-![Split view: source on the left, rendered result on the right](docs/images/split-view.png)
 
 **Mermaid & SVG diagrams** render inline as cards; each card header has a **Source** button to flip between the graphic and its code, plus a copy button:
 
@@ -71,7 +60,7 @@ Three view modes — `Source` · `Render` · `Split` (grayed out when no file is
 
 ![Settings dialog](docs/images/settings.png)
 
-## 3. Rendering Capabilities (aligned with the official mdview demo)
+## 3. Rendering Capabilities
 
 - Full GFM: tables (rounded borders), strikethrough, task lists (checkable style), autolinks
 - Code blocks: highlight.js syntax highlighting (github / github-dark themes follow the global theme), language label at the top right, copy button on hover
@@ -89,7 +78,7 @@ Three view modes — `Source` · `Render` · `Split` (grayed out when no file is
 ## 4. FAQ
 
 **Q1: Double-clicking an md file doesn't open mdview?**
-Right-click the md file → Open With → choose mdview.exe → check "Always use this app". Or use the "Send To" method above.
+Open "⚙ Settings → File Association" and click "Associate with mdview" (writes to `HKEY_CURRENT_USER`, no admin rights needed; "Unassociate" restores the previous default). Or manually: right-click the md file → Open With → choose mdview.exe → check "Always use this app".
 
 **Q2: Do old notes with Chinese/GBK encoding show mojibake?**
 UTF-8 / GB18030 is auto-detected; no manual conversion needed.
@@ -108,7 +97,6 @@ Wiki links search the directory of the currently open file recursively for an md
 
 ## 5. Known Limitations (stated honestly)
 
-- This build was cross-compiled inside a Linux container and **has not been regression-tested on real Windows hardware**: installer/file association/WebView2 behavior may differ on real machines
 - Editing is a lightweight in-place source editor (Split view → Edit/Save), not a full authoring tool; other official mdview Pro features (PDF export, archive management, etc.) are out of scope for this clone
 - HTML export is a simplified single-file layout (embedded base styles), not the official "bundle-with-images" capability
 - Large Mermaid diagrams take 1–2 seconds to parse on first render (the ~2.7MB library is bundled — no network dependency)
@@ -116,24 +104,27 @@ Wiki links search the directory of the currently open file recursively for an md
 ## 6. Building from Source
 
 ```
-mdview/
-├── main.go / app.go          # Wails entry point and binding layer
-├── mdv/                      # Domain logic (settings/history/favorites/file tree/GBK reading/image replay/export)
-│   └── *_test.go             # Go unit tests (go test ./...)
-├── frontend/src/             # Vue3 + TS (title bar/four tabs/rendering pipeline/mock adapter layer)
+go-mdview/
+├── main.go                   # Wails entry (frameless window, single instance, embed)
+├── internal/app/             # Binding layer exposed to the frontend (App.*)
+├── internal/mdv/             # Domain logic (settings/history/favorites/file tree/encoding detection/image serving/export/association)
+│   └── *_test.go             # Go unit tests
+├── frontend/src/             # Vue 3 + TS SPA (title bar/four tabs/render pipeline)
 ├── frontend/public/static/   # highlight.js / KaTeX / mermaid local libraries
 ├── build.ps1                 # One-click Windows build (-Clean / -Package)
 └── wails.json / go.mod
 ```
 
 ```powershell
-# Requires: Go 1.25+, Node 18+, (optional) wails CLI v2.17
-.\build.ps1            # Incremental build
+# Requires: Go 1.25+, Node 18+, pnpm, (recommended) wails CLI v2
+.\build.ps1            # Incremental build (icons → frontend → exe)
 .\build.ps1 -Clean     # Clean build
 .\build.ps1 -Package   # Build + zip
 ```
 
-Run Go tests: `go test ./...`; frontend type check: `cd frontend && npm run build` (passes with zero vue-tsc errors).
+The script runs `generate-icon.ps1`, then `pnpm install && pnpm run build` in `frontend/` (vue-tsc type check + vite build), then `wails build` (falling back to `go build -tags "desktop,production"` if the wails CLI is missing). Output: `build\bin\mdview.exe`.
+
+Run Go tests: `go test ./internal/mdv/`.
 
 ---
 
