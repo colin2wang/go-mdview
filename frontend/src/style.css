@@ -386,6 +386,52 @@ button {
   background: color-mix(in srgb, var(--md-link) 10%, transparent);
   font-weight: 500;
 }
+/* 目录树：面板固定上下端点按钮，中间列表滚动 */
+.toc-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 6px 4px 6px;
+}
+.toc-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 4px;
+}
+/* 层级连线：每个子级分支左侧一条竖线 */
+.toc-branch {
+  list-style: none;
+  margin: 0 0 0 9px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, var(--md-text) 16%, transparent);
+}
+.toc-endpoint {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 8px);
+  margin: 2px 4px;
+  padding: 6px 0;
+  border: 1px dashed color-mix(in srgb, var(--md-text) 22%, transparent);
+  border-radius: var(--md-corner-sm);
+  background: transparent;
+  color: var(--md-bq-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.toc-endpoint:hover {
+  background: var(--md-code-bg);
+  color: var(--md-link);
+  border-color: color-mix(in srgb, var(--md-link) 40%, transparent);
+}
+.toc-endpoint-ico {
+  font-size: 13px;
+  line-height: 1;
+}
 
 /* 历史/收藏条目 */
 .entry {

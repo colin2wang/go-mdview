@@ -59,6 +59,11 @@ export interface TocItem {
   depth: number
 }
 
+/** 目录树节点：TocItem 加子级 */
+export interface TocEntry extends TocItem {
+  children: TocEntry[]
+}
+
 /** 文件关联状态（Go: mdv.AssocState）。 */
 export interface AssocState {
   supported: boolean

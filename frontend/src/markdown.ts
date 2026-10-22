@@ -138,6 +138,14 @@ export function preprocess(src: string): { md: string; footnotes: Footnote[]; us
       continue
     }
     if (!inFence) {
+      // `---` 紧跟段落行是 setext 二级标题语法，但多数人本意是分隔线；
+      // 补一个空行让它按 <hr> 渲染，段落保持正常显示
+      if (/^\s*-{3,}\s*$/.test(line)) {
+        const prev = out[out.length - 1]
+        if (prev !== undefined && prev.trim() !== '' && !/^\s*-{3,}\s*$/.test(prev) && !/^\s*>/.test(prev)) {
+          out.push('')
+        }
+      }
       // GFM Alert：标记行后补空引号行，防止 marked 把 [!NOTE] 与正文懒续行合成同一段
       const am = line.match(/^\s*>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i)
       if (am) {

@@ -199,6 +199,7 @@ function srcScroller(): HTMLElement | null {
 }
 
 /** 按可滚动高度的比例镜像滚动位置。 */
+let mirrorAt = 0
 function mirror(from: HTMLElement | null, to: HTMLElement | null) {
   if (!from || !to || syncing) return
   const fMax = from.scrollHeight - from.clientHeight
@@ -206,7 +207,14 @@ function mirror(from: HTMLElement | null, to: HTMLElement | null) {
   if (fMax <= 0 || tMax <= 0) return
   syncing = true
   to.scrollTop = (from.scrollTop / fMax) * tMax
+  mirrorAt = performance.now()
   requestAnimationFrame(() => (syncing = false))
+}
+
+// 镜像写入触发的对方 scroll 事件可能晚于 rAF 解锁，若不拦会被当作用户滚动再镜像回来，
+// 与平滑滚动（目录跳转/回到开头结尾）形成回环，把每帧进度拉回原位
+function justMirrored() {
+  return performance.now() - mirrorAt < 80
 }
 
 // ---------- 滚动 / 补充渲染 ----------
@@ -293,6 +301,7 @@ async function afterRender(redrawDiagram: boolean) {
 }
 
 function onRenderScroll() {
+  if (justMirrored()) return
   const sc = renderScrollEl.value
   if (!sc) return
   lastRenderTop = sc.scrollTop
@@ -303,7 +312,7 @@ function onRenderScroll() {
 }
 
 function onSrcScroll() {
-  if (!isSplit.value || !syncScroll.value) return
+  if (!isSplit.value || !syncScroll.value || justMirrored()) return
   mirror(srcScroller(), renderScrollEl.value)
 }
 
