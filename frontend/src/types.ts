@@ -4,6 +4,7 @@ export interface MNode {
   name: string
   path: string
   isDir: boolean
+  supported?: boolean
   children?: MNode[]
 }
 

@@ -157,8 +157,18 @@ export function preprocess(src: string): { md: string; footnotes: Footnote[]; us
         return `<sup class="md-fn-ref"><a id="fnref-${escapeHtml(id)}" class="md-fnref-link" href="#fn-${escapeHtml(id)}">${n}</a></sup>`
       })
       l = l.replace(/==([^=\n]+)==/g, '<mark>$1</mark>')
-      l = l.replace(/\[\[([^\]\n|]+)\]\]/g, (_m0, t: string) => {
+      l = l.replace(/!?\[\[([^\]\n]+)\]\]/g, (m0, t: string) => {
         const label = t.trim()
+        // Obsidian 嵌入语法 ![[file]]：图片类文件转成标准 Markdown 图片，走 /mdimg 回放
+        if (m0.startsWith('!')) {
+          const [target, alias] = label.split('|').map((s) => s.trim())
+          const ext = (target.split('.').pop() ?? '').toLowerCase()
+          if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'].includes(ext)) {
+            return `![${escapeHtml(alias ?? target)}](${encodeURI(target)})`
+          }
+          // 非 图片嵌入（如 md 转录）降级为 wiki 链接，去掉多余的 !
+          return `<a class="wikilink" data-wiki="${escapeHtml(target)}">${escapeHtml(alias ?? target)}</a>`
+        }
         return `<a class="wikilink" data-wiki="${escapeHtml(label)}">${escapeHtml(label)}</a>`
       })
       out.push(l)
@@ -478,7 +488,7 @@ export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = f
     await loadScript('/static/mermaid.min.js')
     const mermaid = (window as any).mermaid
     if (!mermaid) throw new Error('mermaid unavailable')
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'neutral' })
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' })
     for (const block of mmBlocks) {
       if (block.dataset.done === '1') continue
       const code = decodeURIComponent(block.dataset.mermaid ?? '')

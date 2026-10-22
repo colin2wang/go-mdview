@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, provide, ref, watch } from 'vue'
-import { store, openFolder, refreshTree } from '../store'
+import { store, openFolder, refreshTree, countMd } from '../store'
 import type { MNode } from '../types'
 import TreeItem from './TreeItem.vue'
 
@@ -87,6 +87,6 @@ function countAll(nodes: MNode[]): number {
       <TreeItem v-for="node in store.tree" :key="node.path" :node="node" />
     </ul>
 
-    <div class="panel-foot" v-if="store.tree.length">{{ countAll(store.tree) }} 个文档 · 仅显示 .md</div>
+    <div class="panel-foot" v-if="store.tree.length">{{ countMd(store.tree) }} / {{ countAll(store.tree) }} 个文件可预览</div>
   </div>
 </template>

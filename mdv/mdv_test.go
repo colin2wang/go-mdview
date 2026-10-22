@@ -98,7 +98,7 @@ func writeTree(t *testing.T) string {
 		j(root, "10-进阶.md"),
 		j(root, "02-语法.md"),
 		j(root, "01-基础", "a.md"),
-		j(root, "01-基础", "b.txt"),         // 非 md 不进树
+		j(root, "01-基础", "b.txt"),         // 非 md 也进树，仅标记不可预览
 		j(root, "已存档", "old.md"),          // 存档目录保留为普通子目录
 		j(root, ".obsidian", "config.md"), // 隐藏目录跳过
 		j(root, "node_modules", "x.md"),   // 垃圾目录跳过
@@ -130,10 +130,23 @@ func TestListTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Join(nodesFlat(tree), ",")
-	// 排序：目录在前（01-基础 < 子 < 已存档，数字段按值），文件按数值（02 < 10 < README）
-	wantOrder := []string{"01-基础", "a.md", "子", "深", "deep.md", "已存档", "old.md", "02-语法.md", "10-进阶.md", "README.MD"}
+	// 排序：目录在前（01-基础 < 子 < 已存档，数字段按值），文件按数值（02 < 10 < README）；非 md 文件同样进树
+	wantOrder := []string{"01-基础", "a.md", "b.txt", "子", "深", "deep.md", "已存档", "old.md", "02-语法.md", "10-进阶.md", "README.MD"}
 	if got != strings.Join(wantOrder, ",") {
 		t.Fatalf("树/排序不符:\n got=%s\nwant=%s", got, strings.Join(wantOrder, ","))
+	}
+	// 支持标记：md 文件可预览，b.txt 不可，目录恒可
+	for _, n := range tree {
+		if n.Name == "01-基础" {
+			for _, c := range n.Children {
+				if c.Name == "a.md" && !c.Supported {
+					t.Fatal("a.md 应标记为可预览")
+				}
+				if c.Name == "b.txt" && c.Supported {
+					t.Fatal("b.txt 不应标记为可预览")
+				}
+			}
+		}
 	}
 }
 

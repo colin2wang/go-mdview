@@ -68,6 +68,7 @@ export namespace mdv {
 	    name: string;
 	    path: string;
 	    isDir: boolean;
+	    supported: boolean;
 	    children?: Node[];
 	
 	    static createFrom(source: any = {}) {
@@ -79,6 +80,7 @@ export namespace mdv {
 	        this.name = source["name"];
 	        this.path = source["path"];
 	        this.isDir = source["isDir"];
+	        this.supported = source["supported"];
 	        this.children = this.convertValues(source["children"], Node);
 	    }
 	

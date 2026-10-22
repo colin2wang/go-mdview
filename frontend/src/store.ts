@@ -115,15 +115,16 @@ export async function saveSource(md: string): Promise<boolean> {
 
 // ---------- 打开 ----------
 
-export async function openFile(path: string, opts: { pushHistory?: boolean } = {}) {
+export async function openFile(path: string, opts: { pushHistory?: boolean; keepTree?: boolean } = {}) {
   const api = await getApi()
   try {
     const fc = await api.ReadMarkdown(path)
     store.current = fc
     store.demoMode = false
     await renderCurrent(fc)
+    // keepTree：文件夹树内点击时保持原目录树不变；其他入口（历史/收藏/拖拽等）切到文件所在目录
     const dir = fileToDir(path)
-    if (dir !== store.rootName) {
+    if (!opts.keepTree && dir !== store.rootName) {
       store.rootName = dir
       try {
         store.tree = await api.ListTree(dir)
@@ -153,7 +154,7 @@ export async function refreshTree() {
   try {
     store.tree = await api.ListTree(dir)
     const mdCount = countMd(store.tree)
-    toast(mdCount ? `已刷新，找到 ${mdCount} 个笔记` : '目录里没有 .md 文件')
+    toast(mdCount ? `已刷新，找到 ${mdCount} 个可预览笔记` : '目录里没有可预览的笔记')
   } catch {
     toast('目录不可访问', 'error')
   }
@@ -182,12 +183,15 @@ export async function openFolder() {
   store.settings = st
   api.SaveSettings(st)
   const mdCount = countMd(tree)
-  toast(mdCount ? `已载入目录，找到 ${mdCount} 个笔记` : '目录里没有 .md 文件')
+  toast(mdCount ? `已载入目录，找到 ${mdCount} 个可预览笔记` : '目录里没有可预览的笔记')
 }
 
-function countMd(nodes: MNode[]): number {
+export function countMd(nodes: MNode[]): number {
   let n = 0
-  for (const x of nodes) n += x.isDir ? countMd(x.children ?? []) : 1
+  for (const x of nodes) {
+    if (x.isDir) n += countMd(x.children ?? [])
+    else if (x.supported !== false) n++
+  }
   return n
 }
 
@@ -201,8 +205,8 @@ export async function openWikiLink(title: string) {
 
 // ---------- 收藏/历史 ----------
 
-/** 面板/右键菜单统一入口：文件不存在时给出提示。 */
-export async function openEntry(path: string) {
+/** 面板/右键菜单统一入口：文件不存在时给出提示。keepTree 透传给 openFile。 */
+export async function openEntry(path: string, opts: { pushHistory?: boolean; keepTree?: boolean } = {}) {
   if (!path) {
     toast('该文件不提供路径信息（浏览器模式下拖拽受限）', 'error')
     return
@@ -213,7 +217,7 @@ export async function openEntry(path: string) {
     toast('文件不存在或已被移动', 'error')
     return
   }
-  await openFile(path)
+  await openFile(path, opts)
 }
 
 export async function toggleFavorite(path: string) {

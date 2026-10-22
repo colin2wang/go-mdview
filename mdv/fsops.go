@@ -134,12 +134,13 @@ func (s *Store) IsFavorite(path string) bool {
 
 // ---------- 目录树扫描 ----------
 
-// Node 文件树节点：目录或 .md 文件。
+// Node 文件树节点：目录或文件（仅 Supported 的文件可预览打开）。
 type Node struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	IsDir    bool   `json:"isDir"`
-	Children []Node `json:"children,omitempty"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	IsDir     bool   `json:"isDir"`
+	Supported bool   `json:"supported"`
+	Children  []Node `json:"children,omitempty"`
 }
 
 var skipDirs = map[string]bool{
@@ -243,9 +244,9 @@ func (s *Store) ListTree(root string) ([]Node, error) {
 				if children == nil {
 					continue // 空目录不进树
 				}
-				nodes = append(nodes, Node{Name: name, Path: p, IsDir: true, Children: children})
-			} else if mdExts[strings.ToLower(filepath.Ext(name))] {
-				nodes = append(nodes, Node{Name: name, Path: p})
+				nodes = append(nodes, Node{Name: name, Path: p, IsDir: true, Supported: true, Children: children})
+			} else {
+				nodes = append(nodes, Node{Name: name, Path: p, Supported: mdExts[strings.ToLower(filepath.Ext(name))]})
 			}
 		}
 		sortNodes(nodes)

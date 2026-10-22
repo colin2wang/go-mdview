@@ -540,6 +540,19 @@ button {
   padding: 0 4px;
   line-height: 14px;
 }
+.tree-row.unsupported {
+  cursor: default;
+  color: var(--md-bq-text);
+}
+.tree-row.unsupported:hover {
+  background: transparent;
+}
+.no-preview {
+  flex: none;
+  font-size: 10px;
+  color: var(--md-bq-text);
+  opacity: 0.85;
+}
 .search-input {
   margin: 0 10px 6px;
   width: calc(100% - 20px);
