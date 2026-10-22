@@ -6,7 +6,7 @@ let iconSeq = 0
 <script setup lang="ts">
 import { computed } from 'vue'
 
-// mdview 图标（与 docs/mdview-icon.svg 同形）：蓝色圆角方块 + 白色粗体 M。
+// mdview 图标（与 assets/mdview-icon.svg 同形）：蓝色圆角方块 + 白色粗体 M。
 // M 用描边折线绘制，避免依赖系统字体。
 const props = withDefaults(defineProps<{ size?: number }>(), { size: 16 })
 

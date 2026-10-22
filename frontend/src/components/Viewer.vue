@@ -136,11 +136,10 @@ const lineNoText = computed(() => {
 })
 
 async function toggleEdit() {
-  // 切换会换掉源码区的 DOM（列表 ⇄ textarea），先把滚动比例记下来
-  const prev = srcScroller()
-  const ratio = prev && prev.scrollHeight > prev.clientHeight
-    ? prev.scrollTop / (prev.scrollHeight - prev.clientHeight)
-    : 0
+  // 切换会换掉源码区的 DOM（列表 ⇄ textarea）。两侧正文逐行等高（同字体、行高、上内边距），
+  // 沿用绝对 scrollTop 才能停在同一行；不能按比例还原——只读态底部多 60vh 留白，
+  // scrollHeight 更大，同一比例会错开数行
+  const prevTop = srcScroller()?.scrollTop ?? 0
 
   editing.value = !editing.value
   if (editing.value) {
@@ -152,7 +151,7 @@ async function toggleEdit() {
 
   await nextTick()
   const now = srcScroller()
-  if (now) now.scrollTop = ratio * Math.max(0, now.scrollHeight - now.clientHeight)
+  if (now) now.scrollTop = Math.min(prevTop, Math.max(0, now.scrollHeight - now.clientHeight))
   syncGutter()
   if (isSplit.value && syncScroll.value) mirror(now, renderScrollEl.value)
 }

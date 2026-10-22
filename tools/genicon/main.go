@@ -3,9 +3,9 @@
 //	build/appicon.png      1024×1024，Wails 用它生成可执行文件图标
 //	build/windows/icon.ico 多尺寸 ICO，用于 exe 资源与 NSIS 安装包
 //	build/mdview.markdown.png  512×512，wails.json 文件关联（iconName）所需
-//	docs/mdview.ico        仓库内留档
+//	assets/mdview.ico      仓库内留档
 //
-// 图形与 docs/mdview-icon.svg 保持一致：蓝色圆角方块 + 白色粗体 M。
+// 图形与 assets/mdview-icon.svg 保持一致：蓝色圆角方块 + 白色粗体 M。
 // 这里按"描边折线"方式光栅化 M（等价于 SVG 的 stroke + round 端点/连接），
 // 只依赖标准库，不需要额外的字体或 SVG 渲染依赖。
 //
@@ -73,7 +73,7 @@ func main() {
 	if err := writeICO(ico, sizes); err != nil {
 		fatal(err)
 	}
-	if err := copyFile(ico, filepath.Join(root, "docs", "mdview.ico")); err != nil {
+	if err := copyFile(ico, filepath.Join(root, "assets", "mdview.ico")); err != nil {
 		fatal(err)
 	}
 	// 3) 文件关联图标：wails.json 里 info.fileAssociations[].iconName="mdview.markdown"，
@@ -85,7 +85,7 @@ func main() {
 
 	fmt.Println("icon: build/appicon.png (1024)")
 	fmt.Printf("icon: build/windows/icon.ico (%v)\n", sizes)
-	fmt.Println("icon: docs/mdview.ico")
+	fmt.Println("icon: assets/mdview.ico")
 	fmt.Println("icon: build/mdview.markdown.png (512)")
 }
 

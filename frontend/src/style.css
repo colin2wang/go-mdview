@@ -810,7 +810,8 @@ button {
   outline: none;
   margin: 0;
   padding: 14px 16px;
-  background: var(--md-surface);
+  background: var(--md-bg);
+  box-shadow: inset 2px 0 0 var(--md-link);
   color: var(--md-text);
   font-family: var(--md-code-font);
   font-size: 13px;
@@ -825,10 +826,6 @@ button {
 .src-edit.__code_wrapped {
   white-space: pre-wrap;
   word-break: break-word;
-}
-.src-edit:focus {
-  background: var(--md-bg);
-  box-shadow: inset 2px 0 0 var(--md-link);
 }
 
 /* 中缝拖拽条 */
