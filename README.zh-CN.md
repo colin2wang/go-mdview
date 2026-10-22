@@ -1,5 +1,7 @@
 # mdview · 使用说明
 
+**简体中文** · [English](README.md)
+
 面向 Windows 的轻量 Markdown 本地阅读器（mdview.cn 复刻版）——双击 `.md` 文件即可像浏览网页一样阅读，无需配置。
 
 > 技术栈：Go 1.25 + Wails v2 + Vue 3 + TypeScript · 单文件 `mdview.exe`（约 13MB）

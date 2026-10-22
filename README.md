@@ -1,5 +1,7 @@
 # mdview · User Guide
 
+[简体中文](README.zh-CN.md) · **English**
+
 A lightweight local Markdown reader for Windows (a clone of mdview.cn) — double-click a `.md` file and read it like a web page, no configuration needed.
 
 > Tech stack: Go 1.25 + Wails v2 + Vue 3 + TypeScript · Ships as a single-file `mdview.exe` (~13MB)
