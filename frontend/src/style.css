@@ -654,6 +654,33 @@ button {
   scrollbar-width: thin;
   scrollbar-color: var(--md-scrollbar-thumb) transparent;
 }
+
+/* 图片文件预览：居中等比，双击进灯箱 */
+.img-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  min-height: 100%;
+}
+.img-view img {
+  max-width: 100%;
+  cursor: zoom-in;
+  user-select: none;
+}
+
+/* 纯文本文件预览：等宽整段展示 */
+.plain-text {
+  margin: 0 auto;
+  padding: 20px 28px 48px;
+  max-width: 980px;
+  font-family: var(--md-mono, ui-monospace, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--md-text);
+}
 .viewer-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;

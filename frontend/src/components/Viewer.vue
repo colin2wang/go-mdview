@@ -17,6 +17,7 @@ import { getApi } from '../api'
 import { renderDiagramsIn, renderMathIn } from '../markdown'
 import type { ViewMode } from '../types'
 import AppIcon from './AppIcon.vue'
+import ImageLightbox from './ImageLightbox.vue'
 
 const articleEl = ref<HTMLElement | null>(null)
 const renderScrollEl = ref<HTMLElement | null>(null)
@@ -355,6 +356,35 @@ async function openFileByDialog() {
   }
 }
 
+// ---------- 图片灯箱 ----------
+const lightbox = ref<{ open: boolean; src: string; svg: string }>({ open: false, src: '', svg: '' })
+
+function openLightboxUrl(src: string) {
+  lightbox.value = { open: true, src, svg: '' }
+}
+function openLightboxSvg(svg: string) {
+  lightbox.value = { open: true, src: '', svg }
+}
+function closeLightbox() {
+  lightbox.value.open = false
+}
+
+/** 双击正文图片 / 图形卡片（Mermaid、SVG）→ 全屏灯箱 */
+function onArtDblClick(e: MouseEvent) {
+  const t = e.target as HTMLElement
+  const holder = t.closest('.md-diagram')
+  if (holder) {
+    const svgEl = holder.querySelector('.md-diagram-src svg')
+    if (svgEl) {
+      openLightboxSvg(svgEl.outerHTML)
+      return
+    }
+  }
+  const img = t.closest('img')
+  const src = img?.getAttribute('src')
+  if (src) openLightboxUrl(src)
+}
+
 async function onArtClick(e: MouseEvent) {
   const t = e.target as HTMLElement
   // 图形卡片「源码」：在渲染结果与源码之间切换
@@ -549,8 +579,16 @@ function onKey(e: KeyboardEvent) {
           data-testid="viewer-scroll"
           @scroll="onRenderScroll"
           @contextmenu.prevent="onContext"
+          @dblclick="onArtDblClick"
         >
+          <!-- 图片文件预览 -->
+          <div v-if="store.currentKind === 'image'" class="img-view" data-testid="img-view">
+            <img :src="store.imgUrl" alt="" draggable="false" />
+          </div>
+          <!-- 纯文本文件预览 -->
+          <pre v-else-if="store.currentKind === 'text'" class="plain-text" data-testid="plain-text">{{ sourceText }}</pre>
           <article
+            v-else
             ref="articleEl"
             class="md-article"
             :class="{ 'in-split': isSplit }"
@@ -561,5 +599,13 @@ function onKey(e: KeyboardEvent) {
         </div>
       </section>
     </div>
+
+    <!-- 全屏图片灯箱：双击图片 / Mermaid / SVG 卡片打开，关闭时还原窗口全屏状态 -->
+    <ImageLightbox
+      v-if="lightbox.open"
+      :src="lightbox.src"
+      :svg="lightbox.svg"
+      @close="closeLightbox"
+    />
   </main>
 </template>

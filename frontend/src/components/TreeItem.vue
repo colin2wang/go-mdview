@@ -19,7 +19,7 @@ async function menu(e: MouseEvent, node: MNode) {
   const api = await getApi()
   const fav = store.favorites.some((f) => f.path === node.path)
   const items = [
-    ...(!node.isDir && !supported(node) ? [] : [{ label: '打开', action: () => openEntry(node.path, { keepTree: true }) }]),
+    ...(!node.isDir && !supported(node) ? [] : [{ label: '打开', action: () => openEntry(node.path) }]),
     { label: fav ? '取消收藏' : '收藏', action: () => toggleFavorite(node.path) },
     {
       label: '复制文件路径',
@@ -54,7 +54,7 @@ function supported(node: MNode): boolean {
       class="tree-row file"
       :class="{ current: store.current?.path === node.path, unsupported: !supported(node) }"
       :title="node.path"
-      @click="supported(node) && openEntry(node.path, { keepTree: true })"
+      @click="supported(node) && openEntry(node.path)"
       @contextmenu.prevent="menu($event, node)"
     >
       <svg class="ficon" viewBox="0 0 16 16" width="14" height="14"><path d="M4 1.5h5L12.5 5v9.5h-8.5Z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9 1.5V5h3.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>

@@ -30,7 +30,7 @@ onMounted(() => {
     // 桌面端由 Wails runtime.OnFileDrop 接管（能拿到绝对路径），这里只做浏览器兜底
     if (isDesktop()) return
     const f = (e as DragEvent).dataTransfer?.files?.[0]
-    if (f && /\.(md|markdown|mdown|mkd)$/i.test(f.name)) openEntry((f as any).path ?? '')
+    if (f && /\.(md|markdown|mdown|mkd)$/i.test(f.name)) openEntry((f as any).path ?? '', { reRoot: true })
   })
 })
 

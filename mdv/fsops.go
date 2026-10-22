@@ -152,6 +152,29 @@ var skipDirs = map[string]bool{
 
 var mdExts = map[string]bool{".md": true, ".markdown": true, ".mdown": true, ".mkd": true}
 
+// imgExts 可直接预览的图片扩展名
+var imgExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
+	".svg": true, ".bmp": true, ".avif": true,
+}
+
+// textExts 可按纯文本预览的扩展名（代码/配置/日志等）
+var textExts = map[string]bool{
+	".txt": true, ".log": true, ".csv": true, ".tsv": true,
+	".json": true, ".xml": true, ".yaml": true, ".yml": true,
+	".toml": true, ".ini": true, ".cfg": true, ".conf": true,
+	".html": true, ".htm": true, ".css": true, ".scss": true, ".less": true,
+	".js": true, ".mjs": true, ".ts": true, ".tsx": true, ".jsx": true,
+	".vue": true, ".go": true, ".py": true, ".java": true,
+	".c": true, ".h": true, ".cpp": true, ".hpp": true, ".cs": true, ".rs": true,
+	".rb": true, ".php": true, ".sh": true, ".bat": true, ".ps1": true, ".sql": true,
+}
+
+// previewable 是否可预览：markdown / 图片 / 文本
+func previewable(ext string) bool {
+	return mdExts[ext] || imgExts[ext] || textExts[ext]
+}
+
 // naturalLess 人类直觉排序：数字段按数值比（02 < 10），字母不区分大小写。
 func naturalLess(a, b string) bool {
 	a, b = strings.ToLower(a), strings.ToLower(b)
@@ -246,7 +269,7 @@ func (s *Store) ListTree(root string) ([]Node, error) {
 				}
 				nodes = append(nodes, Node{Name: name, Path: p, IsDir: true, Supported: true, Children: children})
 			} else {
-				nodes = append(nodes, Node{Name: name, Path: p, Supported: mdExts[strings.ToLower(filepath.Ext(name))]})
+				nodes = append(nodes, Node{Name: name, Path: p, Supported: previewable(strings.ToLower(filepath.Ext(name)))})
 			}
 		}
 		sortNodes(nodes)

@@ -3,7 +3,7 @@ import type { Entry, FileContent, MNode, Settings, TocItem, ViewMode } from './t
 import { defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
 import { fileBase, fileToDir } from './demo'
-import { renderMarkdown } from './markdown'
+import { renderMarkdown, resolveImgHref } from './markdown'
 
 export type TabKey = 'toc' | 'history' | 'fav' | 'files'
 
@@ -21,6 +21,8 @@ export const store = reactive({
   tree: [] as MNode[],
   rootName: '',
   current: null as FileContent | null,
+  currentKind: 'markdown' as 'markdown' | 'image' | 'text',
+  imgUrl: '',
   html: '',
   toc: [] as TocItem[],
   activeHeading: '',
@@ -115,16 +117,53 @@ export async function saveSource(md: string): Promise<boolean> {
 
 // ---------- 打开 ----------
 
-export async function openFile(path: string, opts: { pushHistory?: boolean; keepTree?: boolean } = {}) {
+const MD_KIND_EXTS = ['md', 'markdown', 'mdown', 'mkd']
+const IMG_KIND_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif']
+
+/** 按扩展名判断文件类别，决定查看器渲染方式。 */
+export function fileKind(path: string): 'markdown' | 'image' | 'text' {
+  const ext = (path.split('.').pop() ?? '').toLowerCase()
+  if (MD_KIND_EXTS.includes(ext)) return 'markdown'
+  if (IMG_KIND_EXTS.includes(ext)) return 'image'
+  return 'text'
+}
+
+export async function openFile(path: string, opts: { pushHistory?: boolean; reRoot?: boolean } = {}) {
   const api = await getApi()
+  const kind = fileKind(path)
   try {
-    const fc = await api.ReadMarkdown(path)
-    store.current = fc
-    store.demoMode = false
-    await renderCurrent(fc)
-    // keepTree：文件夹树内点击时保持原目录树不变；其他入口（历史/收藏/拖拽等）切到文件所在目录
+    if (kind === 'image') {
+      // 图片：不走文本读取，直接用 /mdimg 回放路由
+      store.current = {
+        path, name: fileBase(path), dir: fileToDir(path),
+        content: '', encoding: '', size: 0, modTime: 0, kind: 'image'
+      }
+      store.currentKind = 'image'
+      store.demoMode = false
+      store.html = ''
+      store.toc = []
+      store.hasMath = false
+      store.hasMermaid = false
+      store.imgUrl = resolveImgHref(path, '')
+    } else {
+      const fc = await api.ReadMarkdown(path)
+      fc.kind = kind === 'markdown' ? 'markdown' : 'text'
+      store.current = fc
+      store.currentKind = fc.kind
+      store.demoMode = false
+      if (fc.kind === 'markdown') {
+        await renderCurrent(fc)
+      } else {
+        // 纯文本：不渲染 Markdown，直接整段展示
+        store.html = ''
+        store.toc = []
+        store.hasMath = false
+        store.hasMermaid = false
+      }
+    }
+    // 默认保持文件夹树停留在记忆的目录；仅关联打开/拖拽入口传 reRoot 切到文件所在目录
     const dir = fileToDir(path)
-    if (!opts.keepTree && dir !== store.rootName) {
+    if (opts.reRoot && dir !== store.rootName) {
       store.rootName = dir
       try {
         store.tree = await api.ListTree(dir)
@@ -205,8 +244,8 @@ export async function openWikiLink(title: string) {
 
 // ---------- 收藏/历史 ----------
 
-/** 面板/右键菜单统一入口：文件不存在时给出提示。keepTree 透传给 openFile。 */
-export async function openEntry(path: string, opts: { pushHistory?: boolean; keepTree?: boolean } = {}) {
+/** 面板/右键菜单统一入口：文件不存在时给出提示。reRoot 透传给 openFile（切换文件夹树根）。 */
+export async function openEntry(path: string, opts: { pushHistory?: boolean; reRoot?: boolean } = {}) {
   if (!path) {
     toast('该文件不提供路径信息（浏览器模式下拖拽受限）', 'error')
     return
@@ -319,7 +358,8 @@ export function copyPath(path: string) {
 // ---------- 初始化 ----------
 
 async function handleOpenEvent(path: string) {
-  await openFile(path)
+  // 关联启动 / 二次启动转发的文件：文件夹树切到文件所在目录
+  await openFile(path, { reRoot: true })
   store.tab = 'toc'
 }
 

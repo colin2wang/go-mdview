@@ -16,6 +16,8 @@ export interface FileContent {
   encoding: string
   size: number
   modTime: number
+  /** 文件类别：markdown 渲染 / image 图片预览 / text 纯文本预览（缺省按 markdown） */
+  kind?: 'markdown' | 'image' | 'text'
 }
 
 export interface Entry {
