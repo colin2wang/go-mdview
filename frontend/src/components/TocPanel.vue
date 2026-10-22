@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
 import { store } from '../store'
 
 const items = computed(() => store.toc)
@@ -7,13 +7,25 @@ const minDepth = computed(() => items.value.reduce((m, x) => Math.min(m, x.depth
 
 function jump(id: string) {
   const el = document.getElementById(id)
-  const scroller = document.querySelector('.viewer-scroll')
+  // 渲染面板专属选择器：.viewer-scroll 会先命中 v-show 隐藏的源码面板，导致目录点击不滚动正文
+  const scroller = document.querySelector('[data-testid="viewer-scroll"]')
   if (el && scroller) {
     // 用相对偏移，配合 scroll-margin-top 留白
     const top = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top
     scroller.scrollTo({ top: scroller.scrollTop + top - 8, behavior: 'smooth' })
   }
 }
+
+// 当前章节高亮变化时，让 TOC 列表把活动项滚入可视区（切文件/长文档翻阅均生效）
+watch(
+  () => store.activeHeading,
+  async () => {
+    await nextTick()
+    document
+      .querySelector('.toc-list .toc-item.active')
+      ?.scrollIntoView({ block: 'nearest' })
+  }
+)
 </script>
 
 <template>

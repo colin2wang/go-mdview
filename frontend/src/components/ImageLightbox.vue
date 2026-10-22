@@ -99,23 +99,30 @@ onBeforeUnmount(() => {
 .lightbox:active {
   cursor: grabbing;
 }
+/* 默认填满窗口：固定盒尺寸 + object-fit contain，小图放大、大图缩小，均保持比例 */
 .lb-img {
-  max-width: 92vw;
-  max-height: 92vh;
+  width: 92vw;
+  height: 92vh;
+  object-fit: contain;
   user-select: none;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 .lb-holder {
-  max-width: 92vw;
-  max-height: 92vh;
+  width: 92vw;
+  height: 92vh;
   padding: 24px;
   background: #fff;
   border-radius: 8px;
   user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .lb-holder :deep(svg) {
-  max-width: 86vw;
-  max-height: 86vh;
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
 }
 .lb-close {
   position: fixed;

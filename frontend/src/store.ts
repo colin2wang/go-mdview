@@ -16,7 +16,7 @@ interface Toast {
 export const store = reactive({
   ready: false,
   desktop: false,
-  tab: 'files' as TabKey,
+  tab: 'toc' as TabKey,
   settings: null as Settings | null,
   tree: [] as MNode[],
   rootName: '',
