@@ -9,7 +9,8 @@ import AppIcon from './AppIcon.vue'
 const modes = computed<{ key: ViewMode; label: string; title: string }[]>(() => [
   { key: 'source', label: t('mode.source'), title: t('mode.source.tip') },
   { key: 'render', label: t('mode.render'), title: t('mode.render.tip') },
-  { key: 'split', label: t('mode.split'), title: t('mode.split.tip') }
+  { key: 'split', label: t('mode.split'), title: t('mode.split.tip') },
+  { key: 'mindmap', label: t('mode.mindmap'), title: t('mode.mindmap.tip') }
 ])
 
 const title = computed(() => {
@@ -55,7 +56,7 @@ function dblMax() {
           :key="m.key"
           class="tb-mode-btn"
           :class="{ on: store.viewMode === m.key }"
-          :disabled="!store.current"
+          :disabled="!store.current || (m.key === 'mindmap' && store.currentKind !== 'markdown')"
           :title="m.title"
           :data-testid="'btn-mode-' + m.key"
           @click="setViewMode(m.key)"

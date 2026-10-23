@@ -12,7 +12,8 @@ const st = computed(() => store.settings)
 const viewModes = computed<{ key: ViewMode; label: string }[]>(() => [
   { key: 'render', label: t('mode.render') },
   { key: 'source', label: t('mode.source') },
-  { key: 'split', label: t('mode.split') }
+  { key: 'split', label: t('mode.split') },
+  { key: 'mindmap', label: t('mode.mindmap') }
 ])
 
 function close() {

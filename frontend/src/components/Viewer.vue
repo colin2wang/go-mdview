@@ -19,6 +19,7 @@ import { t } from '../i18n'
 import type { ViewMode } from '../types'
 import AppIcon from './AppIcon.vue'
 import ImageLightbox from './ImageLightbox.vue'
+import MindMap from './MindMap.vue'
 
 const articleEl = ref<HTMLElement | null>(null)
 const renderScrollEl = ref<HTMLElement | null>(null)
@@ -28,9 +29,14 @@ const editEl = ref<HTMLTextAreaElement | null>(null)
 const gutterEl = ref<HTMLElement | null>(null)
 
 const mode = computed<ViewMode>(() => store.viewMode)
-const showRender = computed(() => mode.value !== 'source')
-const showSource = computed(() => mode.value !== 'render')
 const isSplit = computed(() => mode.value === 'split')
+// 思维导图是渲染面板的独占视图（不叠加源码），故 showSource 不含 mindmap；
+// 仅在 markdown 文件上展示，打开图片/纯文本时回退到常规预览
+const showSource = computed(() => mode.value === 'source' || mode.value === 'split')
+const showRender = computed(() => mode.value !== 'source')
+const isMindmap = computed(
+  () => mode.value === 'mindmap' && store.currentKind === 'markdown'
+)
 
 // ---------- 源码面板 ----------
 // 只读态与编辑态共用同一套渲染格式（行号槽 + 等宽正文），切换时视觉一致
@@ -710,14 +716,21 @@ function onKey(e: KeyboardEvent) {
         <div
           ref="renderScrollEl"
           class="viewer-scroll"
-          :class="{ __code_wrapped: store.settings?.codeWrap }"
+          :class="{ __code_wrapped: store.settings?.codeWrap, 'mm-host': isMindmap }"
           data-testid="viewer-scroll"
           @scroll="onRenderScroll"
           @contextmenu.prevent="onContext"
           @dblclick="onArtDblClick"
         >
+          <!-- 思维导图独占视图：标题栏/设置页切到「导图」时显示 -->
+          <MindMap
+            v-if="isMindmap"
+            :markdown="sourceText"
+            :name="store.current?.name ?? ''"
+            :dark="store.settings?.theme === 'dark'"
+          />
           <!-- 图片文件预览 -->
-          <div v-if="store.currentKind === 'image'" class="img-view" data-testid="img-view">
+          <div v-else-if="store.currentKind === 'image'" class="img-view" data-testid="img-view">
             <img :src="store.imgUrl" alt="" draggable="false" />
           </div>
           <!-- 纯文本文件预览 -->

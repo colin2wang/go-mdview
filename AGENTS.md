@@ -14,7 +14,8 @@
 - `main.go`：wails.Run 入口（保持 package main 在仓库根，wails/embed 要求），frameless 窗口、单实例锁（二次启动把 .md 路径转给已有窗口）、`//go:embed all:frontend/dist`（**go build 前必须先构建前端，否则 embed 失败**）、asset handler 挂载本地图片路由 `/mdimg/{hexpath}`；启动时按 `Settings` 的 `winW/winH` 决定初始尺寸，位置与最大化由 `app.Startup` 恢复，`app.BeforeClose` 负责落盘。
 - `internal/app/`：暴露给前端的全部绑定方法（App.*），多为对 `mdv` 包的薄封装；`RestartApp`（设置页「重启」）清空窗口几何并把侧栏宽度复位后带 `--mdview-relaunch` 拉起新进程，main 见到该标记先等待旧进程释放单实例锁。
 - `internal/mdv/`：核心业务包——文件读取/编码探测（UTF-8/GB18030）、设置/历史/收藏持久化（存 `%AppData%\mdview\`，含窗口几何 winX/winY/winW/winH/winMax）、导出 HTML、图片服务、文件关联。平台差异用构建标签隔离（`assoc_windows.go` / `assoc_other.go`）。
-- `frontend/src/`：Vue 3 SPA。`store.ts`（状态）、`api.ts`（调用 App 绑定）、`components/Viewer.vue`（渲染主区）。
+- `frontend/src/`：Vue 3 SPA。`store.ts`（状态）、`api.ts`（调用 App 绑定）、`components/Viewer.vue`（渲染主区）、`mindmap.ts`（Markdown→思维导图零依赖核心：解析/布局/SVG 渲染/交互）、`components/MindMap.vue`（导图视图容器，挂载 `mindmap.ts` 并提供工具条）。
+- 思维导图：作为第四种 `ViewMode`（`'mindmap'`，见 `types.ts`），由标题栏模式按钮与设置页「默认视图」切换；导图是渲染面板的独占视图（`Viewer.vue` 的 `isMindmap`，不叠加源码）。解析规则：`#`=根节点、`##`=左右平衡的一级分支、`###`/`####`=子节点、`>` 引用块=节点备注；无 `#` 时把唯一顶层节点提升为根。工具条支持适应/缩放/备注开关/收起(到二级)/展开/导出 SVG/导出 PNG/复制 SVG；主题切换（`store.settings.theme`）经 `MindMap.setDark` 重绘（`mindmap.ts` 按深浅主题取节点文字与淡色底配色）。导出走后端 `SaveSvgDialog`（SVG 文本）与 `SaveImageDialog`（前端光栅化后的 PNG data URL）。
 
 ## 注意事项
 

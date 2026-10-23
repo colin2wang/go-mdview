@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -285,4 +287,69 @@ func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {
 		return "", nil // 用户取消
 	}
 	return mdv.ExportHtml(title, html, target)
+}
+
+// SaveSvgDialog 导出思维导图 SVG：弹保存框拿路径后直接落盘（内容已是完整 SVG 文档）。
+func (a *App) SaveSvgDialog(title, content, defaultName string) (string, error) {
+	if defaultName == "" {
+		defaultName = "mindmap.svg"
+	}
+	if filepath.Ext(defaultName) == "" {
+		defaultName += ".svg"
+	}
+	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
+		Title:           "导出 SVG",
+		DefaultFilename: defaultName,
+		Filters: []wruntime.FileFilter{
+			{DisplayName: "SVG (*.svg)", Pattern: "*.svg"},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if target == "" {
+		return "", nil // 用户取消
+	}
+	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+// SaveImageDialog 导出 PNG：前端把 SVG 光栅化为 data URL 后传回，解码并落盘。
+func (a *App) SaveImageDialog(defaultName string, dataURL string) (string, error) {
+	if defaultName == "" {
+		defaultName = "mindmap.png"
+	}
+	if filepath.Ext(defaultName) == "" {
+		defaultName += ".png"
+	}
+	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
+		Title:           "导出 PNG",
+		DefaultFilename: defaultName,
+		Filters: []wruntime.FileFilter{
+			{DisplayName: "PNG (*.png)", Pattern: "*.png"},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if target == "" {
+		return "", nil // 用户取消
+	}
+	comma := strings.Index(dataURL, ",")
+	if comma < 0 {
+		return "", fmt.Errorf("invalid data url")
+	}
+	if !strings.Contains(dataURL[:comma], "base64") {
+		return "", fmt.Errorf("unsupported data url encoding")
+	}
+	raw, err := base64.StdEncoding.DecodeString(dataURL[comma+1:])
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(target, raw, 0o644); err != nil {
+		return "", err
+	}
+	return target, nil
 }

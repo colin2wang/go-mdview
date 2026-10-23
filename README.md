@@ -35,11 +35,12 @@ The whole window at a glance — custom draggable title bar up top, the four tab
 
 ### Title bar buttons
 
-Three view modes — `Source` · `Render` · `Split` (grayed out when no file is open) — then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top` · `─ Minimize` · `□ Maximize` · `✕ Close` (double-click the title bar = maximize/restore).
+Four view modes — `Source` · `Render` · `Split` · `Mind Map` (grayed out when no file is open; Mind Map only applies to Markdown files) — then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top` · `─ Minimize` · `□ Maximize` · `✕ Close` (double-click the title bar = maximize/restore).
 
 - **Render**: the rendered result only (default)
 - **Source**: the raw Markdown text only — header shows path, line count / encoding / size, with one-click copy-all; line numbers can be toggled in Settings
 - **Split**: source on the left, rendered result on the right, with a draggable divider (double-click it to split evenly); a **Sync scroll** toggle keeps both panes aligned
+- **Mind Map**: the whole document as an XMind-style mind map — see below
 
 **Live editing (Split view)**: click **Edit** to rewrite the Markdown on the left and watch the right pane update instantly. Changes stay preview-only until you click **Save**, which writes them back to the original file (GB18030 notes are saved in their original encoding via an atomic replace). Switching files while unsaved edits exist warns that they'll be discarded. Scroll positions are remembered separately for each pane and survive switching.
 
@@ -62,6 +63,12 @@ Three view modes — `Source` · `Render` · `Split` (grayed out when no file is
 
 ![Settings dialog](docs/images/settings.png)
 
+**Mind Map** — headings (`#`–`######` levels) become nodes, `>` quotes become node notes; top-level branches are balanced left/right with organic curves. Below: the same document in Split view, then as a mind map:
+
+![Split view of a document that maps cleanly to a mind map](docs/images/mindmap-source.png)
+
+![Mind Map view: balanced tree with collapsible nodes and an export toolbar](docs/images/mindmap-view.png)
+
 ## 3. Rendering Capabilities
 
 - Full GFM: tables (rounded borders), strikethrough, task lists (checkable style), autolinks
@@ -72,6 +79,7 @@ Three view modes — `Source` · `Render` · `Split` (grayed out when no file is
 - SVG graphics: ```svg (or xml/html blocks whose content is an `<svg>`) render directly as a graphic card
 - Every diagram/graphic card has a **Source** button to toggle between the graphic and its raw code, plus a copy button
 - Footnotes `[^1]`, `==highlight==`, `[[wiki links]]` (wiki links resolve by title within the current directory and navigate automatically)
+- **Mind Map**: one click on the title bar turns the whole document into an XMind-style mind map — heading levels become nodes, `>` quotes become node notes, top-level branches are balanced left/right; wheel to zoom, drag to pan, click a node to collapse/expand; the toolbar offers fit / zoom / notes toggle / collapse / expand-all / export SVG / export PNG / copy SVG (zero extra dependencies, rendered offline)
 - Local images: PNG/JPG/SVG/GIF/WebP in the md file's directory and subdirectories display directly (built-in replay route — files never leave your machine)
 - Standalone preview: opening an image file shows it in a lightbox; opening a plain-text file shows it as-is
 - Global light/dark theme toggle (code highlight theme follows), font size 12–28px, code block word-wrap toggle — all auto-saved

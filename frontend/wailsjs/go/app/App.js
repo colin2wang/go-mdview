@@ -74,12 +74,20 @@ export function SaveHtmlDialog(arg1, arg2, arg3) {
   return window['go']['app']['App']['SaveHtmlDialog'](arg1, arg2, arg3);
 }
 
+export function SaveImageDialog(arg1, arg2) {
+  return window['go']['app']['App']['SaveImageDialog'](arg1, arg2);
+}
+
 export function SaveMarkdown(arg1, arg2, arg3) {
   return window['go']['app']['App']['SaveMarkdown'](arg1, arg2, arg3);
 }
 
 export function SaveSettings(arg1) {
   return window['go']['app']['App']['SaveSettings'](arg1);
+}
+
+export function SaveSvgDialog(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SaveSvgDialog'](arg1, arg2, arg3);
 }
 
 export function SetStartupFile(arg1) {

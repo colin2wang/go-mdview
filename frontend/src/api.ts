@@ -30,6 +30,8 @@ export interface Api {
   SetWindowTitle(title: string): Promise<void>
   RevealInShell(path: string): Promise<void>
   SaveHtmlDialog(title: string, html: string, defaultName: string): Promise<string>
+  SaveSvgDialog(title: string, content: string, defaultName: string): Promise<string>
+  SaveImageDialog(defaultName: string, dataURL: string): Promise<string>
   CopyText(text: string): Promise<void>
   GetAssocState(): Promise<AssocState>
   AssociateMd(): Promise<void>
@@ -71,6 +73,8 @@ function desktopApi(): Api {
     SetWindowTitle: (t) => a.SetWindowTitle(t),
     RevealInShell: (p) => a.RevealInShell(p),
     SaveHtmlDialog: (t, h, d) => a.SaveHtmlDialog(t, h, d),
+    SaveSvgDialog: (t, c, d) => a.SaveSvgDialog(t, c, d),
+    SaveImageDialog: (d, u) => a.SaveImageDialog(d, u),
     CopyText: (t) => a.CopyText(t),
     GetAssocState: () => a.GetAssocState(),
     AssociateMd: () => a.AssociateMd(),

@@ -28,8 +28,8 @@ export interface Entry {
   openedAt: number
 }
 
-/** 正文显示模式：仅渲染 / 仅源码 / 左右对照。 */
-export type ViewMode = 'render' | 'source' | 'split'
+/** 正文显示模式：仅渲染 / 仅源码 / 左右对照 / 思维导图。 */
+export type ViewMode = 'render' | 'source' | 'split' | 'mindmap'
 
 export interface Settings {
   theme: string // light | dark

@@ -40,7 +40,7 @@ export const store = reactive({
 
 /** 非法/缺失的 viewMode 回落到 render。 */
 function normalizeViewMode(v: unknown): ViewMode {
-  return v === 'source' || v === 'split' ? v : 'render'
+  return v === 'source' || v === 'split' || v === 'mindmap' ? v : 'render'
 }
 
 let toastSeq = 0

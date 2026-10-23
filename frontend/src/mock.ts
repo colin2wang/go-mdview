@@ -125,6 +125,8 @@ export const mockApi: Api = {
   },
   RevealInShell: async () => undefined,
   SaveHtmlDialog: async (_t, _h, name) => `mock://${name}`,
+  SaveSvgDialog: async (_t, _c, name) => `mock://${name}`,
+  SaveImageDialog: async (name) => `mock://${name}`,
   CopyText: async (t) => {
     try {
       await navigator.clipboard.writeText(t)
