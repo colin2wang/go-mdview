@@ -113,6 +113,11 @@ export namespace mdv {
 	    pinned: boolean;
 	    viewMode: string;
 	    language: string;
+	    winW: number;
+	    winH: number;
+	    winX: number;
+	    winY: number;
+	    winMax: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -130,6 +135,11 @@ export namespace mdv {
 	        this.pinned = source["pinned"];
 	        this.viewMode = source["viewMode"];
 	        this.language = source["language"];
+	        this.winW = source["winW"];
+	        this.winH = source["winH"];
+	        this.winX = source["winX"];
+	        this.winY = source["winY"];
+	        this.winMax = source["winMax"];
 	    }
 	}
 

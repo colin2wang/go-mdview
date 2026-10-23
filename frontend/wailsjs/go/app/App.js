@@ -62,6 +62,10 @@ export function ReadMarkdown(arg1) {
   return window['go']['app']['App']['ReadMarkdown'](arg1);
 }
 
+export function RestartApp() {
+  return window['go']['app']['App']['RestartApp']();
+}
+
 export function RevealInShell(arg1) {
   return window['go']['app']['App']['RevealInShell'](arg1);
 }

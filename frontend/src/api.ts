@@ -25,6 +25,7 @@ export interface Api {
   WindowMin(): Promise<void>
   WindowMaxToggle(): Promise<void>
   WindowClose(): Promise<void>
+  RestartApp(): Promise<void>
   WindowFullscreenToggle(): Promise<void>
   SetWindowTitle(title: string): Promise<void>
   RevealInShell(path: string): Promise<void>
@@ -65,6 +66,7 @@ function desktopApi(): Api {
     WindowMin: () => a.WindowMin(),
     WindowMaxToggle: () => a.WindowMaxToggle(),
     WindowClose: () => a.WindowClose(),
+    RestartApp: () => a.RestartApp(),
     WindowFullscreenToggle: () => a.WindowFullscreenToggle(),
     SetWindowTitle: (t) => a.SetWindowTitle(t),
     RevealInShell: (p) => a.RevealInShell(p),

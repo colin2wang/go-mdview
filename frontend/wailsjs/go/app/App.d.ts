@@ -32,6 +32,8 @@ export function PushHistory(arg1:string):Promise<Array<mdv.Entry>>;
 
 export function ReadMarkdown(arg1:string):Promise<mdv.FileContent>;
 
+export function RestartApp():Promise<void>;
+
 export function RevealInShell(arg1:string):Promise<void>;
 
 export function SaveHtmlDialog(arg1:string,arg2:string,arg3:string):Promise<string>;

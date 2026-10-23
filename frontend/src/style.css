@@ -765,67 +765,117 @@ button {
 .pane-grow {
   flex: 1;
 }
-.pane-live {
+/* 预览面板右侧状态徽标：随编辑态显示「编辑模式 / 阅读模式」 */
+.pane-mode {
   flex: none;
   font-size: 11px;
-  color: #1a7f37;
+  line-height: 17px;
+  padding: 0 7px;
+  border-radius: 5px;
+  color: var(--md-bq-text);
+  background: color-mix(in srgb, var(--md-bq-text) 10%, transparent);
 }
-[data-theme='dark'] .pane-live {
-  color: #3fb950;
+.pane-mode.is-edit {
+  color: var(--md-link);
+  background: color-mix(in srgb, var(--md-link) 12%, transparent);
 }
 
-/* 源码区布局：编辑态 textarea 与只读态正文共用（行号槽 + 正文） */
+/* 源码区布局：行号槽 + 内容层（只读高亮 / 编辑覆盖层共用同一位置与排版）
+   底色：只读态与左侧标签栏同为 --md-surface，只有编辑态才切成白底 */
 .src-edit-wrap {
   flex: 1;
   min-height: 0;
   display: flex;
   align-items: stretch;
   overflow: hidden;
+  background: var(--md-surface);
 }
-/* 行号槽：编辑态与只读态共用，底部留白与源码正文一致 */
+.src-edit-wrap.is-editing {
+  background: var(--md-bg);
+}
+/* 行号槽：编辑态与只读态共用，底部留白与源码正文一致。
+   与正文同底、不画分隔线，行号弱化为背景提示（参考截图观感） */
 .src-gutter {
   flex: none;
-  min-width: 3.6em;
+  min-width: 3.4em;
   margin: 0;
   overflow: hidden;
-  padding: 14px 8px 60vh 0;
-  background: var(--md-surface-2);
-  border-right: 1px solid var(--md-pre-border);
-  color: color-mix(in srgb, var(--md-bq-text) 55%, transparent);
+  padding: 18px 10px 60vh 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--md-bq-text) 42%, transparent);
   font-family: var(--md-code-font);
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.85;
   text-align: right;
   white-space: pre;
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
-.src-edit {
+/* 内容层：高亮层负责视觉与滚动，编辑态另叠一个透明 textarea 接管输入 */
+.src-editor {
+  position: relative;
   flex: 1;
-  min-height: 0;
   min-width: 0;
-  width: auto;
-  resize: none;
+  min-height: 0;
+  display: flex;
+}
+.src-scroll {
+  flex: 1;
+  min-width: 0;
+  /* 底色统一由 .src-edit-wrap 提供，这里保持透明以便两种状态共用同一覆盖层 */
+  background: transparent;
+}
+.src-scroll.is-editing {
+  pointer-events: none;
+}
+/* 编辑态底部不留只读模式的 60vh 阅读留白，与 textarea 的滚动高度保持一致 */
+.src-scroll.is-editing .source-body {
+  padding-bottom: 0;
+}
+/* 编辑层：文字透明覆盖在高亮层上，只保留光标；滚动条留出与高亮层相同的 8px 槽位 */
+.src-edit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
   border: 0;
   outline: none;
-  margin: 0;
-  padding: 14px 16px;
-  background: var(--md-bg);
-  box-shadow: inset 2px 0 0 var(--md-link);
-  color: var(--md-text);
-  font-family: var(--md-code-font);
-  font-size: 13px;
-  line-height: 1.65;
-  white-space: pre;
+  resize: none;
+  padding: 18px 18px 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--md-text);
   overflow: auto;
   user-select: text;
-  tab-size: 2;
   scrollbar-width: thin;
-  scrollbar-color: var(--md-scrollbar-thumb) transparent;
+  scrollbar-color: transparent transparent;
+}
+.src-edit::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.src-edit::-webkit-scrollbar-thumb,
+.src-edit::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.src-edit::placeholder {
+  color: color-mix(in srgb, var(--md-bq-text) 70%, transparent);
+}
+.src-edit::selection {
+  background: color-mix(in srgb, var(--md-link) 28%, transparent);
 }
 .src-edit.__code_wrapped {
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* 输入法组合中：候选字还只在 textarea 里，高亮层暂时让位，避免“看不见正在输入的字” */
+.src-editor.is-composing .src-scroll {
+  visibility: hidden;
+}
+.src-editor.is-composing .src-edit {
+  color: var(--md-text);
 }
 
 /* 中缝拖拽条 */
@@ -911,20 +961,21 @@ button {
   background: var(--md-surface-2);
 }
 
-.src-scroll {
-  min-width: 0;
-  background: var(--md-surface);
-}
-.source-body {
+/* 高亮层与编辑层共用同一排版：字体/字号/行高/换行逐项一致，
+   透明 textarea 的光标才能与底层高亮逐字符重合 */
+.source-body,
+.src-edit {
   margin: 0;
-  padding: 14px 16px 60vh;
   font-family: var(--md-code-font);
   font-size: 13px;
-  line-height: 1.65;
-  color: var(--md-text);
+  line-height: 1.85;
   white-space: pre;
-  user-select: text;
   tab-size: 2;
+}
+.source-body {
+  padding: 18px 18px 60vh;
+  color: var(--md-text);
+  user-select: text;
 }
 /* 只读源码与编辑态 textarea 同排版：等宽、同行高，行号统一放独立行号槽 */
 .src-lines {
@@ -934,14 +985,33 @@ button {
   white-space: normal;
 }
 .src-line {
-  min-height: 1.65em;
+  min-height: 1.85em;
   white-space: pre;
+}
+/* 轻量语法高亮：Markdown 标记淡出，内容加权重 */
+.src-mark {
+  color: color-mix(in srgb, var(--md-bq-text) 52%, transparent);
+}
+.src-h {
+  color: var(--md-heading);
+  font-weight: 600;
+}
+.src-code {
+  /* 横向 padding 会改变行内前进宽度，让透明 textarea 的光标与底层高亮错位，
+     因此只保留纵向 padding（不参与行内排版），靠背景色本身形成代码块观感 */
+  padding: 1px 0;
+  border-radius: 4px;
+  background: var(--md-code-bg);
+  color: var(--md-text);
+  font-family: inherit;
+  font-size: inherit;
 }
 .viewer-scroll.__code_wrapped .src-lines {
   width: auto;
   min-width: 0;
 }
-.viewer-scroll.__code_wrapped .src-line {
+.viewer-scroll.__code_wrapped .src-line,
+.viewer-scroll.__code_wrapped .source-body {
   white-space: pre-wrap;
   word-break: break-word;
 }

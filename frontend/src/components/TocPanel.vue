@@ -27,9 +27,15 @@ const tree = computed<TocEntry[]>(() => {
 
 const RENDER_SEL = '[data-testid="viewer-scroll"]'
 const SRC_SEL = '[data-testid="src-scroll"]'
+const SRC_EDIT_SEL = '[data-testid="src-textarea"]'
 
 function scroller(sel: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(sel)
+}
+
+/** 源码侧滚动容器：编辑中是叠在高亮层上的 textarea（真正的滚动源），否则是高亮层本身。 */
+function srcScroller(): HTMLElement | null {
+  return scroller(SRC_EDIT_SEL) ?? scroller(SRC_SEL)
 }
 
 /** 把元素滚到面板视口顶部（带 scroll-margin 留白）。 */
@@ -53,7 +59,7 @@ function srcHeadingEls(): HTMLElement[] {
 
 /** 源码行未渲染（超大文件）时的兜底：按目录序号等比定位。 */
 function proportionalSrcJump(ordinal: number) {
-  const sc = scroller(SRC_SEL)
+  const sc = srcScroller()
   if (!sc) return
   const n = items.value.length
   if (n < 2) return
@@ -71,7 +77,7 @@ function jump(id: string) {
 
   // 源码模式：渲染面板隐藏，跳源码面板对应标题行
   if (mode === 'source') {
-    if (lineEl) scrollHeadingInto(scroller(SRC_SEL), lineEl)
+    if (lineEl) scrollHeadingInto(srcScroller(), lineEl)
     else proportionalSrcJump(ordinal)
     return
   }
@@ -79,16 +85,20 @@ function jump(id: string) {
   const el = document.getElementById(id)
   scrollHeadingInto(scroller(RENDER_SEL), el)
   if (mode === 'split') {
-    if (lineEl) scrollHeadingInstant(scroller(SRC_SEL), lineEl)
+    if (lineEl) scrollHeadingInstant(srcScroller(), lineEl)
     else proportionalSrcJump(ordinal)
   }
 }
 
 function toEdge(top: boolean) {
   const mode = store.viewMode
-  const sels = mode === 'source' ? [SRC_SEL] : mode === 'split' ? [RENDER_SEL, SRC_SEL] : [RENDER_SEL]
-  for (const sel of sels) {
-    const sc = scroller(sel)
+  const els =
+    mode === 'source'
+      ? [srcScroller()]
+      : mode === 'split'
+        ? [scroller(RENDER_SEL), srcScroller()]
+        : [scroller(RENDER_SEL)]
+  for (const sc of els) {
     sc?.scrollTo({ top: top ? 0 : sc.scrollHeight, behavior: 'smooth' })
   }
 }

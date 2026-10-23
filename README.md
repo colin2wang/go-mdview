@@ -119,12 +119,12 @@ go-mdview/
 
 ```powershell
 # Requires: Go 1.25+, Node 18+, pnpm, (recommended) wails CLI v2
-.\build.ps1            # Incremental build (icons → frontend → exe)
+.\build.ps1            # Incremental build (icons if missing → frontend → exe)
 .\build.ps1 -Clean     # Clean build
 .\build.ps1 -Package   # Build + zip
 ```
 
-The script runs `generate-icon.ps1`, then `pnpm install && pnpm run build` in `frontend/` (vue-tsc type check + vite build), then `wails build` (falling back to `go build -tags "desktop,production"` if the wails CLI is missing). Output: `build\bin\mdview.exe`.
+The script checks the icon assets (`build/appicon.png`, `build/windows/icon.ico`, `build/mdview.markdown.png`) and runs `generate-icon.ps1` only when any of them is missing (otherwise it skips with a message), then runs `pnpm install && pnpm run build` in `frontend/` (vue-tsc type check + vite build), then `wails build` (falling back to `go build -tags "desktop,production"` if the wails CLI is missing). Output: `build\bin\mdview.exe`.
 
 Run Go tests: `go test ./internal/mdv/`.
 

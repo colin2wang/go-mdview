@@ -17,7 +17,13 @@ const state = {
     lastFolder: 'C:\\Users\\wangb\\OneDrive\\Obsidian\\迷你狐的知识库\\01-计算机技术\\编程语言\\Java',
     lastFile: '',
     pinned: false,
-    viewMode: 'render'
+    viewMode: 'render',
+    language: 'zh-CN',
+    winW: 0,
+    winH: 0,
+    winX: 0,
+    winY: 0,
+    winMax: false
   } as Settings,
   history: [] as Entry[],
   favorites: [] as Entry[],
@@ -112,6 +118,7 @@ export const mockApi: Api = {
   WindowMin: async () => undefined,
   WindowMaxToggle: async () => undefined,
   WindowClose: async () => undefined,
+  RestartApp: async () => undefined,
   WindowFullscreenToggle: async () => undefined,
   SetWindowTitle: async () => {
     document.title = String(document.title) // no-op，保持可断言

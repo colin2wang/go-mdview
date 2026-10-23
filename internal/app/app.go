@@ -7,16 +7,32 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"mdview/internal/mdv"
 )
 
+// RelaunchFlag 「重启」拉起新进程时附加的标记：main 见到它先等旧进程退出，
+// 否则新进程会撞上单实例锁，被当成二次启动转交后直接退出。
+const RelaunchFlag = "--mdview-relaunch"
+
+// IsRelaunch 判断本进程是否由设置页「重启」拉起。
+func IsRelaunch(args []string) bool {
+	for _, arg := range args {
+		if arg == RelaunchFlag {
+			return true
+		}
+	}
+	return false
+}
+
 // App Wails 绑定层：前端可调用的全部方法挂在这里。
 type App struct {
-	ctx   context.Context
-	store *mdv.Store
+	ctx        context.Context
+	store      *mdv.Store
+	restarting atomic.Bool // 重启中：关闭前不能再把当前几何写回设置
 }
 
 func NewApp() *App { return &App{store: mdv.NewStore()} }
@@ -24,9 +40,58 @@ func NewApp() *App { return &App{store: mdv.NewStore()} }
 // Startup Wails 生命周期回调。
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	// 还原上次关闭时的窗口几何：尺寸已由 wails.Run 的 Width/Height 初始化，
+	// 这里补位置；最大化放在最后，退出最大化时能回到记录的普通尺寸
+	if st := a.store.GetSettings(); st.WinW > 0 && st.WinH > 0 {
+		a.restoreWindowPosition(ctx, st.WinX, st.WinY)
+		if st.WinMax {
+			wruntime.WindowMaximise(ctx)
+		}
+	}
 	// 拖拽 .md 打开由前端 JS runtime.OnFileDrop 处理（store.ts initApp）：
 	// Windows 上 Go 端 OnFileDrop 必须依赖 JS 端监听才会触发（Wails v2 #3985），
 	// 为避免同一次 drop 双路触发，这里不再重复注册。
+}
+
+// restoreWindowPosition 把窗口放到屏幕绝对坐标 (x, y)。
+// Wails 在 Windows 上的 WindowSetPosition 以「窗口当前显示器工作区左上角」为原点，
+// 而 WindowGetPosition 返回屏幕绝对坐标：先把窗口挪到相对 (0,0) 量出工作区原点，
+// 再用相对坐标一次定位。任务栏在左侧/顶部时工作区原点不为 0，不换算会每次启动漂移；
+// 先落到原点也保证换算基准与目标在同一块屏幕上，多显示器同时用不同 DPI 时同样成立。
+func (a *App) restoreWindowPosition(ctx context.Context, x, y int) {
+	wruntime.WindowSetPosition(ctx, 0, 0)
+	ox, oy := wruntime.WindowGetPosition(ctx)
+	wruntime.WindowSetPosition(ctx, x-ox, y-oy)
+}
+
+// BeforeClose 窗口关闭前记录几何，供下次启动还原（返回 false 不阻断关闭）。
+func (a *App) BeforeClose(ctx context.Context) bool {
+	a.saveWindowState(ctx)
+	return false
+}
+
+// saveWindowState 只记录可还原的普通窗口几何：
+// 最大化时保留上次普通尺寸只置标记，最小化/全屏时坐标不可靠则原样保留。
+func (a *App) saveWindowState(ctx context.Context) {
+	if a.restarting.Load() { // 重启已主动清空几何，不能再写回去
+		return
+	}
+	st := a.store.GetSettings()
+	switch {
+	case wruntime.WindowIsFullscreen(ctx), wruntime.WindowIsMinimised(ctx):
+		return
+	case wruntime.WindowIsMaximised(ctx):
+		st.WinMax = true
+		a.store.SaveSettings(st)
+		return
+	}
+	x, y := wruntime.WindowGetPosition(ctx)
+	w, h := wruntime.WindowGetSize(ctx)
+	if w < mdv.MinWindowWidth || h < mdv.MinWindowHeight || x < -30000 || y < -30000 {
+		return // 异常几何（窗口正在销毁/刚创建）不覆盖
+	}
+	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = x, y, w, h, false
+	a.store.SaveSettings(st)
 }
 
 // startupFile "发送到"/双击打开传入的命令行 md 路径。
@@ -126,6 +191,40 @@ func (a *App) WindowPin(pin bool) { wruntime.WindowSetAlwaysOnTop(a.ctx, pin) }
 func (a *App) WindowMin()       { wruntime.WindowMinimise(a.ctx) }
 func (a *App) WindowMaxToggle() { wruntime.WindowToggleMaximise(a.ctx) }
 func (a *App) WindowClose()     { wruntime.Quit(a.ctx) }
+
+// RestartApp 清除记住的窗口几何与侧栏宽度并重启进程（设置页「重启」）。
+func (a *App) RestartApp() error {
+	if a.restarting.Swap(true) { // 防重复点击拉起多个实例
+		return nil
+	}
+	st := a.store.GetSettings()
+	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = 0, 0, 0, 0, false
+	st.SidebarWidth = mdv.DefaultSidebarWidth
+	a.store.SaveSettings(st)
+	if err := a.launchSelf(); err != nil {
+		a.restarting.Store(false) // 拉不起来就留在当前窗口，前端会提示错误
+		return err
+	}
+	wruntime.Quit(a.ctx)
+	return nil
+}
+
+// launchSelf 拉起新进程。新进程带 RelaunchFlag，由 main 等旧进程释放单实例锁后再启动。
+func (a *App) launchSelf() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	args := []string{RelaunchFlag}
+	for _, arg := range os.Args[1:] {
+		if arg != RelaunchFlag { // 连续重启时不要把标记越叠越多
+			args = append(args, arg)
+		}
+	}
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = filepath.Dir(exe)
+	return cmd.Start()
+}
 
 // WindowFullscreenToggle 全屏/退出全屏切换（标题栏 ⛶ 按钮）。
 func (a *App) WindowFullscreenToggle() {

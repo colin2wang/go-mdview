@@ -57,6 +57,17 @@ function setLangEvt(v: string) {
   patchSettings({ language: v })
 }
 
+// ---------- 重启 ----------
+// Go 端先清空记住的窗口几何与侧栏宽度，再拉起新进程退出自己（新进程会恢复默认大小、位置与侧栏宽度）
+async function restartApp() {
+  try {
+    const api = await getApi()
+    await api.RestartApp()
+  } catch (e) {
+    toast(t('toast.opFailed', { e: String(e) }), 'error')
+  }
+}
+
 // ---------- 文件关联 ----------
 const assoc = ref<AssocState>({ ...defaultAssocState })
 const assocBusy = ref(false)
@@ -216,6 +227,17 @@ const assocTip = computed(() => {
                 @change="setPinned"
               />
             </div>
+          </section>
+
+          <section class="set-block">
+            <h4 class="set-block-title">{{ t('set.window') }}</h4>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.windowGeom') }}</span>
+              <button class="set-btn" data-testid="restart-btn" @click="restartApp">
+                {{ t('set.restart') }}
+              </button>
+            </div>
+            <p class="set-hint">{{ t('set.restartHint') }}</p>
           </section>
 
           <section class="set-block">
