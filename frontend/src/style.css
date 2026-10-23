@@ -780,8 +780,8 @@ button {
   background: color-mix(in srgb, var(--md-link) 12%, transparent);
 }
 
-/* 源码区布局：行号槽 + 内容层（只读高亮 / 编辑覆盖层共用同一位置与排版）
-   底色：只读态与左侧标签栏同为 --md-surface，只有编辑态才切成白底 */
+/* 源码区：整块交给 CodeMirror（语法高亮 / 行号 / 光标同层），
+   只读态与编辑态共用同一实例，只切 readOnly */
 .src-edit-wrap {
   flex: 1;
   min-height: 0;
@@ -793,89 +793,130 @@ button {
 .src-edit-wrap.is-editing {
   background: var(--md-bg);
 }
-/* 行号槽：编辑态与只读态共用，底部留白与源码正文一致。
-   与正文同底、不画分隔线，行号弱化为背景提示（参考截图观感） */
-.src-gutter {
-  flex: none;
-  min-width: 3.4em;
-  margin: 0;
-  overflow: hidden;
-  padding: 18px 10px 60vh 0;
-  background: transparent;
-  color: color-mix(in srgb, var(--md-bq-text) 42%, transparent);
-  font-family: var(--md-code-font);
-  font-size: 13px;
-  line-height: 1.85;
-  text-align: right;
-  white-space: pre;
-  font-variant-numeric: tabular-nums;
-  user-select: none;
-}
-/* 内容层：高亮层负责视觉与滚动，编辑态另叠一个透明 textarea 接管输入 */
-.src-editor {
-  position: relative;
+.src-cm {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
+  overflow: hidden;
 }
-.src-scroll {
+.src-cm .CodeMirror {
   flex: 1;
-  min-width: 0;
-  /* 底色统一由 .src-edit-wrap 提供，这里保持透明以便两种状态共用同一覆盖层 */
-  background: transparent;
-}
-.src-scroll.is-editing {
-  pointer-events: none;
-}
-/* 编辑态底部不留只读模式的 60vh 阅读留白，与 textarea 的滚动高度保持一致 */
-.src-scroll.is-editing .source-body {
-  padding-bottom: 0;
-}
-/* 编辑层：文字透明覆盖在高亮层上，只保留光标；滚动条留出与高亮层相同的 8px 槽位 */
-.src-edit {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  box-sizing: border-box;
-  width: 100%;
   height: 100%;
-  border: 0;
-  outline: none;
-  resize: none;
-  padding: 18px 18px 0;
+  min-height: 0;
+  font-family: var(--md-code-font);
+  font-size: 13px;
+  line-height: 1.7;
   background: transparent;
-  color: transparent;
-  caret-color: var(--md-text);
-  overflow: auto;
-  user-select: text;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  color: var(--md-text);
 }
-.src-edit::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.src-cm .CodeMirror-lines {
+  padding: 14px 0 30vh; /* 底部留白：最后一行也能滚到视口中部 */
 }
-.src-edit::-webkit-scrollbar-thumb,
-.src-edit::-webkit-scrollbar-corner {
+.src-cm .CodeMirror pre.CodeMirror-line,
+.src-cm .CodeMirror pre.CodeMirror-line-like {
+  padding: 0 16px;
+}
+.src-cm .CodeMirror-gutters {
+  border-right: 0;
   background: transparent;
 }
-.src-edit::placeholder {
-  color: color-mix(in srgb, var(--md-bq-text) 70%, transparent);
+.src-cm .CodeMirror-linenumber {
+  color: color-mix(in srgb, var(--md-bq-text) 45%, transparent);
+  font-size: 12px;
+  padding: 0 10px 0 6px;
+  min-width: 2.6em;
 }
-.src-edit::selection {
+.src-cm .CodeMirror-cursor {
+  border-left: 2px solid var(--md-text);
+}
+.src-cm .CodeMirror-selected {
+  background: color-mix(in srgb, var(--md-link) 22%, transparent);
+}
+.src-cm .CodeMirror-focused .CodeMirror-selected {
   background: color-mix(in srgb, var(--md-link) 28%, transparent);
 }
-.src-edit.__code_wrapped {
-  white-space: pre-wrap;
-  word-break: break-word;
+.src-cm .CodeMirror-activeline-background {
+  background: color-mix(in srgb, var(--md-text) 5%, transparent);
 }
-/* 输入法组合中：候选字还只在 textarea 里，高亮层暂时让位，避免“看不见正在输入的字” */
-.src-editor.is-composing .src-scroll {
-  visibility: hidden;
+/* 语法着色：Markdown 标记弱化，内容保留本色；深浅两套主题 */
+.src-cm .cm-header {
+  color: var(--md-heading);
+  font-weight: 600;
 }
-.src-editor.is-composing .src-edit {
+.src-cm .cm-quote {
+  color: var(--md-bq-text);
+}
+.src-cm .cm-link {
+  color: var(--md-link);
+}
+.src-cm .cm-url {
+  color: var(--md-link);
+  opacity: 0.8;
+}
+.src-cm .cm-formatting {
+  color: color-mix(in srgb, var(--md-bq-text) 62%, transparent);
+}
+.src-cm .cm-strong {
+  font-weight: 700;
+}
+.src-cm .cm-em {
+  font-style: italic;
+}
+.src-cm .cm-comment {
+  color: var(--md-bq-text);
+  font-style: italic;
+}
+.src-cm .cm-string,
+.src-cm .cm-string-2 {
+  color: #0a7c42;
+}
+.src-cm .cm-keyword {
+  color: #a626a4;
+}
+.src-cm .cm-number,
+.src-cm .cm-atom {
+  color: #b76b01;
+}
+.src-cm .cm-def,
+.src-cm .cm-property {
+  color: #4078f2;
+}
+.src-cm .cm-variable,
+.src-cm .cm-variable-2 {
   color: var(--md-text);
+}
+.src-cm .cm-tag {
+  color: #c2185b;
+}
+.src-cm .cm-attribute {
+  color: #b76b01;
+}
+.src-cm .cm-builtin {
+  color: #4078f2;
+}
+.src-cm .cm-hr {
+  color: var(--md-bq-text);
+}
+[data-theme='dark'] .src-cm .cm-string,
+[data-theme='dark'] .src-cm .cm-string-2 {
+  color: #7ee08a;
+}
+[data-theme='dark'] .src-cm .cm-keyword {
+  color: #d9a0ff;
+}
+[data-theme='dark'] .src-cm .cm-number,
+[data-theme='dark'] .src-cm .cm-atom,
+[data-theme='dark'] .src-cm .cm-attribute {
+  color: #ffc46b;
+}
+[data-theme='dark'] .src-cm .cm-def,
+[data-theme='dark'] .src-cm .cm-property,
+[data-theme='dark'] .src-cm .cm-builtin {
+  color: #79b8ff;
+}
+[data-theme='dark'] .src-cm .cm-tag {
+  color: #ff9bb8;
 }
 
 /* 中缝拖拽条 */
@@ -961,59 +1002,34 @@ button {
   background: var(--md-surface-2);
 }
 
-/* 高亮层与编辑层共用同一排版：字体/字号/行高/换行逐项一致，
-   透明 textarea 的光标才能与底层高亮逐字符重合 */
-.source-body,
-.src-edit {
-  margin: 0;
-  font-family: var(--md-code-font);
-  font-size: 13px;
-  line-height: 1.85;
-  white-space: pre;
-  tab-size: 2;
+/* ---------- 底部状态栏 ---------- */
+.statusbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 12px;
+  min-height: 22px;
+  border-top: 1px solid var(--md-pre-border);
+  background: var(--md-surface);
+  color: var(--md-bq-text);
+  font-size: 11.5px;
+  user-select: none;
 }
-.source-body {
-  padding: 18px 18px 60vh;
-  color: var(--md-text);
-  user-select: text;
-}
-/* 只读源码与编辑态 textarea 同排版：等宽、同行高，行号统一放独立行号槽 */
-.src-lines {
-  box-sizing: border-box;
-  width: max-content;
-  min-width: 100%;
-  white-space: normal;
-}
-.src-line {
-  min-height: 1.85em;
-  white-space: pre;
-}
-/* 轻量语法高亮：Markdown 标记淡出，内容加权重 */
-.src-mark {
-  color: color-mix(in srgb, var(--md-bq-text) 52%, transparent);
-}
-.src-h {
-  color: var(--md-heading);
-  font-weight: 600;
-}
-.src-code {
-  /* 横向 padding 会改变行内前进宽度，让透明 textarea 的光标与底层高亮错位，
-     因此只保留纵向 padding（不参与行内排版），靠背景色本身形成代码块观感 */
-  padding: 1px 0;
-  border-radius: 4px;
-  background: var(--md-code-bg);
-  color: var(--md-text);
-  font-family: inherit;
-  font-size: inherit;
-}
-.viewer-scroll.__code_wrapped .src-lines {
-  width: auto;
+.status-left {
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.viewer-scroll.__code_wrapped .src-line,
-.viewer-scroll.__code_wrapped .source-body {
-  white-space: pre-wrap;
-  word-break: break-word;
+.statusbar-right {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 弹窗 ---------- */

@@ -6,6 +6,7 @@ import { t } from './i18n'
 import TitleBar from './components/TitleBar.vue'
 import SideBar from './components/SideBar.vue'
 import Viewer from './components/Viewer.vue'
+import StatusBar from './components/StatusBar.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import ContextMenu from './components/ContextMenu.vue'
 
@@ -52,6 +53,7 @@ watch(
       <SideBar />
       <Viewer />
     </div>
+    <StatusBar />
     <div v-if="dropHint" class="drop-hint">{{ t('drop.hint') }}</div>
     <div class="toasts" data-testid="toasts">
       <div v-for="t in store.toasts" :key="t.id" class="toast" :class="t.kind" :data-testid="'toast-' + t.id">

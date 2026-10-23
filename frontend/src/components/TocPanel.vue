@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, watch } from 'vue'
 import { store } from '../store'
+import { srcEditor, srcHeadingLines, scrollSrcToLine } from '../editor-bridge'
 import TocNode from './TocNode.vue'
 import { t } from '../i18n'
 import type { TocEntry } from '../types'
@@ -26,16 +27,14 @@ const tree = computed<TocEntry[]>(() => {
 })
 
 const RENDER_SEL = '[data-testid="viewer-scroll"]'
-const SRC_SEL = '[data-testid="src-scroll"]'
-const SRC_EDIT_SEL = '[data-testid="src-textarea"]'
 
 function scroller(sel: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(sel)
 }
 
-/** 源码侧滚动容器：编辑中是叠在高亮层上的 textarea（真正的滚动源），否则是高亮层本身。 */
+/** 源码侧滚动容器：CodeMirror 的滚动元素（只读/编辑都是它）。 */
 function srcScroller(): HTMLElement | null {
-  return scroller(SRC_EDIT_SEL) ?? scroller(SRC_SEL)
+  return srcEditor.cm?.getScrollerElement() ?? scroller('[data-testid="src-cm"]')
 }
 
 /** 把元素滚到面板视口顶部（带 scroll-margin 留白）。 */
@@ -52,9 +51,14 @@ function scrollHeadingInstant(sc: HTMLElement | null, el: HTMLElement | null) {
   sc.scrollTop = sc.scrollTop + top - 8
 }
 
-/** 只读源码里的标题行（.src-heading 标记），按文档顺序排列。 */
-function srcHeadingEls(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('.src-lines .src-heading'))
+/** 源码里的标题行行号（CodeMirror 按行扫描），顺序与目录一致。 */
+function srcHeadingEls(): number[] {
+  return srcHeadingLines()
+}
+
+/** 把源码滚到第 line 行（0-based）顶部。 */
+function scrollSrcLine(line: number, smooth: boolean) {
+  scrollSrcToLine(line, smooth)
 }
 
 /** 源码行未渲染（超大文件）时的兜底：按目录序号等比定位。 */
@@ -77,7 +81,7 @@ function jump(id: string) {
 
   // 源码模式：渲染面板隐藏，跳源码面板对应标题行
   if (mode === 'source') {
-    if (lineEl) scrollHeadingInto(srcScroller(), lineEl)
+    if (lineEl !== null) scrollSrcLine(lineEl, true)
     else proportionalSrcJump(ordinal)
     return
   }
@@ -85,7 +89,7 @@ function jump(id: string) {
   const el = document.getElementById(id)
   scrollHeadingInto(scroller(RENDER_SEL), el)
   if (mode === 'split') {
-    if (lineEl) scrollHeadingInstant(srcScroller(), lineEl)
+    if (lineEl !== null) scrollSrcLine(lineEl, false)
     else proportionalSrcJump(ordinal)
   }
 }

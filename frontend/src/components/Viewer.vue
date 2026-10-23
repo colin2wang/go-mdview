@@ -13,8 +13,11 @@ import {
   toast
 } from '../store'
 import { showMenu, hideMenu } from './ContextMenu.vue'
+import CodeEditor from './CodeEditor.vue'
 import { getApi } from '../api'
 import { renderDiagramsIn, renderMathIn } from '../markdown'
+import { countPreviewText, countStats } from '../stats'
+import { status } from '../status'
 import { t } from '../i18n'
 import type { ViewMode } from '../types'
 import AppIcon from './AppIcon.vue'
@@ -23,10 +26,8 @@ import MindMap from './MindMap.vue'
 
 const articleEl = ref<HTMLElement | null>(null)
 const renderScrollEl = ref<HTMLElement | null>(null)
-const srcScrollEl = ref<HTMLElement | null>(null)
 const splitWrapEl = ref<HTMLElement | null>(null)
-const editEl = ref<HTMLTextAreaElement | null>(null)
-const gutterEl = ref<HTMLElement | null>(null)
+const editorRef = ref<InstanceType<typeof CodeEditor> | null>(null)
 
 const mode = computed<ViewMode>(() => store.viewMode)
 const isSplit = computed(() => mode.value === 'split')
@@ -39,16 +40,8 @@ const isMindmap = computed(
 )
 
 // ---------- 源码面板 ----------
-// 只读态与编辑态共用同一套渲染格式（行号槽 + 等宽正文），切换时视觉一致
-// 超大文件不做逐行 DOM，直接整段文本，避免上万行把界面拖卡
-const SRC_MAX_LINES = 6000
-const SRC_MAX_CHARS = 400000
-
-interface SrcLine {
-  n: number
-  html: string
-  heading: boolean
-}
+// 源码区由 CodeMirror 渲染：语法高亮 + 行号 + 光标都在同一套排版里，
+// 只读态只是 readOnly: 'nocursor'（仍可选中复制），不再有「透明层叠高亮层」的错位问题
 
 const sourceText = computed(() => store.current?.content ?? '')
 const sourcePath = computed(() => store.current?.path ?? '')
@@ -58,102 +51,14 @@ const sourceMeta = computed(() => {
   const lines = c.content ? c.content.split('\n').length : 0
   return `${t('src.metaLines', { n: lines })} · ${c.encoding} · ${(c.size / 1024).toFixed(1)} KB`
 })
-const srcTooBig = computed(() => {
-  const c = store.current
-  if (!c) return false
-  return c.size > SRC_MAX_CHARS || c.content.split('\n').length > SRC_MAX_LINES
-})
+// Markdown 走 gfm 模式（含围栏代码高亮），其余纯文本
+const srcMode = computed(() => (store.currentKind === 'markdown' ? 'gfm' : 'text/plain'))
 
 // 源码编辑草稿：只改内存里的渲染结果，不写回文件；关闭编辑或切换文件即还原
 const editing = ref(false)
 const draft = ref('')
-// 输入法组合期间候选字还留在 textarea 里没写进草稿：临时撤掉高亮层让 textarea 自己显字，
-// 否则 textarea 的文字是透明的，正在输入的字看不见
-const composing = ref(false)
-// 只读高亮层、编辑 textarea 与行号槽共用同一份文本，保证两种状态逐行一致
+// 编辑器实际内容：编辑中是草稿，否则是文件内容
 const shownText = computed(() => (editing.value ? draft.value : sourceText.value))
-const srcLines = computed<SrcLine[]>(() => (srcTooBig.value ? [] : buildSrcLines(shownText.value)))
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-/**
- * 行内轻量高亮：行内代码、粗体、斜体。
- * Markdown 标记本身保留（弱化为 .src-mark），只给内容加视觉权重，
- * 保证选中复制拿到的仍是原始源码而不是渲染后的文字。
- */
-function inlineHtml(raw: string): string {
-  const codes: string[] = []
-  let s = escapeHtml(raw).replace(/`([^`\n]+)`/g, (_m, body: string) => {
-    codes.push(body)
-    return `\u0000${codes.length - 1}\u0000`
-  })
-  s = s.replace(
-    /\*\*([^*\n]+)\*\*/g,
-    '<span class="src-mark">**</span><strong>$1</strong><span class="src-mark">**</span>'
-  )
-  s = s.replace(
-    /(^|[^*\w])\*([^*\n]+)\*(?!\*)/g,
-    '$1<span class="src-mark">*</span><em>$2</em><span class="src-mark">*</span>'
-  )
-  return s.replace(
-    /\u0000(\d+)\u0000/g,
-    (_m, i: string) =>
-      '<span class="src-mark">`</span><code class="src-code">' +
-      codes[Number(i)] +
-      '</code><span class="src-mark">`</span>'
-  )
-}
-
-/** 非围栏行：标题 / 分隔线 / 引用 / 列表各强调一层，其余行走行内高亮。 */
-function lineHtml(raw: string): string {
-  const h = raw.match(/^(\s{0,3})(#{1,6})(\s+)([\s\S]*)$/)
-  if (h) {
-    return `${h[1]}<span class="src-mark">${h[2]}${h[3]}</span><span class="src-h">${inlineHtml(h[4])}</span>`
-  }
-  if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(raw)) {
-    return `<span class="src-mark">${escapeHtml(raw)}</span>`
-  }
-  const q = raw.match(/^(\s*(?:>\s?)+)([\s\S]*)$/)
-  if (q) {
-    return `<span class="src-mark">${escapeHtml(q[1])}</span>${inlineHtml(q[2])}`
-  }
-  const li = raw.match(/^(\s*(?:[-*+]|\d{1,3}[.)])\s+)([\s\S]*)$/)
-  if (li) {
-    return `<span class="src-mark">${escapeHtml(li[1])}</span>${inlineHtml(li[2])}`
-  }
-  return inlineHtml(raw)
-}
-
-/** 逐行切分源码：标记围栏外的标题行（目录跳转用），并做轻量语法高亮。 */
-function buildSrcLines(src: string): SrcLine[] {
-  const lines = src.split(/\r?\n/)
-  const out: SrcLine[] = []
-  let fence = ''
-  let fenceLen = 0
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i]
-    const fm = raw.match(/^\s*(`{3,}|~{3,})/)
-    if (fm) {
-      const mark = fm[1][0]
-      if (!fence) {
-        fence = mark
-        fenceLen = fm[1].length
-      } else if (mark === fence && fm[1].length >= fenceLen) {
-        fence = ''
-        fenceLen = 0
-      }
-      out.push({ n: i + 1, heading: false, html: `<span class="src-mark">${escapeHtml(raw)}</span>` })
-      continue
-    }
-    if (fence) {
-      out.push({ n: i + 1, heading: false, html: escapeHtml(raw) })
-      continue
-    }
-    out.push({ n: i + 1, heading: /^\s{0,3}#{1,6}(\s|$)/.test(raw), html: lineHtml(raw) })
-  }
-  return out
-}
 
 async function copySource() {
   const api = await getApi()
@@ -202,31 +107,19 @@ function cancelDraftTimer() {
   }
 }
 
-// 行号槽内容：整段生成，行数与当前正文（草稿或文件内容）一致
-let gutterFor = -1
-let gutterText = ''
-const lineNoText = computed(() => {
-  // 逐行渲染时直接用行数组长度，省一次整段 split
-  const n = srcTooBig.value ? shownText.value.split('\n').length : srcLines.value.length
-  if (n !== gutterFor) {
-    const nums: string[] = []
-    for (let i = 1; i <= n; i++) nums.push(String(i))
-    gutterFor = n
-    gutterText = nums.join('\n')
-  }
-  return gutterText
-})
+/** 编辑器里的文本变化（只读态 CodeMirror 不会触发） */
+function onEditorInput(v: string) {
+  draft.value = v
+}
 
 async function toggleEdit() {
-  // 只读高亮层与编辑 textarea 叠在同一位置、同一排版，切换只交接滚动位置，
-  // DOM 不重建、行高不变，因此不需要按比例换算
+  // 只读与编辑共用同一个 CodeMirror 实例，只切换 readOnly；
+  // 行高/排版完全不变，滚动位置不用换算
   cancelDraftTimer()
   const from = sourceScroller()
   const prevTop = from?.scrollTop ?? 0
-  const prevLeft = from?.scrollLeft ?? 0
 
   editing.value = !editing.value
-  composing.value = false
   if (editing.value) {
     draft.value = sourceText.value
   } else {
@@ -236,16 +129,9 @@ async function toggleEdit() {
 
   await nextTick()
   const now = sourceScroller()
-  if (now) {
+  if (now && now.scrollTop !== prevTop) {
     now.scrollTop = Math.min(prevTop, Math.max(0, now.scrollHeight - now.clientHeight))
-    now.scrollLeft = prevLeft
   }
-  // 编辑态以 textarea 为滚动源，先同步底层高亮层再追平行号
-  if (editing.value && editEl.value && srcScrollEl.value) {
-    srcScrollEl.value.scrollTop = editEl.value.scrollTop
-    srcScrollEl.value.scrollLeft = editEl.value.scrollLeft
-  }
-  syncGutter()
   if (isSplit.value && syncScroll.value) mirror(now, renderScrollEl.value)
 }
 
@@ -254,64 +140,73 @@ function onDraftInput() {
   draftTimer = window.setTimeout(() => void renderDraft(draft.value), 300)
 }
 
-// v-model 在 compositionend 之后才把候选字写进草稿，因此结束时补一次预览重渲染
-function onComposeStart() {
-  composing.value = true
-}
-function onComposeEnd() {
-  composing.value = false
-  if (editing.value) onDraftInput()
-}
-
 // 切换文件：有未保存改动时先提示，再还原编辑态
 watch(
   () => store.current?.path,
   async () => {
     cancelDraftTimer()
-    composing.value = false
     if (editing.value && draft.value && draft.value !== sourceText.value) {
       toast(t('toast.discardedDraft'), 'error')
     }
     draft.value = editing.value ? sourceText.value : ''
     if (editing.value) void renderDraft(draft.value)
-    // 换文件后正文高度变化，行号槽跟随最终的滚动位置
-    await nextTick()
-    syncGutter()
   }
 )
 
-// 行号槽开关来自设置对话框：重新挂载后追平正文滚动位置
-watch(showLineNo, async () => {
-  await nextTick()
-  syncGutter()
-})
+/** 编辑器挂载/重新可见后需要重算尺寸（v-show 隐藏期间容器无尺寸） */
+function refreshEditor() {
+  editorRef.value?.refresh()
+}
+
+// 源码统计（编辑中按草稿算）与光标位置写进状态栏数据
+watch(
+  () => shownText.value,
+  (v) => {
+    const s = countStats(v)
+    status.chars = s.chars
+    status.lines = s.lines
+  },
+  { immediate: true }
+)
+
+function onCaret(pos: { line: number; col: number }) {
+  status.caretLine = pos.line
+  status.caretCol = pos.col
+}
+
+watch(
+  [editing, () => store.current?.path, () => store.current?.encoding],
+  () => {
+    status.hasFile = !!store.current
+    status.editing = editing.value
+    const c = store.current
+    status.summary = c ? `${c.encoding} · ${(c.size / 1024).toFixed(1)} KB` : ''
+  },
+  { immediate: true }
+)
 
 /**
- * 当前源码侧的滚动元素：编辑时是覆盖层 textarea，否则是只读高亮层。
- * 高亮层在两种状态下都存在，只是编辑时由 textarea 驱动滚动。
+ * 当前源码侧的滚动元素：CodeMirror 的滚动容器（scroller），
+ * 可以直接当普通 scroll 容器用（CM 内部也是直接写它的 scrollTop）。
  */
 function sourceScroller(): HTMLElement | null {
-  return editing.value ? editEl.value : srcScrollEl.value
+  return editorRef.value?.scroller() ?? null
 }
 
-/** 行号槽跟随当前滚动源：编辑时是 textarea，只读时是高亮层。 */
-function syncGutter() {
-  const sc = sourceScroller()
-  const gu = gutterEl.value
-  if (sc && gu) gu.scrollTop = sc.scrollTop
-}
-
-/** 按可滚动高度的比例镜像滚动位置。 */
+/** 按可滚动高度的比例镜像滚动位置，返回是否真的写入。 */
 let mirrorAt = 0
-function mirror(from: HTMLElement | null, to: HTMLElement | null) {
-  if (!from || !to || syncing) return
+function mirror(from: HTMLElement | null, to: HTMLElement | null): boolean {
+  if (!from || !to || syncing) return false
   const fMax = from.scrollHeight - from.clientHeight
   const tMax = to.scrollHeight - to.clientHeight
-  if (fMax <= 0 || tMax <= 0) return
+  if (fMax <= 0 || tMax <= 0) return false
   syncing = true
   to.scrollTop = (from.scrollTop / fMax) * tMax
+  // 镜像写入的位置同样要记账，否则重渲染时会按过期位置还原，正文被拽回顶部
+  if (to === renderScrollEl.value) rememberRender(to)
   mirrorAt = performance.now()
   requestAnimationFrame(() => (syncing = false))
+  return true
 }
 
 // 镜像写入触发的对方 scroll 事件可能晚于 rAF 解锁，若不拦会被当作用户滚动再镜像回来，
@@ -323,7 +218,24 @@ function justMirrored() {
 // ---------- 滚动 / 补充渲染 ----------
 let savedRatio = 0
 let savedFor = ''
-let lastRenderTop = 0
+
+/** 正文当前滚动比例：重渲染会改变内容高度，按比例记账比绝对像素稳定。 */
+function renderRatio(): number {
+  const sc = renderScrollEl.value
+  if (!sc) return savedRatio
+  const max = sc.scrollHeight - sc.clientHeight
+  return max > 0 ? sc.scrollTop / max : 0
+}
+
+/**
+ * 记住正文滚动位置。镜像写入（源码滚动带过来的）也要记：
+ * 之前只在「用户直接滚正文」时记账，于是编辑重渲染后按过期位置还原，正文被拽回顶部。
+ */
+function rememberRender(sc: HTMLElement) {
+  savedRatio = sc.scrollHeight > sc.clientHeight ? sc.scrollTop / (sc.scrollHeight - sc.clientHeight) : 0
+  savedFor = store.current?.path ?? ''
+}
+
 // 跨文件锚点：点击 md 内链带 #anchor 时，渲染完成后再跳
 let pendingAnchor = ''
 // 正文隐藏期间无法出图（容器无尺寸），记账后切回补做
@@ -371,7 +283,8 @@ async function postRender(art: HTMLElement, force = false) {
   if (store.hasMath) await renderMathIn(art)
 }
 
-async function afterRender(redrawDiagram: boolean) {
+/** keepRatio：v-html 替换前记下的正文滚动比例（替换后内容高度已变，只能按比例还原）。 */
+async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
   const art = articleEl.value
   if (!art) return
   if (!showRender.value) {
@@ -381,14 +294,17 @@ async function afterRender(redrawDiagram: boolean) {
     return
   }
   await postRender(art, redrawDiagram)
+  // 预览字数按渲染后可见文本统计（图形内部文字、复制按钮等不计）
+  status.previewChars = store.currentKind === 'markdown' ? countPreviewText(art) : 0
 
   const sc = renderScrollEl.value
   if (!sc) return
   if (redrawDiagram) return // 主题切换：保持滚动
   const path = store.current?.path ?? ''
   if (editing.value) {
-    // 编辑草稿重渲染：保持视口位置不变，避免跟着内容跳
-    sc.scrollTop = Math.min(lastRenderTop, Math.max(0, sc.scrollHeight - sc.clientHeight))
+    // 编辑草稿重渲染：以源码视口为准重新对齐，内容高度变了也不跟着跳
+    const ok = isSplit.value && syncScroll.value && mirror(sourceScroller(), sc)
+    if (!ok) sc.scrollTop = (keepRatio ?? savedRatio) * (sc.scrollHeight - sc.clientHeight)
   } else if (savedFor === path) {
     sc.scrollTop = savedRatio * (sc.scrollHeight - sc.clientHeight)
   } else {
@@ -404,28 +320,18 @@ async function afterRender(redrawDiagram: boolean) {
 }
 
 function onRenderScroll() {
-  if (justMirrored()) return
   const sc = renderScrollEl.value
   if (!sc) return
-  lastRenderTop = sc.scrollTop
-  savedRatio = sc.scrollHeight > sc.clientHeight ? sc.scrollTop / (sc.scrollHeight - sc.clientHeight) : 0
-  savedFor = store.current?.path ?? ''
+  rememberRender(sc)
+  // 镜像写入的位置只记账、不再往回镜像，否则两边互相牵引
+  if (justMirrored()) return
   spyHeading(sc)
-  if (isSplit.value && syncScroll.value) mirror(sc, sourceScroller())
+  // 编辑态单向同步：源码视口由光标决定，正文跟随源码；反向会把光标带出屏幕
+  if (isSplit.value && syncScroll.value && !editing.value) mirror(sc, sourceScroller())
 }
 
-function onSrcScroll(e: Event) {
-  // 编辑态：textarea 是唯一的滚动源，高亮层只被动跟随；
-  // 高亮层自身（程序同步触发）的 scroll 直接忽略，避免两边互相牵引
-  if (editing.value) {
-    if (e.target !== editEl.value) return
-    if (editEl.value && srcScrollEl.value) {
-      srcScrollEl.value.scrollTop = editEl.value.scrollTop
-      srcScrollEl.value.scrollLeft = editEl.value.scrollLeft
-    }
-  }
-  // 行号槽跟随正文滚动（无论是否分栏同步）
-  syncGutter()
+/** 源码侧滚动（CodeMirror 的 scroll 事件）：分栏同步时把位置镜像到正文 */
+function onSrcScroll() {
   if (!isSplit.value || !syncScroll.value || justMirrored()) return
   mirror(sourceScroller(), renderScrollEl.value)
 }
@@ -433,8 +339,10 @@ function onSrcScroll(e: Event) {
 watch(
   () => store.html,
   async () => {
+    // v-html 替换会让正文高度先归零，替换前先按比例记账，替换后才能还原到同一位置
+    const ratio = renderRatio()
     await nextTick()
-    await afterRender(false)
+    await afterRender(false, ratio)
   }
 )
 watch(
@@ -451,22 +359,28 @@ watch(mode, async (to, from) => {
     // 只剩渲染视图时没有编辑入口，还原为文件内容
     cancelDraftTimer()
     editing.value = false
-    composing.value = false
     draft.value = ''
     await renderDraft(sourceText.value)
   }
   if (to === 'source') {
     if (from !== 'source') renderScrollTop = sc?.scrollTop ?? 0
+    await nextTick()
+    refreshEditor() // 源码面板刚由 v-show 显示出来，需要重算尺寸
     return
   }
   await nextTick()
+  refreshEditor()
   if (pendingPost) {
     pendingPost = false
     if (articleEl.value) await postRender(articleEl.value)
   }
   if (sc) {
     if (from === 'source') sc.scrollTop = renderScrollTop
-    if (isSplit.value && syncScroll.value) mirror(sc, sourceScroller())
+    if (isSplit.value && syncScroll.value) {
+      // 编辑态以源码视口为准，非编辑态从正文回推源码
+      if (editing.value) mirror(sourceScroller(), sc)
+      else mirror(sc, sourceScroller())
+    }
   }
 })
 
@@ -567,9 +481,18 @@ async function onContext(e: MouseEvent) {
   showMenu(e.clientX, e.clientY, items)
 }
 
-onMounted(() => window.addEventListener('keydown', onKey))
+/** 窗口尺寸变化后让 CodeMirror 重算行宽（尤其开了自动换行时） */
+function onResize() {
+  refreshEditor()
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('resize', onResize)
+})
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('resize', onResize)
   document.removeEventListener('mousemove', onSplitMove)
   document.removeEventListener('mouseup', onSplitUp)
 })
@@ -643,45 +566,21 @@ function onKey(e: KeyboardEvent) {
           </button>
         </header>
         <div class="src-edit-wrap" :class="{ 'is-editing': editing }">
-          <pre v-if="showLineNo" ref="gutterEl" class="src-gutter" aria-hidden="true">{{ lineNoText }}</pre>
-          <div class="src-editor" :class="{ 'is-composing': composing }">
-            <!-- 高亮层：只读时直接展示，编辑时作为 textarea 的底图，两种状态共用同一份 DOM 与排版 -->
-            <div
-              ref="srcScrollEl"
-              class="viewer-scroll src-scroll"
-              :class="{ __code_wrapped: store.settings?.codeWrap, 'is-editing': editing }"
-              data-testid="src-scroll"
-              @scroll="onSrcScroll"
-            >
-              <div v-if="srcTooBig" class="source-body" data-testid="source-body">{{ shownText }}</div>
-              <div v-else class="source-body src-lines" data-testid="source-body">
-                <div
-                  v-for="l in srcLines"
-                  :key="l.n"
-                  v-memo="[l.html]"
-                  class="src-line"
-                  :class="{ 'src-heading': l.heading }"
-                  v-html="l.html"
-                ></div>
-              </div>
-            </div>
-            <!-- 编辑层：文字透明，只负责光标/输入/选择，视觉全部来自底层高亮 -->
-            <textarea
-              v-if="editing"
-              ref="editEl"
-              v-model="draft"
-              class="src-edit"
-              :class="{ __code_wrapped: store.settings?.codeWrap }"
-              :wrap="store.settings?.codeWrap ? 'soft' : 'off'"
-              spellcheck="false"
-              :placeholder="t('src.placeholder')"
-              data-testid="src-textarea"
-              @input="onDraftInput"
-              @compositionstart="onComposeStart"
-              @compositionend="onComposeEnd"
-              @scroll="onSrcScroll"
-            ></textarea>
-          </div>
+          <!-- 源码区：CodeMirror 负责语法高亮 / 行号 / 光标；只读态只是 readOnly，排版完全一致 -->
+          <CodeEditor
+            ref="editorRef"
+            :model-value="shownText"
+            :mode="srcMode"
+            :dark="store.settings?.theme === 'dark'"
+            :wrap="!!store.settings?.codeWrap"
+            :line-no="showLineNo"
+            :read-only="!editing"
+            data-testid="src-cm"
+            @update:model-value="onEditorInput"
+            @input="onDraftInput"
+            @caret="onCaret"
+            @scroll="onSrcScroll"
+          />
         </div>
       </section>
 
