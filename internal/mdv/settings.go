@@ -22,6 +22,13 @@ const (
 	MaxSidebarWidth     = 520
 )
 
+// 思维导图节点/备注单行最大字符数（超长自动折行），与前端 mindmap.ts 共用区间。
+const (
+	DefaultMmMaxLen = 20
+	MinMmMaxLen     = 8
+	MaxMmMaxLen     = 60
+)
+
 // Settings 应用设置。全部有默认值，读取时零值补齐。
 type Settings struct {
 	Theme        string `json:"theme"`        // light | dark
@@ -32,8 +39,9 @@ type Settings struct {
 	LastFolder   string `json:"lastFolder"`   // 上次打开的目录
 	LastFile     string `json:"lastFile"`     // 上次打开的文件
 	Pinned       bool   `json:"pinned"`       // 窗口置顶
-	ViewMode     string `json:"viewMode"`     // render | source | split
+	ViewMode     string `json:"viewMode"`     // render | source | split | mindmap
 	Language     string `json:"language"`     // 界面语言 zh-CN | en | ja | de
+	MmMaxLen     int    `json:"mmMaxLen"`     // 思维导图节点/备注单行最大字符数，默认 DefaultMmMaxLen
 	WinW         int    `json:"winW"`         // 上次关闭时窗口宽 px（0 = 未记录）
 	WinH         int    `json:"winH"`         // 上次关闭时窗口高 px
 	WinX         int    `json:"winX"`         // 上次关闭时窗口左上角 x（可为负，多显示器）
@@ -49,6 +57,7 @@ var defaultSettings = Settings{
 	SidebarWidth: DefaultSidebarWidth,
 	ViewMode:     ViewModeRender,
 	Language:     "zh-CN",
+	MmMaxLen:     DefaultMmMaxLen,
 }
 
 // validViewMode 归一化显示模式，非法值回落到 render。
@@ -107,6 +116,9 @@ func (s *Store) GetSettings() Settings {
 	if st.SidebarWidth < MinSidebarWidth || st.SidebarWidth > MaxSidebarWidth {
 		st.SidebarWidth = DefaultSidebarWidth
 	}
+	if st.MmMaxLen < MinMmMaxLen || st.MmMaxLen > MaxMmMaxLen {
+		st.MmMaxLen = DefaultMmMaxLen
+	}
 	st.ViewMode = validViewMode(st.ViewMode)
 	st.Language = validLanguage(st.Language)
 	normalizeWindow(&st)
@@ -121,6 +133,7 @@ func (s *Store) SaveSettings(in Settings) Settings {
 	}
 	st.FontSize = clampInt(st.FontSize, 12, 28)
 	st.SidebarWidth = clampInt(st.SidebarWidth, MinSidebarWidth, MaxSidebarWidth)
+	st.MmMaxLen = clampInt(st.MmMaxLen, MinMmMaxLen, MaxMmMaxLen)
 	st.ViewMode = validViewMode(st.ViewMode)
 	st.Language = validLanguage(st.Language)
 	normalizeWindow(&st)

@@ -1028,7 +1028,7 @@ button {
   z-index: 60;
 }
 .modal {
-  width: 460px;
+  width: 720px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 60px);
   display: flex;
@@ -1072,12 +1072,39 @@ button {
   gap: 16px;
   overflow-y: auto;
 }
+/* 列容器：宽窗口两列排布（左=外观+窗口，右=阅读+文件关联），窄窗口回落单列堆叠 */
+.set-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .modal-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    column-gap: 0;
+  }
+  /* 中缝竖线：画在右列左边框上，高度只随右列内容 */
+  .set-col + .set-col {
+    border-left: 1px solid var(--md-pre-border);
+    padding-left: 28px;
+  }
+  .set-col:first-child {
+    padding-right: 28px;
+  }
+  .set-about {
+    grid-column: 1 / -1;
+  }
+}
 .set-block {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.set-block + .set-block {
+/* 同列上下分块之间的横向分隔线 */
+.set-col .set-block + .set-block {
   border-top: 1px solid var(--md-pre-border);
   padding-top: 14px;
 }
@@ -1095,6 +1122,7 @@ button {
   justify-content: space-between;
   gap: 12px;
   font-size: 13px;
+  flex-wrap: wrap;
 }
 .set-label {
   color: var(--md-text);
@@ -1114,6 +1142,7 @@ button {
 }
 .set-seg {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--md-pre-border);

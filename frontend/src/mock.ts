@@ -19,6 +19,7 @@ const state = {
     pinned: false,
     viewMode: 'render',
     language: 'zh-CN',
+    mmMaxLen: 20,
     winW: 0,
     winH: 0,
     winX: 0,

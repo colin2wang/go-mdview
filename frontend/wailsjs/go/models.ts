@@ -113,6 +113,7 @@ export namespace mdv {
 	    pinned: boolean;
 	    viewMode: string;
 	    language: string;
+	    mmMaxLen: number;
 	    winW: number;
 	    winH: number;
 	    winX: number;
@@ -135,6 +136,7 @@ export namespace mdv {
 	        this.pinned = source["pinned"];
 	        this.viewMode = source["viewMode"];
 	        this.language = source["language"];
+	        this.mmMaxLen = source["mmMaxLen"];
 	        this.winW = source["winW"];
 	        this.winH = source["winH"];
 	        this.winX = source["winX"];

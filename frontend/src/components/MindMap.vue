@@ -5,7 +5,7 @@ import { getApi } from '../api'
 import { t } from '../i18n'
 import { toast } from '../store'
 
-const props = defineProps<{ markdown: string; dark: boolean; name: string }>()
+const props = defineProps<{ markdown: string; dark: boolean; name: string; maxLen: number }>()
 
 const containerEl = ref<HTMLElement | null>(null)
 let ctrl: MindMapController | null = null
@@ -13,7 +13,7 @@ const notesOn = ref(true)
 
 onMounted(() => {
   if (containerEl.value) {
-    ctrl = createMindMap(containerEl.value, props.markdown, { dark: props.dark })
+    ctrl = createMindMap(containerEl.value, props.markdown, { dark: props.dark, maxLen: props.maxLen })
     notesOn.value = true
   }
 })
@@ -29,6 +29,10 @@ watch(
 watch(
   () => props.dark,
   (d) => ctrl?.setDark(d)
+)
+watch(
+  () => props.maxLen,
+  (n) => ctrl?.setMaxLen(n)
 )
 
 function fit() {

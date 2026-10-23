@@ -42,6 +42,7 @@ export interface Settings {
   pinned: boolean
   viewMode: ViewMode
   language: string // 界面语言 zh-CN | en | ja | de
+  mmMaxLen: number // 思维导图节点/备注单行最大字符数（超出折行），默认 20
   // 上次关闭时的普通窗口几何（0 = 未记录）与最大化标记，由 Go 端维护
   winW: number
   winH: number
@@ -61,6 +62,7 @@ export const defaultSettings: Settings = {
   pinned: false,
   viewMode: 'render',
   language: 'zh-CN',
+  mmMaxLen: 20,
   winW: 0,
   winH: 0,
   winX: 0,

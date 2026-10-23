@@ -36,7 +36,9 @@ async function pin() {
 function openSettings() {
   store.settingsOpen = true
 }
-function dblMax() {
+function dblMax(e: MouseEvent) {
+  // 双击落在按钮等交互控件上不算双击标题栏，避免误触发最大化/还原
+  if ((e.target as Element | null)?.closest('button, input, select, a, [role]')) return
   if (store.desktop) maxToggle()
 }
 </script>

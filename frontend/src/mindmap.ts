@@ -35,6 +35,8 @@ export interface MindMapController {
   expandAll(): void
   load(markdown: string): void
   setDark(dark: boolean): void
+  /** 更新节点/备注单行最大字符数（设置项 mmMaxLen）并重排。 */
+  setMaxLen(n: number): void
   /** 导出为独立 SVG 文档字符串（含背景矩形）。 */
   exportSvg(): string
   nodeCount(): number
@@ -104,7 +106,10 @@ class Ruler {
   }
 }
 const ruler = new Ruler()
-/** 自动换行：CJK 逐字可断，latin 按单词断 */
+/** 节点/备注单行最大字符数：超长不可断单词（如 NEW/RUNNABLE/BLOCKED/…）按它硬折行。
+ *  由设置 mmMaxLen 驱动，createMindMap(opts.maxLen) 更新。 */
+let MAX_CHARS = 20
+/** 自动换行：CJK 逐字可断，latin 按单词断，单词超过 MAX_CHARS 字符硬折行 */
 function wrapText(text: string, maxW: number, size: number, weight: number): string[] {
   const lines: string[] = []
   let line = '', lw = 0, word = '', wordW = 0
@@ -139,8 +144,12 @@ function wrapText(text: string, maxW: number, size: number, weight: number): str
         lw += sw
       }
     } else {
+      // 硬折行：单词达到 MAX_CHARS，或放不下当前行/新行时，先把已积累的段落落行
+      const cw = ruler.width(ch, size, weight)
+      const fitsNow = line ? lw + wordW + cw <= maxW : wordW + cw <= maxW
+      if (word.length + 1 > MAX_CHARS || !fitsNow) flushWord()
       word += ch
-      wordW += ruler.width(ch, size, weight)
+      wordW += cw
     }
   }
   flushWord()
@@ -479,9 +488,10 @@ function countNodes(n: MindNode): number {
 export function createMindMap(
   container: HTMLElement,
   markdown: string,
-  opts: { dark?: boolean } = {}
+  opts: { dark?: boolean; maxLen?: number } = {}
 ): MindMapController {
   container.classList.add('mm-container')
+  if (opts.maxLen && opts.maxLen >= 8) MAX_CHARS = Math.min(opts.maxLen, 60)
   let root = parseMarkdown(markdown)
   let DARK = !!opts.dark
   let showNotes = true
@@ -617,6 +627,12 @@ export function createMindMap(
     setDark: (dark: boolean) => {
       DARK = dark
       draw()
+    },
+    setMaxLen: (n: number) => {
+      if (!Number.isFinite(n)) return
+      MAX_CHARS = Math.min(60, Math.max(8, Math.round(n)))
+      draw()
+      fit()
     },
     exportSvg: () => renderSvgDocument(root, showNotes, DARK),
     nodeCount: () => countNodes(root),

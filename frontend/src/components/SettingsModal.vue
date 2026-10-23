@@ -40,6 +40,11 @@ function setFs(e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isNaN(v)) patchSettings({ fontSize: v })
 }
+// 思维导图节点/备注单行最大字符数（Go 端 8–60 校验，超界回落默认 20）
+function setMmMaxLen(e: Event) {
+  const v = parseInt((e.target as HTMLInputElement).value, 10)
+  if (!Number.isNaN(v)) patchSettings({ mmMaxLen: v })
+}
 function setWrap(e: Event) {
   patchSettings({ codeWrap: (e.target as HTMLInputElement).checked })
 }
@@ -124,6 +129,7 @@ const assocTip = computed(() => {
           <button class="modal-x" :title="t('tip.close')" @click="close">✕</button>
         </div>
         <div class="modal-body">
+          <div class="set-col">
           <section class="set-block">
             <h4 class="set-block-title">{{ t('set.appearance') }}</h4>
             <!-- 用 div 而非 label：label 会把点击转发给首个可关联控件，导致点“主题”二字误触发浅色 -->
@@ -191,6 +197,19 @@ const assocTip = computed(() => {
           </section>
 
           <section class="set-block">
+            <h4 class="set-block-title">{{ t('set.window') }}</h4>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.windowGeom') }}</span>
+              <button class="set-btn" data-testid="restart-btn" @click="restartApp">
+                {{ t('set.restart') }}
+              </button>
+            </div>
+            <p class="set-hint">{{ t('set.restartHint') }}</p>
+          </section>
+          </div>
+
+          <div class="set-col">
+          <section class="set-block">
             <h4 class="set-block-title">{{ t('set.reading') }}</h4>
             <div class="set-row">
               <span class="set-label">{{ t('set.defaultView') }}</span>
@@ -208,6 +227,24 @@ const assocTip = computed(() => {
               </span>
             </div>
             <p class="set-hint">{{ t('set.splitHint') }}</p>
+            <div class="set-row">
+              <span class="set-label">
+                {{ t('set.mmMaxLen') }}
+                <em class="set-sub">{{ t('set.mmMaxLenHint') }}</em>
+              </span>
+              <span class="set-val">
+                <input
+                  type="range"
+                  min="8"
+                  max="60"
+                  step="1"
+                  :value="st?.mmMaxLen ?? 20"
+                  data-testid="mmmaxlen-range"
+                  @input="setMmMaxLen"
+                />
+                <b class="fs-num" data-testid="mmmaxlen-num">{{ st?.mmMaxLen ?? 20 }}</b>
+              </span>
+            </div>
             <div class="set-row">
               <span class="set-label">{{ t('set.lineNo') }}</span>
               <input
@@ -228,17 +265,6 @@ const assocTip = computed(() => {
                 @change="setPinned"
               />
             </div>
-          </section>
-
-          <section class="set-block">
-            <h4 class="set-block-title">{{ t('set.window') }}</h4>
-            <div class="set-row">
-              <span class="set-label">{{ t('set.windowGeom') }}</span>
-              <button class="set-btn" data-testid="restart-btn" @click="restartApp">
-                {{ t('set.restart') }}
-              </button>
-            </div>
-            <p class="set-hint">{{ t('set.restartHint') }}</p>
           </section>
 
           <section class="set-block">
@@ -265,6 +291,7 @@ const assocTip = computed(() => {
               <span v-else>{{ t('assoc.stateUnassociated', { owner: assoc.owner || t('assoc.ownerNone') }) }}</span>
             </p>
           </section>
+          </div>
 
           <div class="set-about">
             <p><b>mdview</b> · {{ t('set.about.desc') }}</p>

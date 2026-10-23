@@ -728,6 +728,7 @@ function onKey(e: KeyboardEvent) {
             :markdown="sourceText"
             :name="store.current?.name ?? ''"
             :dark="store.settings?.theme === 'dark'"
+            :max-len="store.settings?.mmMaxLen ?? 20"
           />
           <!-- 图片文件预览 -->
           <div v-else-if="store.currentKind === 'image'" class="img-view" data-testid="img-view">
