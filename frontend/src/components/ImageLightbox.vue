@@ -134,13 +134,16 @@ onBeforeUnmount(() => {
   height: 34px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.55);
   color: #fff;
   font-size: 16px;
   cursor: pointer;
   transition: background 0.15s;
+  /* 黑色阴影：白色底图片放大时也能看清关闭按钮 */
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 .lb-close:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.75);
 }
 </style>
