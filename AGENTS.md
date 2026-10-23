@@ -23,7 +23,8 @@
 - 窗口几何：位置/大小/是否最大化随 `settings.json` 持久化（`winX/winY/winW/winH/winMax`，由 Go 端维护；前端 `patchSettings` 靠对象展开原样带回，不要在 `defaultSettings` 之外重建 Settings）。最大化/最小化/全屏关闭时不写回普通尺寸；设置页「重启」清空几何、把侧栏宽度恢复到默认 280px 后以默认 1200×800 重启。
 - 源码面板：整块由 CodeMirror 5（`components/CodeEditor.vue`）渲染——`inputStyle: 'contenteditable'`，文字与光标同处一套排版，Markdown 走 `gfm` 模式（`gitHubSpice: false`，避免 SHA/issue 被当链接而在编辑态多出下划线）、行号/换行/只读由 settings 驱动。**不要退回「透明 textarea 叠高亮层」的做法**：那是两套独立排版，必然错行。只读态 = `readOnly: 'nocursor'`（仍可选中复制），编辑态 = 可写，两者共用同一实例、同一排版。
 - 源码区相关的跨模块访问走 `editor-bridge.ts`（`srcEditor.cm`、`srcHeadingLines()`、`scrollSrcToLine()`）：目录跳转按「扫描标题行号 → `cm.heightAtLine`」精确定位，兜底才是按比例滚动；分栏同步里源码侧滚动元素取 `cm.getScrollerElement()`，可当普通 scroll 容器用。
-- 分栏滚动同步：`mirror()` 按比例镜像，非编辑态双向；**编辑态单向「源码 → 正文」**（源码视口由光标决定，反向会把光标带出屏幕）。正文位置用比例记账（`rememberRender`），镜像写入的位置同样要记账，否则重渲染后按过期位置还原会让正文回到顶部。
+- 分栏滚动同步：**按锚点表映射**（`Viewer.vue` 的 `Anchor` / `rebuildAnchors()`）——以「源码标题行 ↔ 渲染标题块」为锚点（`cm.heightAtLine` ↔ 元素 offsetTop），中间线性插值；锚点不足（无标题、预览隐藏）才回落到 `mirror()` 比例镜像，因为两边高度不成比例（源码底部留白 vs 正文图形/表格），纯比例必然对不上。目录项与源码行按**标题文本匹配**对应（`matchHeadingLines()`），不能按序号——渲染前的 `preprocess` 会增删行。锚点表在每次渲染后重建。
+- 同步方向：非编辑态双向；**编辑态单向「源码 → 正文」**（源码视口由光标决定，反向会把光标带出屏幕），并额外用 `followCaret()` 兜底：光标对应到正文的位置若已滚出视口（尤其上越界）就把正文拉回来。正文位置用比例记账（`rememberRender`），程序写入的位置同样要记账，否则重渲染后按过期位置还原会让正文回到顶部。
 - 底部状态栏：`StatusBar.vue` 只读 `status.ts`，数据由 `Viewer.vue` 写入（源码字符数/行数取 `stats.ts` 的 `countStats`，预览字数取渲染后 DOM 的 `countPreviewText`，光标位置来自 CodeMirror 的 `cursorActivity`）；新增统计项要同步 `stats.ts` 与四语词典的 `status.*` key。
 - 仓库用 `.gitattributes` 强制 LF（文本）/CRLF（*.ps1 等脚本）；构建工具重写文件后 git 可能出现纯换行符 diff，属正常。
 - 无 frame 布局：标题栏为自绘组件 `TitleBar.vue`，窗口操作走 App 绑定（WindowPin/WindowMaxToggle 等），不要引入系统标题栏。

@@ -17,6 +17,7 @@ import CodeEditor from './CodeEditor.vue'
 import { getApi } from '../api'
 import { renderDiagramsIn, renderMathIn } from '../markdown'
 import { countPreviewText, countStats } from '../stats'
+import { srcEditor } from '../editor-bridge'
 import { status } from '../status'
 import { t } from '../i18n'
 import type { ViewMode } from '../types'
@@ -172,6 +173,7 @@ watch(
 function onCaret(pos: { line: number; col: number }) {
   status.caretLine = pos.line
   status.caretCol = pos.col
+  followCaret(pos.line)
 }
 
 watch(
@@ -213,6 +215,191 @@ function mirror(from: HTMLElement | null, to: HTMLElement | null): boolean {
 // 与平滑滚动（目录跳转/回到开头结尾）形成回环，把每帧进度拉回原位
 function justMirrored() {
   return performance.now() - mirrorAt < 80
+}
+
+// ---------- 源码 ⇄ 正文 位置映射（锚点表） ----------
+// 按比例镜像在两边高度不成比例时必然对不上（源码有底部留白、正文有图形/表格）。
+// 参考 mdeditor：以「源码标题行 ↔ 渲染标题块」为锚点建表，中间按线性插值，
+// 锚点不足时（无标题/预览隐藏）才回落到比例镜像。
+interface Anchor {
+  line: number
+  srcTop: number
+  pvTop: number
+}
+let anchors: Anchor[] = []
+
+function srcLineTop(line: number): number {
+  const cm = srcEditor.cm
+  if (!cm) return 0
+  return cm.heightAtLine(Math.max(0, Math.min(line, cm.lineCount() - 1)), 'local')
+}
+function srcLineCount(): number {
+  return srcEditor.cm?.lineCount() ?? shownText.value.split('\n').length
+}
+
+/**
+ * 目录项 → 源码行号：按标题文本匹配。
+ * 不能按序号对应——渲染前的 preprocess 会增删行（摘除脚注定义、补空行）。
+ */
+function matchHeadingLines(): number[] {
+  const cm = srcEditor.cm
+  if (!cm) return []
+  const norm = (s: string) =>
+    s
+      .replace(/^\s{0,3}#{1,6}\s*/, '')
+      .replace(/[*_`~]/g, '')
+      .replace(/\[([^[\]]*)\]\([^()]*\)/g, '$1')
+      .trim()
+  const heads: { line: number; text: string }[] = []
+  for (let i = 0; i < cm.lineCount(); i++) {
+    const raw = cm.getLine(i) ?? ''
+    if (/^\s{0,3}#{1,6}(\s|$)/.test(raw)) heads.push({ line: i, text: norm(raw) })
+  }
+  const out: number[] = []
+  let j = 0
+  for (const it of store.toc) {
+    const want = norm(it.text ?? '')
+    let hit = -1
+    for (let k = j; k < heads.length; k++) {
+      if (heads[k]!.text === want) {
+        hit = heads[k]!.line
+        j = k + 1
+        break
+      }
+    }
+    if (hit < 0) break // 对不上就停止，后续区间交给相邻锚点插值
+    out.push(hit)
+  }
+  return out
+}
+
+/** 重建锚点表：目录项（标题）的源码行号 ↔ 渲染块在正文里的位置。 */
+function rebuildAnchors(): Anchor[] {
+  anchors = []
+  const sc = renderScrollEl.value
+  if (!sc || !showRender.value || store.currentKind !== 'markdown') return anchors
+  const pvMax = Math.max(0, sc.scrollHeight - sc.clientHeight)
+  const heads = matchHeadingLines()
+  const list: Anchor[] = [{ line: 0, srcTop: 0, pvTop: 0 }]
+  const n = Math.min(heads.length, store.toc.length)
+  for (let i = 0; i < n; i++) {
+    const id = store.toc[i]?.id
+    if (!id) continue
+    const el = document.getElementById(id)
+    if (!el || !sc.contains(el)) continue
+    const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop
+    const line = heads[i]!
+    const st = srcLineTop(line)
+    if (st <= list[list.length - 1]!.srcTop) continue // 保持单调
+    list.push({ line, srcTop: st, pvTop: Math.max(0, Math.min(top - 8, pvMax)) })
+  }
+  const lastLine = Math.max(0, srcLineCount() - 1)
+  // 末尾锚点用「源码可滚动到底」而不是最后一行行高：源码底部还有阅读留白
+  const srcEl = sourceScroller()
+  const lastSrc = srcEl ? Math.max(0, srcEl.scrollHeight - srcEl.clientHeight) : srcLineTop(lastLine)
+  if (lastSrc > list[list.length - 1]!.srcTop && pvMax > 0) {
+    list.push({ line: lastLine, srcTop: lastSrc, pvTop: pvMax })
+  }
+  anchors = list.length >= 2 ? list : []
+  return anchors
+}
+
+function useAnchors(): Anchor[] {
+  return anchors.length >= 2 ? anchors : rebuildAnchors()
+}
+
+/** 源码滚动位置 → 正文滚动位置（锚点间线性插值；返回 null 表示锚点不足） */
+function previewTopForSrcTop(top: number): number | null {
+  const sc = renderScrollEl.value
+  if (!sc) return null
+  const a = useAnchors()
+  if (a.length < 2) return null
+  const pvMax = Math.max(0, sc.scrollHeight - sc.clientHeight)
+  if (top <= a[0]!.srcTop + 0.5) return 0
+  const last = a[a.length - 1]!
+  if (top >= last.srcTop - 0.5) return pvMax
+  let i = 0
+  for (let k = 1; k < a.length; k++) {
+    if (a[k]!.srcTop <= top) i = k
+    else break
+  }
+  const a1 = a[i]!
+  const a2 = a[i + 1]!
+  const span = a2.srcTop - a1.srcTop
+  if (span <= 0) return a1.pvTop
+  const r = (top - a1.srcTop) / span
+  return Math.max(0, Math.min(a1.pvTop + r * (a2.pvTop - a1.pvTop), pvMax))
+}
+
+/** 正文滚动位置 → 源码滚动位置（反向插值；返回 null 表示锚点不足） */
+function srcTopForPreviewTop(pvTop: number): number | null {
+  const src = sourceScroller()
+  if (!src) return null
+  const a = useAnchors()
+  if (a.length < 2) return null
+  if (pvTop <= a[0]!.pvTop + 0.5) return 0
+  const last = a[a.length - 1]!
+  if (pvTop >= last.pvTop - 0.5) return Math.max(0, src.scrollHeight - src.clientHeight)
+  let i = 0
+  for (let k = 1; k < a.length; k++) {
+    if (a[k]!.pvTop <= pvTop) i = k
+    else break
+  }
+  const a1 = a[i]!
+  const a2 = a[i + 1]!
+  const span = a2.pvTop - a1.pvTop
+  if (span <= 0) return a1.srcTop
+  const r = (pvTop - a1.pvTop) / span
+  return Math.max(0, a1.srcTop + r * (a2.srcTop - a1.srcTop))
+}
+
+function markMirrored() {
+  mirrorAt = performance.now()
+  syncing = true
+  requestAnimationFrame(() => (syncing = false))
+}
+
+/** 源码滚动 → 正文（编辑态唯一的同步方向） */
+function syncSourceToPreview(): boolean {
+  const sc = renderScrollEl.value
+  const src = sourceScroller()
+  if (!sc || !src || !isSplit.value || !syncScroll.value || syncing) return false
+  const t = previewTopForSrcTop(src.scrollTop)
+  if (t == null) return mirror(src, sc)
+  markMirrored()
+  sc.scrollTop = t
+  rememberRender(sc)
+  return true
+}
+
+/** 正文滚动 → 源码（非编辑态；编辑态会拖走光标，故不启用） */
+function syncPreviewToSource(): boolean {
+  const sc = renderScrollEl.value
+  const src = sourceScroller()
+  if (!sc || !src || !isSplit.value || !syncScroll.value || syncing || editing.value) return false
+  const st = srcTopForPreviewTop(sc.scrollTop)
+  if (st == null) return mirror(sc, src)
+  markMirrored()
+  const cm = srcEditor.cm
+  if (cm) cm.scrollTo(null, st)
+  else src.scrollTop = Math.max(0, Math.min(st, src.scrollHeight - src.clientHeight))
+  return true
+}
+
+/**
+ * 编辑态跟随光标：光标所在行对应到正文的位置若已滚出视口，
+ * 就把正文拉到该位置（解决「正在编辑的行在右边偏上甚至被挡住」）。
+ */
+function followCaret(line1: number) {
+  if (!editing.value || !isSplit.value || !syncScroll.value || syncing) return
+  const sc = renderScrollEl.value
+  if (!sc) return
+  const t = previewTopForSrcTop(srcLineTop(line1 - 1))
+  if (t == null) return
+  if (t >= sc.scrollTop - 8 && t <= sc.scrollTop + sc.clientHeight - 48) return // 已在视口内
+  markMirrored()
+  sc.scrollTop = t
+  rememberRender(sc)
 }
 
 // ---------- 滚动 / 补充渲染 ----------
@@ -296,6 +483,8 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
   await postRender(art, redrawDiagram)
   // 预览字数按渲染后可见文本统计（图形内部文字、复制按钮等不计）
   status.previewChars = store.currentKind === 'markdown' ? countPreviewText(art) : 0
+  // 渲染结果变了 → 锚点表失效，重建后再还原滚动位置
+  rebuildAnchors()
 
   const sc = renderScrollEl.value
   if (!sc) return
@@ -303,7 +492,7 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
   const path = store.current?.path ?? ''
   if (editing.value) {
     // 编辑草稿重渲染：以源码视口为准重新对齐，内容高度变了也不跟着跳
-    const ok = isSplit.value && syncScroll.value && mirror(sourceScroller(), sc)
+    const ok = isSplit.value && syncScroll.value && syncSourceToPreview()
     if (!ok) sc.scrollTop = (keepRatio ?? savedRatio) * (sc.scrollHeight - sc.clientHeight)
   } else if (savedFor === path) {
     sc.scrollTop = savedRatio * (sc.scrollHeight - sc.clientHeight)
@@ -323,17 +512,16 @@ function onRenderScroll() {
   const sc = renderScrollEl.value
   if (!sc) return
   rememberRender(sc)
-  // 镜像写入的位置只记账、不再往回镜像，否则两边互相牵引
+  // 程序写入的位置只记账、不再往回同步，否则两边互相牵引
   if (justMirrored()) return
   spyHeading(sc)
-  // 编辑态单向同步：源码视口由光标决定，正文跟随源码；反向会把光标带出屏幕
-  if (isSplit.value && syncScroll.value && !editing.value) mirror(sc, sourceScroller())
+  syncPreviewToSource()
 }
 
-/** 源码侧滚动（CodeMirror 的 scroll 事件）：分栏同步时把位置镜像到正文 */
+/** 源码侧滚动（CodeMirror 的 scroll 事件）：按锚点表同步到正文 */
 function onSrcScroll() {
-  if (!isSplit.value || !syncScroll.value || justMirrored()) return
-  mirror(sourceScroller(), renderScrollEl.value)
+  if (justMirrored()) return
+  syncSourceToPreview()
 }
 
 watch(
@@ -378,8 +566,8 @@ watch(mode, async (to, from) => {
     if (from === 'source') sc.scrollTop = renderScrollTop
     if (isSplit.value && syncScroll.value) {
       // 编辑态以源码视口为准，非编辑态从正文回推源码
-      if (editing.value) mirror(sourceScroller(), sc)
-      else mirror(sc, sourceScroller())
+      if (editing.value) syncSourceToPreview()
+      else syncPreviewToSource()
     }
   }
 })
