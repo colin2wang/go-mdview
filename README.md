@@ -16,19 +16,19 @@ A lightweight native Markdown reader for Windows. Double-click a `.md` file and 
 
 ---
 
-## ✨ Why mdview
+## Why mdview
 
-- **🖱 Double-click to read** — associate `.md` with mdview once, and every note opens rendered, like a web page
-- **🧠 Mind Map view** — one click turns the whole document into an XMind-style mind map, with zoom / pan / collapse / SVG & PNG export
-- **📊 Diagrams out of the box** — Mermaid, SVG, KaTeX math, GFM alerts, tables, task lists, footnotes, `[[wiki links]]` — all rendered offline
-- **✍️ Live preview editing** — rewrite in Split view, watch the preview update instantly, save back in the file's original encoding
-- **📁 Folder-friendly** — open a notes folder (e.g. an Obsidian vault) and browse its file tree, history, and favorites
-- **🌗 Light / dark × 4 languages** — zh-CN / English / 日本語 / Deutsch, switchable live
-- **🔒 100% local** — one ~13 MB `mdview.exe`, no runtime, no network, no telemetry; your notes never leave your PC
+- **Double-click to read** — associate `.md` with mdview once, and every note opens rendered, like a web page
+- **Mind Map view** — one click turns the whole document into an XMind-style mind map, with zoom / pan / collapse / SVG & PNG export
+- **Diagrams out of the box** — Mermaid, SVG, KaTeX math, GFM alerts, tables, task lists, footnotes, `[[wiki links]]` — all rendered offline
+- **Live preview editing** — rewrite in Split view, watch the preview update instantly, save back in the file's original encoding
+- **Folder-friendly** — open a notes folder (e.g. an Obsidian vault) and browse its file tree, history, and favorites
+- **Light / dark × 4 languages** — zh-CN / English / 日本語 / Deutsch, switchable live
+- **100% local** — one ~13 MB `mdview.exe`, no runtime, no network, no telemetry; your notes never leave your PC
 
 ---
 
-## 📥 Quick Start
+## Quick Start
 
 | Method | How |
 | --- | --- |
@@ -42,7 +42,7 @@ A lightweight native Markdown reader for Windows. Double-click a `.md` file and 
 
 ---
 
-## 🖥 Interface at a Glance
+## Interface at a Glance
 
 Custom draggable title bar up top, four tabs down the left, content on the right (rendered body centered at 900px). Shown here in Split view, with the source-pane toolbar offering Sync scroll / Edit / Save / Copy:
 
@@ -99,7 +99,7 @@ Four view modes, then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top`
 
 ---
 
-## 🧩 Rendering Capabilities
+## Rendering Capabilities
 
 - **Full GFM** — tables (rounded borders), strikethrough, task lists (checkable style), autolinks
 - **Code blocks** — highlight.js syntax highlighting (github / github-dark themes follow the global theme), language label, hover copy button
@@ -117,7 +117,7 @@ Four view modes, then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top`
 
 ---
 
-## ❓ FAQ
+## FAQ
 
 **Q1: Double-clicking an md file doesn't open mdview?**
 Open "⚙ Settings → File Association" and click "Associate with mdview" (writes to `HKEY_CURRENT_USER`, no admin rights needed; "Unassociate" restores the previous default). Or manually: right-click the md file → Open With → choose mdview.exe → check "Always use this app".
@@ -139,7 +139,7 @@ Wiki links search the directory of the currently open file recursively for an md
 
 ---
 
-## ⚠️ Known Limitations
+## Known Limitations
 
 Stated honestly:
 
@@ -149,7 +149,7 @@ Stated honestly:
 
 ---
 
-## 🔧 Building from Source
+## Building from Source
 
 ```
 go-mdview/
