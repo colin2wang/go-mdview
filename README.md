@@ -1,14 +1,28 @@
-# mdview · User Guide
+# mdview
+
+**Read Markdown like a web page — instantly, offline, and entirely on your own machine.**
+
+A lightweight native Markdown reader for Windows. Double-click a `.md` file and it opens *rendered* — not in an editor — with diagrams, math, mind maps, and live preview built in.
+
+`Go 1.25` · `Wails v2` · `Vue 3` · `TypeScript` · `Windows` · `Offline-first`
 
 [简体中文](README.zh-CN.md) · **English**
 
-A lightweight local Markdown reader for Windows (a clone of mdview.cn) — double-click a `.md` file and read it like a web page, no configuration needed.
+---
 
-> Tech stack: Go 1.25 + Wails v2 + Vue 3 + TypeScript · Ships as a single-file `mdview.exe` (~13MB)
+## ✨ Why mdview
+
+- **🖱 Double-click to read** — associate `.md` with mdview once, and every note opens rendered, like a web page
+- **🧠 Mind Map view** — one click turns the whole document into an XMind-style mind map, with zoom / pan / collapse / SVG & PNG export
+- **📊 Diagrams out of the box** — Mermaid, SVG, KaTeX math, GFM alerts, tables, task lists, footnotes, `[[wiki links]]` — all rendered offline
+- **✍️ Live preview editing** — rewrite in Split view, watch the preview update instantly, save back in the file's original encoding
+- **📁 Folder-friendly** — open a notes folder (e.g. an Obsidian vault) and browse its file tree, history, and favorites
+- **🌗 Light / dark × 4 languages** — zh-CN / English / 日本語 / Deutsch, switchable live
+- **🔒 100% local** — one ~13 MB `mdview.exe`, no runtime, no network, no telemetry; your notes never leave your PC
 
 ---
 
-## 1. Quick Start
+## 📥 Quick Start
 
 | Method | How |
 | --- | --- |
@@ -20,36 +34,44 @@ A lightweight local Markdown reader for Windows (a clone of mdview.cn) — doubl
 
 **Single instance**: double-clicking again won't open a new window — the file is handed to the already-running one.
 
-## 2. UI Tour
+---
 
-The whole window at a glance — custom draggable title bar up top, the four tabs down the left, content on the right (rendered body is centered at 900px with 40px top padding). Shown here in Split view, with the source-pane toolbar offering Sync scroll / Edit / Save / Copy:
+## 🖥 Interface at a Glance
+
+Custom draggable title bar up top, four tabs down the left, content on the right (rendered body centered at 900px). Shown here in Split view, with the source-pane toolbar offering Sync scroll / Edit / Save / Copy:
 
 ![Split view: source on the left, rendered result on the right](docs/images/split-view.png)
 
-### The four tabs
+### Four view modes
 
-- **TOC**: automatically extracts headings into an outline tree, highlights the current section while scrolling, click to smooth-scroll
-- **History**: recently opened files (up to 100 entries) with directory and relative time; keyword filter at the top, clear-all at the top right
-- **Favorites**: right-click any file → Favorite; entries show a ★ that unfavorites with one click
-- **Files**: file tree of the current directory (Markdown plus previewable images/text; hidden and junk directories like `.obsidian`/`.git`/`node_modules` are skipped automatically); the open file gets a "current" badge; supports open directory / refresh / collapse all
+`Source` · `Render` · `Split` · `Mind Map` (grayed out when no file is open; Mind Map applies to Markdown only):
+
+- **Render** — rendered result only (default)
+- **Source** — raw Markdown with path, line count / encoding / size, one-click copy-all; line numbers toggle in Settings
+- **Split** — source left, rendered right, draggable divider (double-click to split evenly); **Sync scroll** keeps both panes aligned by heading anchors
+- **Mind Map** — the whole document as an XMind-style mind map (see below)
+
+### Live editing (Split view)
+
+Click **Edit** to rewrite the Markdown on the left while the right pane previews instantly. Changes stay preview-only until **Save** writes them back to the original file (GB18030 notes are saved in their original encoding via an atomic replace). Switching files with unsaved edits warns before discarding. Each pane remembers its own scroll position across switches.
+
+### Four sidebar tabs
+
+- **TOC** — auto-extracted heading outline, highlights the current section while scrolling, click to smooth-scroll
+- **History** — recently opened files (up to 100) with directory and relative time; keyword filter, clear-all
+- **Favorites** — right-click any file to favorite; entries show a ★ to unfavorite in one click
+- **Files** — file tree of the current directory (Markdown plus previewable images/text; hidden and junk directories like `.obsidian` / `.git` / `node_modules` are skipped); the open file gets a "current" badge; supports open directory / refresh / collapse all
 
 ### Title bar buttons
 
-Four view modes — `Source` · `Render` · `Split` · `Mind Map` (grayed out when no file is open; Mind Map only applies to Markdown files) — then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top` · `─ Minimize` · `□ Maximize` · `✕ Close` (double-click the title bar = maximize/restore).
-
-- **Render**: the rendered result only (default)
-- **Source**: the raw Markdown text only — header shows path, line count / encoding / size, with one-click copy-all; line numbers can be toggled in Settings
-- **Split**: source on the left, rendered result on the right, with a draggable divider (double-click it to split evenly); a **Sync scroll** toggle keeps both panes aligned
-- **Mind Map**: the whole document as an XMind-style mind map — see below
-
-**Live editing (Split view)**: click **Edit** to rewrite the Markdown on the left and watch the right pane update instantly. Changes stay preview-only until you click **Save**, which writes them back to the original file (GB18030 notes are saved in their original encoding via an atomic replace). Switching files while unsaved edits exist warns that they'll be discarded. Scroll positions are remembered separately for each pane and survive switching.
+Four view modes, then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top` · `─ Minimize` · `□ Maximize` · `✕ Close` (double-click the title bar = maximize/restore).
 
 ### Context menus
 
-- **Right-click on content**: light/dark theme toggle · enter/exit Split view · copy file path · open containing folder · export HTML
-- **Right-click on Files/History/Favorites entries**: open · favorite/unfavorite · copy file path · open containing folder
+- **On content** — light/dark theme toggle · enter/exit Split view · copy file path · open containing folder · export HTML
+- **On Files / History / Favorites entries** — open · favorite/unfavorite · copy file path · open containing folder
 
-### Screenshots
+### More screenshots
 
 **Mermaid & SVG diagrams** render inline as cards; each card header has a **Source** button to flip between the graphic and its code, plus a copy button:
 
@@ -63,29 +85,33 @@ Four view modes — `Source` · `Render` · `Split` · `Mind Map` (grayed out wh
 
 ![Settings dialog](docs/images/settings.png)
 
-**Mind Map** — headings (`#`–`######` levels) become nodes, `>` quotes become node notes; top-level branches are balanced left/right with organic curves. Below: the same document in Split view, then as a mind map:
+**Mind Map** — headings (`#`–`######`) become nodes, `>` quotes become node notes; top-level branches are balanced left/right with organic curves. Below: the same document in Split view, then as a mind map:
 
 ![Split view of a document that maps cleanly to a mind map](docs/images/mindmap-source.png)
 
 ![Mind Map view: balanced tree with collapsible nodes and an export toolbar](docs/images/mindmap-view.png)
 
-## 3. Rendering Capabilities
+---
 
-- Full GFM: tables (rounded borders), strikethrough, task lists (checkable style), autolinks
-- Code blocks: highlight.js syntax highlighting (github / github-dark themes follow the global theme), language label at the top right, copy button on hover
-- GFM Alerts: `> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]` callouts in five colors
-- Math: `$inline$` and `$$block$$` (KaTeX, rendered offline)
-- Mermaid diagrams: ```mermaid code blocks render as card-style diagrams (falls back to showing the source on syntax errors)
-- SVG graphics: ```svg (or xml/html blocks whose content is an `<svg>`) render directly as a graphic card
-- Every diagram/graphic card has a **Source** button to toggle between the graphic and its raw code, plus a copy button
-- Footnotes `[^1]`, `==highlight==`, `[[wiki links]]` (wiki links resolve by title within the current directory and navigate automatically)
-- **Mind Map**: one click on the title bar turns the whole document into an XMind-style mind map — heading levels become nodes, `>` quotes become node notes, top-level branches are balanced left/right; wheel to zoom, drag to pan, click a node to collapse/expand; the toolbar offers fit / zoom / notes toggle / collapse / expand-all / export SVG / export PNG / copy SVG (zero extra dependencies, rendered offline)
-- Local images: PNG/JPG/SVG/GIF/WebP in the md file's directory and subdirectories display directly (built-in replay route — files never leave your machine)
-- Standalone preview: opening an image file shows it in a lightbox; opening a plain-text file shows it as-is
-- Global light/dark theme toggle (code highlight theme follows), font size 12–28px, code block word-wrap toggle — all auto-saved
-- UI in four languages — Simplified Chinese, English, Japanese, German — switchable live in Settings
+## 🧩 Rendering Capabilities
 
-## 4. FAQ
+- **Full GFM** — tables (rounded borders), strikethrough, task lists (checkable style), autolinks
+- **Code blocks** — highlight.js syntax highlighting (github / github-dark themes follow the global theme), language label, hover copy button
+- **GFM Alerts** — `> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]` callouts in five colors
+- **Math** — `$inline$` and `$$block$$` via KaTeX, rendered offline
+- **Mermaid diagrams** — ```mermaid blocks render as card-style diagrams (falls back to source on syntax errors)
+- **SVG graphics** — ```svg (or xml/html blocks containing `<svg>`) render directly as graphic cards
+- **Diagram cards** — every graphic card has a **Source** toggle plus a copy button
+- **Extras** — footnotes `[^1]`, `==highlight==`, `[[wiki links]]` (resolved by title within the current directory, navigate automatically)
+- **Mind Map** — heading levels become nodes, `>` quotes become node notes, top-level branches balanced left/right; wheel to zoom, drag to pan, click a node to collapse/expand; toolbar: fit / zoom / notes toggle / collapse / expand-all / export SVG / export PNG / copy SVG (zero extra dependencies, rendered offline)
+- **Local images** — PNG/JPG/SVG/GIF/WebP in the md file's directory and subdirectories display directly via a built-in local route; files never leave your machine
+- **Standalone preview** — opening an image file shows it in a lightbox; opening a plain-text file shows it as-is
+- **Theming** — global light/dark toggle (code highlight theme follows), font size 12–28px, code word-wrap toggle — all auto-saved
+- **i18n** — UI in Simplified Chinese / English / Japanese / German, switchable live in Settings
+
+---
+
+## ❓ FAQ
 
 **Q1: Double-clicking an md file doesn't open mdview?**
 Open "⚙ Settings → File Association" and click "Associate with mdview" (writes to `HKEY_CURRENT_USER`, no admin rights needed; "Unassociate" restores the previous default). Or manually: right-click the md file → Open With → choose mdview.exe → check "Always use this app".
@@ -93,7 +119,7 @@ Open "⚙ Settings → File Association" and click "Associate with mdview" (writ
 **Q2: Do old notes with Chinese/GBK encoding show mojibake?**
 UTF-8 / GB18030 is auto-detected; no manual conversion needed.
 
-**Q3: History entry won't open after the file was moved/deleted?**
+**Q3: A History entry won't open after the file was moved/deleted?**
 Missing files in History and Favorites appear grayed out; clicking shows a "file not found" message.
 
 **Q4: Can I edit the Markdown?**
@@ -105,13 +131,19 @@ Yes — switch to **Split** view, click **Edit**, and the right pane previews yo
 **Q6: Clicking a wiki link `[[some note]]` does nothing?**
 Wiki links search the directory of the currently open file recursively for an md with a matching name (without extension); a message appears if not found. Make sure the target note is in the same directory tree.
 
-## 5. Known Limitations (stated honestly)
+---
+
+## ⚠️ Known Limitations
+
+Stated honestly:
 
 - Editing is a lightweight in-place source editor (Split view → Edit/Save), not a full authoring tool; other official mdview Pro features (PDF export, archive management, etc.) are out of scope for this clone
 - HTML export is a simplified single-file layout (embedded base styles), not the official "bundle-with-images" capability
 - Large Mermaid diagrams take 1–2 seconds to parse on first render (the ~2.7MB library is bundled — no network dependency)
 
-## 6. Building from Source
+---
+
+## 🔧 Building from Source
 
 ```
 go-mdview/
