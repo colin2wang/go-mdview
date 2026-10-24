@@ -4,7 +4,13 @@
 
 A lightweight native Markdown reader for Windows. Double-click a `.md` file and it opens *rendered* — not in an editor — with diagrams, math, mind maps, and live preview built in.
 
-`Go 1.25` · `Wails v2` · `Vue 3` · `TypeScript` · `Windows` · `Offline-first`
+![Platform](https://img.shields.io/badge/platform-Windows-blue)
+![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8)
+![Wails](https://img.shields.io/badge/Wails-v2-red)
+![Vue](https://img.shields.io/badge/Vue-3-4FC08D)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6)
+![Offline](https://img.shields.io/badge/network-100%25%20local-brightgreen)
+![Size](https://img.shields.io/badge/size-~13MB-informational)
 
 [简体中文](README.zh-CN.md) · **English**
 
