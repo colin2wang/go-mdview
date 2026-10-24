@@ -4,6 +4,8 @@ import {mdv} from '../models';
 
 export function AssociateMd():Promise<void>;
 
+export function BringToFront():Promise<void>;
+
 export function ClearHistory():Promise<Array<mdv.Entry>>;
 
 export function CopyText(arg1:string):Promise<void>;

@@ -118,6 +118,17 @@ func (a *App) EmitOpenFile(path string) {
 	wruntime.EventsEmit(a.ctx, "mdv:openfile", path)
 }
 
+// BringToFront 把已有窗口带到前台：二次启动（双击关联 .md 文件）时已有实例在后台
+// 运行，只把文件转给它的话，用户看到的是「什么都没发生」。最小化则还原，后台则置前。
+// 走 Wails 的 WindowShow——它内部经 mainWindow.Invoke 派发到创建窗口的主线程
+// （窗口 API 跨线程调用会直接崩溃），并自带 SetForegroundWindow + SetFocus。
+func (a *App) BringToFront() {
+	if a.ctx == nil {
+		return
+	}
+	wruntime.WindowShow(a.ctx)
+}
+
 // GetStartupFile 前端 mount 后拉取启动文件。
 func (a *App) GetStartupFile() string { return startupFile }
 

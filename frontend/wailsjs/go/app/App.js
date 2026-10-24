@@ -6,6 +6,10 @@ export function AssociateMd() {
   return window['go']['app']['App']['AssociateMd']();
 }
 
+export function BringToFront() {
+  return window['go']['app']['App']['BringToFront']();
+}
+
 export function ClearHistory() {
   return window['go']['app']['App']['ClearHistory']();
 }

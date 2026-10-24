@@ -57,7 +57,9 @@ func main() {
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "mdview-2f7a1c90-8d4e-4f6b-9c3a-b58d1e2f7a10",
 			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
-				// 二次启动：把新文件转给已有窗口
+				// 二次启动跑在已有实例里：先把已有窗口带到前台（程序在后台/最小化时
+				// 只是默默切了文件，用户看不到），再把新文件转给它
+				app.BringToFront()
 				for _, arg := range data.Args {
 					if l := strings.ToLower(arg); strings.HasSuffix(l, ".md") || strings.HasSuffix(l, ".markdown") {
 						app.SetStartupFile(arg)
