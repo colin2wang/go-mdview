@@ -12,6 +12,7 @@ interface Toast {
   id: number
   text: string
   kind: 'info' | 'error'
+  timer: number
 }
 
 export const store = reactive({
@@ -35,7 +36,11 @@ export const store = reactive({
   settingsOpen: false,
   viewMode: 'render' as ViewMode,
   demoMode: false,
-  rendering: false
+  rendering: false,
+  /** 当前文件已被外部删除/改名且用户选择保留：内容仍在窗口中，但已失效 */
+  currentMissing: false,
+  /** 外部删除确认弹窗：非空时显示「保留/关闭」询问 */
+  goneFile: null as string | null
 })
 
 /** 非法/缺失的 viewMode 回落到 render。 */
@@ -44,13 +49,26 @@ function normalizeViewMode(v: unknown): ViewMode {
 }
 
 let toastSeq = 0
-export function toast(text: string, kind: 'info' | 'error' = 'info') {
+export function toast(text: string, kind: 'info' | 'error' = 'info', opts: { dedupe?: boolean; duration?: number } = {}) {
+  const duration = opts.duration ?? 2600
+  // 去重：相同文案+类型的存活气泡复用，只续期计时（连续自动刷新时同一消息不反复弹）
+  if (opts.dedupe) {
+    const exist = store.toasts.find((x) => x.text === text && x.kind === kind)
+    if (exist) {
+      clearTimeout(exist.timer)
+      exist.timer = window.setTimeout(() => removeToast(exist.id), duration)
+      return
+    }
+  }
   const id = ++toastSeq
-  store.toasts.push({ id, text, kind })
-  setTimeout(() => {
-    const i = store.toasts.findIndex((t) => t.id === id)
-    if (i >= 0) store.toasts.splice(i, 1)
-  }, 2600)
+  const item: Toast = { id, text, kind, timer: 0 }
+  store.toasts.push(item)
+  item.timer = window.setTimeout(() => removeToast(id), duration)
+}
+
+function removeToast(id: number) {
+  const i = store.toasts.findIndex((t) => t.id === id)
+  if (i >= 0) store.toasts.splice(i, 1)
 }
 
 function favOf(path: string): boolean {
@@ -108,11 +126,71 @@ export async function saveSource(md: string): Promise<boolean> {
     const api = await getApi()
     const fc = await api.SaveMarkdown(cur.path, md, cur.encoding)
     store.current = fc
+    store.currentMissing = false // 已删除文件被保存重建，恢复有效
     toast(t('toast.saved'))
     return true
   } catch (e) {
     toast(t('toast.opFailed', { e: String(e) }), 'error')
     return false
+  }
+}
+
+// ---------- 外部文件修改监视 ----------
+
+/** 后端 file:watch 事件负载（Go: mdv.FileEvent）。 */
+interface WatchEvent {
+  kind: 'changed' | 'gone'
+  path: string
+  modTime: number
+  size: number
+}
+
+let reloading = false
+
+async function handleWatchEvent(ev: WatchEvent) {
+  const cur = store.current
+  if (!cur || cur.path !== ev.path) return
+  if (ev.kind === 'gone') {
+    // 文件被外部删除/改名：不独占文件（外部始终可删），弹窗问是否在窗口中保留内容
+    store.goneFile = ev.path
+    return
+  }
+  if (cur.modTime && ev.modTime && ev.modTime === cur.modTime) return
+  if (reloading) return
+  if (store.settings && !store.settings.autoReload) {
+    toast(t('toast.fileChanged'), 'info')
+    return
+  }
+  reloading = true
+  try {
+    // 静默重载：不推历史、不改树根；保存/滚动位置由既有流程处理
+    await openFile(ev.path, { pushHistory: false })
+    // 3 秒气泡 + 去重：文件被反复修改/更新时同一消息只保留一条
+    toast(t('toast.fileReloaded'), 'info', { dedupe: true, duration: 3000 })
+  } catch {
+    /* openFile 内部已 toast */
+  } finally {
+    reloading = false
+  }
+}
+
+/** 删除确认弹窗：选择「保留」——内容留在窗口并标记失效；「关闭」——清空视图。 */
+export async function resolveGoneFile(keep: boolean) {
+  const p = store.goneFile
+  store.goneFile = null
+  if (!p) return
+  const api = await getApi()
+  await api.StopWatch()
+  if (keep && store.current?.path === p) {
+    store.currentMissing = true
+    toast(t('toast.keptMissing'), 'error')
+  } else if (!keep) {
+    store.current = null
+    store.currentKind = 'markdown'
+    store.html = ''
+    store.toc = []
+    store.demoMode = false
+    store.currentMissing = false
   }
 }
 
@@ -141,6 +219,7 @@ export async function openFile(path: string, opts: { pushHistory?: boolean; reRo
       }
       store.currentKind = 'image'
       store.demoMode = false
+      store.currentMissing = false
       store.html = ''
       store.toc = []
       store.hasMath = false
@@ -152,6 +231,7 @@ export async function openFile(path: string, opts: { pushHistory?: boolean; reRo
       store.current = fc
       store.currentKind = fc.kind
       store.demoMode = false
+      store.currentMissing = false
       if (fc.kind === 'markdown') {
         await renderCurrent(fc)
       } else {
@@ -409,6 +489,8 @@ export async function initApp() {
   if (isDesktop()) {
     const rt = (window as any).runtime
     rt?.EventsOn?.('mdv:openfile', (p: string) => handleOpenEvent(p))
+    // 外部修改/删除监视：后端 mdv watcher 经 EventsEmit 推送
+    rt?.EventsOn?.('file:watch', (ev: WatchEvent) => handleWatchEvent(ev))
     // Windows 下必须由 JS 端调用 OnFileDrop，drop 事件才会生效（Wails v2 已知问题 #3985）
     rt?.OnFileDrop?.((_x: number, _y: number, paths: string[]) => {
       for (const p of paths) {

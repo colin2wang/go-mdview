@@ -110,6 +110,10 @@ export function StatFile(arg1) {
   return window['go']['app']['App']['StatFile'](arg1);
 }
 
+export function StopWatch() {
+  return window['go']['app']['App']['StopWatch']();
+}
+
 export function ToggleFavorite(arg1) {
   return window['go']['app']['App']['ToggleFavorite'](arg1);
 }

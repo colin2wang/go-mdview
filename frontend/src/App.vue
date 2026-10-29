@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { store, initApp, openEntry, toggleFavorite, applySettings } from './store'
+import { store, initApp, openEntry, toggleFavorite, applySettings, resolveGoneFile } from './store'
 import { getApi, isDesktop } from './api'
 import { t } from './i18n'
 import TitleBar from './components/TitleBar.vue'
@@ -62,5 +62,26 @@ watch(
     </div>
     <SettingsModal />
     <ContextMenu />
+    <!-- 外部删除确认：不独占文件，外部始终可删；点遮罩不生效，只认「保留/关闭」按钮 -->
+    <Teleport to="body">
+      <div v-if="store.goneFile" class="modal-mask" data-testid="gone-mask">
+        <div class="modal gone-modal" data-testid="gone-modal">
+          <div class="gone-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18" />
+              <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+            </svg>
+          </div>
+          <h3 class="gone-title">{{ t('gone.title') }}</h3>
+          <p class="gone-body">{{ t('gone.body', { name: store.goneFile.split(/[\\/]/).pop() ?? store.goneFile }) }}</p>
+          <div class="gone-actions">
+            <button class="set-btn danger" data-testid="gone-close" @click="resolveGoneFile(false)">{{ t('gone.close') }}</button>
+            <button class="set-btn" data-testid="gone-keep" @click="resolveGoneFile(true)">{{ t('gone.keep') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

@@ -1255,6 +1255,51 @@ button {
   color: var(--md-bq-text);
   cursor: default;
 }
+
+/* ---------- 外部删除确认弹窗 ---------- */
+.gone-modal {
+  width: 380px;
+  padding: 24px 26px 20px;
+  border-radius: 14px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28), var(--md-shadow);
+}
+.gone-icon {
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(213, 66, 60, 0.1);
+  color: #d5423c;
+}
+.gone-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.gone-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--md-text);
+}
+.gone-body {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--md-bq-text);
+  word-break: break-all;
+}
+.gone-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.gone-actions .set-btn {
+  min-width: 96px;
+}
 .set-about {
   border-top: 1px solid var(--md-pre-border);
   padding-top: 12px;

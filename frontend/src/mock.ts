@@ -19,6 +19,7 @@ const state = {
     pinned: false,
     viewMode: 'render',
     language: 'zh-CN',
+    autoReload: true,
     mmMaxLen: 20,
     winW: 0,
     winH: 0,
@@ -68,11 +69,12 @@ export const mockApi: Api = {
   OpenFileDialog: async () => mdPath('16-JVM 与性能调优.md'),
   ListTree: async (_dir) => mockTree() as unknown as MNode[],
   ReadMarkdown: async (path) => fakeContent(path),
-  SaveMarkdown: async (path, content) => {
+    SaveMarkdown: async (path, content) => {
     const fc = fakeContent(path)
     state.saved[path] = content
     return { ...fc, content, size: content.length, modTime: Date.now() }
   },
+  StopWatch: async () => {},
   FindByTitle: async (_root, title) => mdPath(title.endsWith('.md') ? title : title + '.md'),
   StatFile: async () => true,
   GetHistory: async () => [...state.history],

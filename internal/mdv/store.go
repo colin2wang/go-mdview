@@ -14,6 +14,8 @@ import (
 type Store struct {
 	mu      sync.Mutex
 	baseDir string
+	// 文件外部修改监视（见 watcher.go）：值语义字段，Store 零值即可用
+	watcher watcherState
 }
 
 func NewStore() *Store {

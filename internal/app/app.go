@@ -42,6 +42,10 @@ func NewApp() *App { return &App{store: mdv.NewStore()} }
 // Startup Wails 生命周期回调。
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	// 外部文件修改监视：mdv 检测到变化后经 Wails 事件推给前端
+	a.store.SetFileChangeCallback(func(ev mdv.FileEvent) {
+		wruntime.EventsEmit(ctx, "file:watch", ev)
+	})
 	// 还原上次关闭时的窗口几何：尺寸已由 wails.Run 的 Width/Height 初始化，
 	// 这里补位置；最大化放在最后，退出最大化时能回到记录的普通尺寸
 	if st := a.store.GetSettings(); st.WinW > 0 && st.WinH > 0 {
@@ -161,13 +165,29 @@ func (a *App) StatFile(path string) bool {
 	return ok
 }
 
-// ReadMarkdown 读取文件内容。
-func (a *App) ReadMarkdown(path string) (mdv.FileContent, error) { return a.store.ReadMarkdown(path) }
+// ReadMarkdown 读取文件内容，并切换外部修改监视到该文件。
+func (a *App) ReadMarkdown(path string) (mdv.FileContent, error) {
+	fc, err := a.store.ReadMarkdown(path)
+	if err == nil {
+		a.store.WatchFile(path)
+	}
+	return fc, err
+}
 
 // SaveMarkdown 把编辑后的正文写回文件（源码/对照模式的「保存」按钮）。
 func (a *App) SaveMarkdown(path, content, encoding string) (mdv.FileContent, error) {
-	return a.store.SaveMarkdown(path, content, encoding)
+	fc, err := a.store.SaveMarkdown(path, content, encoding)
+	if err == nil {
+		// 标记自身写入，watcher 不会把这次保存当成外部修改广播；
+		// 已删除文件被重建后也重新挂接监视（resolveGoneFile 曾 StopWatch）
+		a.store.MarkSaved()
+		a.store.WatchFile(path)
+	}
+	return fc, err
 }
+
+// StopWatch 停止外部修改监视（前端关闭当前文件时调用）。
+func (a *App) StopWatch() { a.store.StopWatch() }
 
 // FindByTitle wiki 链接解析。
 func (a *App) FindByTitle(root, title string) string { return a.store.FindByTitle(root, title) }

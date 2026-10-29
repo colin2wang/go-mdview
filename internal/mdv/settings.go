@@ -41,6 +41,7 @@ type Settings struct {
 	Pinned       bool   `json:"pinned"`       // 窗口置顶
 	ViewMode     string `json:"viewMode"`     // render | source | split | mindmap
 	Language     string `json:"language"`     // 界面语言 zh-CN | en | ja | de
+	AutoReload   bool   `json:"autoReload"`   // 外部修改自动重载，默认开
 	MmMaxLen     int    `json:"mmMaxLen"`     // 思维导图节点/备注单行最大字符数，默认 DefaultMmMaxLen
 	WinW         int    `json:"winW"`         // 上次关闭时窗口宽 px（0 = 未记录）
 	WinH         int    `json:"winH"`         // 上次关闭时窗口高 px
@@ -57,6 +58,7 @@ var defaultSettings = Settings{
 	SidebarWidth: DefaultSidebarWidth,
 	ViewMode:     ViewModeRender,
 	Language:     "zh-CN",
+	AutoReload:   true,
 	MmMaxLen:     DefaultMmMaxLen,
 }
 

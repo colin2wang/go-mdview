@@ -56,6 +56,8 @@ export function SetWindowTitle(arg1:string):Promise<void>;
 
 export function StatFile(arg1:string):Promise<boolean>;
 
+export function StopWatch():Promise<void>;
+
 export function ToggleFavorite(arg1:string):Promise<boolean|Array<mdv.Entry>>;
 
 export function UnassociateMd():Promise<void>;

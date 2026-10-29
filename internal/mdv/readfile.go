@@ -64,14 +64,25 @@ func (s *Store) ReadMarkdown(path string) (FileContent, error) {
 // SaveMarkdown 把编辑后的正文写回文件，返回刷新后的读取结果。
 // encoding 为 gb18030 时按原编码回写，避免改动老笔记的编码；其余按 UTF-8。
 // 采用「临时文件 + 重命名」的原子写法，避免写一半失败损坏原文。
+// 文件已被外部删除（用户选择「保留」后）时保存会重建文件，含缺失的父目录。
 func (s *Store) SaveMarkdown(path, content, encoding string) (FileContent, error) {
 	path = filepath.Clean(path)
 	fi, err := os.Stat(path)
 	if err != nil {
-		return FileContent{}, err
-	}
-	if fi.IsDir() {
+		if !os.IsNotExist(err) {
+			return FileContent{}, err
+		}
+		if merr := os.MkdirAll(filepath.Dir(path), 0o755); merr != nil {
+			return FileContent{}, merr
+		}
+		fi = nil
+	} else if fi.IsDir() {
 		return FileContent{}, os.ErrInvalid
+	}
+
+	perm := os.FileMode(0o644)
+	if fi != nil {
+		perm = fi.Mode().Perm()
 	}
 
 	data := []byte(content)
@@ -91,13 +102,13 @@ func (s *Store) SaveMarkdown(path, content, encoding string) (FileContent, error
 		tmp.Close()
 		return FileContent{}, err
 	}
-	_ = tmp.Chmod(fi.Mode().Perm())
+	_ = tmp.Chmod(perm)
 	if err := tmp.Close(); err != nil {
 		return FileContent{}, err
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		// 极少数文件系统/权限下 rename 会失败，退化为直接覆盖写
-		if werr := os.WriteFile(path, data, fi.Mode().Perm()); werr != nil {
+		if werr := os.WriteFile(path, data, perm); werr != nil {
 			return FileContent{}, err
 		}
 	}

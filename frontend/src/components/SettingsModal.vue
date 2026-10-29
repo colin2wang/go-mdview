@@ -51,6 +51,9 @@ function setWrap(e: Event) {
 function setLineNo(e: Event) {
   patchSettings({ lineNo: (e.target as HTMLInputElement).checked })
 }
+function setAutoReload(e: Event) {
+  patchSettings({ autoReload: (e.target as HTMLInputElement).checked })
+}
 function setPinned() {
   // 走 togglePin：既写设置也立刻应用到窗口
   void togglePin()
@@ -245,6 +248,17 @@ const assocTip = computed(() => {
                 <b class="fs-num" data-testid="mmmaxlen-num">{{ st?.mmMaxLen ?? 20 }}</b>
               </span>
             </div>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.autoReload') }}</span>
+              <input
+                type="checkbox"
+                class="set-switch"
+                :checked="st?.autoReload ?? true"
+                data-testid="autoReload-check"
+                @change="setAutoReload"
+              />
+            </div>
+            <p class="set-hint">{{ t('set.autoReloadHint') }}</p>
             <div class="set-row">
               <span class="set-label">{{ t('set.lineNo') }}</span>
               <input
