@@ -1156,6 +1156,20 @@ button {
   line-height: 1.6;
   color: var(--md-bq-text);
 }
+.set-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 8px 10px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--md-text);
+  background: var(--md-surface-2);
+  border: 1px solid var(--md-pre-border);
+  border-radius: 8px;
+  resize: vertical;
+}
 .set-seg {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1312,6 +1326,13 @@ button {
 .set-about .sub {
   color: var(--md-bq-text);
   line-height: 1.6;
+}
+.set-about .build-info {
+  margin-left: 6px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--md-bq-text);
+  user-select: text;
 }
 
 /* ---------- 右键菜单 ---------- */

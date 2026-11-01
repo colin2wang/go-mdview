@@ -24,7 +24,7 @@ A lightweight native Markdown reader for Windows. Double-click a `.md` file and 
 - **Live preview editing** — rewrite in Split view, watch the preview update instantly, save back in the file's original encoding
 - **Folder-friendly** — open a notes folder (e.g. an Obsidian vault) and browse its file tree, history, and favorites
 - **Light / dark × 4 languages** — zh-CN / English / 日本語 / Deutsch, switchable live
-- **100% local** — one ~13 MB `mdview.exe`, no runtime, no network, no telemetry; your notes never leave your PC
+- **100% local** — one ~13 MB `mdview.exe`, no runtime, no network, no telemetry; your notes never leave your PC. Remote resources (http(s) images, etc.) referenced by documents are blocked by default (toggle in Settings) so opening an untrusted note never sends outbound requests
 
 ---
 

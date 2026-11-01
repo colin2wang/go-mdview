@@ -107,8 +107,10 @@ class Ruler {
 }
 const ruler = new Ruler()
 /** 节点/备注单行最大字符数：超长不可断单词（如 NEW/RUNNABLE/BLOCKED/…）按它硬折行。
- *  由设置 mmMaxLen 驱动，createMindMap(opts.maxLen) 更新。 */
-let MAX_CHARS = 20
+ *  由设置 mmMaxLen 驱动，createMindMap(opts.maxLen) 每次实例化时重置——
+ *  不能只在传了 maxLen 时改写，否则上一次实例的值会泄漏到未传 maxLen 的实例。 */
+const DEFAULT_MAX_CHARS = 20
+let MAX_CHARS = DEFAULT_MAX_CHARS
 /** 自动换行：CJK 逐字可断，latin 按单词断，单词超过 MAX_CHARS 字符硬折行 */
 function wrapText(text: string, maxW: number, size: number, weight: number): string[] {
   const lines: string[] = []
@@ -492,6 +494,8 @@ export function createMindMap(
 ): MindMapController {
   container.classList.add('mm-container')
   if (opts.maxLen && opts.maxLen >= 8) MAX_CHARS = Math.min(opts.maxLen, 60)
+  else MAX_CHARS = DEFAULT_MAX_CHARS // 显式重置：避免继承上一个实例的 maxLen
+  __uid = 0 // id 只需实例内唯一，单窗口同时只有一个导图实例，归零保持确定性
   let root = parseMarkdown(markdown)
   let DARK = !!opts.dark
   let showNotes = true

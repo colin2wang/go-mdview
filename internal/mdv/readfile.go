@@ -40,6 +40,8 @@ func (s *Store) ReadMarkdown(path string) (FileContent, error) {
 	if err != nil {
 		return FileContent{}, err
 	}
+	// 打开成功即登记所在目录：/mdimg 回放仅允许已打开目录子树内的图片
+	AllowImageDir(filepath.Dir(path))
 	raw = bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
 	enc := "utf-8"
 	text := string(raw)
@@ -107,9 +109,10 @@ func (s *Store) SaveMarkdown(path, content, encoding string) (FileContent, error
 		return FileContent{}, err
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		// 极少数文件系统/权限下 rename 会失败，退化为直接覆盖写
+		// 极少数文件系统/权限下 rename 会失败，退化为直接覆盖写；
+		// 回退也失败时返回真正的写入错误 werr（而不是掩盖它的 rename 错误）
 		if werr := os.WriteFile(path, data, perm); werr != nil {
-			return FileContent{}, err
+			return FileContent{}, werr
 		}
 	}
 	return s.ReadMarkdown(path)

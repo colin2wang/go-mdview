@@ -6,6 +6,7 @@ import type { MNode, FileContent, Entry, Settings, AssocState } from './types'
  */
 export interface Api {
   GetStartupFile(): Promise<string>
+  BuildInfo(): Promise<string>
   OpenFolderDialog(): Promise<string>
   OpenFileDialog(): Promise<string>
   ListTree(dir: string): Promise<MNode[]>
@@ -50,6 +51,7 @@ function desktopApi(): Api {
   const a: any = g.app?.App ?? g.main?.App
   return {
     GetStartupFile: () => a.GetStartupFile(),
+    BuildInfo: () => a.BuildInfo(),
     OpenFolderDialog: () => a.OpenFolderDialog(),
     OpenFileDialog: () => a.OpenFileDialog(),
     ListTree: (d) => a.ListTree(d),

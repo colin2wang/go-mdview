@@ -1,6 +1,7 @@
 import type { TocItem } from './types'
 import { ensureHljs, ensureKatex, freshMarked, maybeMath, loadScript } from './vendor'
 import { t } from './i18n'
+import DOMPurify from 'dompurify'
 
 /**
  * Markdown 渲染管线（样式对齐 mdview demo）：
@@ -18,17 +19,90 @@ export interface RenderResult {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+/** 远程资源被拦截时显示的占位图（data URI，本地生成不外发请求）。 */
+const BLOCKED_IMG_DATA_URI =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="28"><rect width="120" height="28" rx="4" fill="#f0f0f0"/><text x="60" y="18" font-size="11" text-anchor="middle" fill="#999">🚫 ${t('img.blocked')}</text></svg>`
+  )
+
+/** 远程图片（http/https/协议相对）判定。 */
+function isRemoteSrc(href: string): boolean {
+  return /^(https?:)?\/\//i.test(href)
+}
+
+/** 远程资源白名单：URL 通配符模式（* 任意串、? 单字符），多值每行一个，不区分大小写。 */
+export function remoteAllowed(href: string, allow: string): boolean {
+  const patterns = (allow ?? '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (!patterns.length) return false
+  return patterns.some((p) => {
+    const re = new RegExp(
+      '^' +
+        p
+          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+          .replace(/\*/g, '.*')
+          .replace(/\?/g, '.') +
+        '$',
+      'i'
+    )
+    return re.test(href)
+  })
+}
+
+/** 当前拦截判断是否放行该地址：开关未开、不是远程、或命中白名单。 */
+function remotePasses(href: string): boolean {
+  return !blockRemoteNow || !isRemoteSrc(href) || remoteAllowed(href, remoteAllowNow)
+}
+
 // ---------- 原始 HTML 清洗（防 XSS）----------
-// marked 会原样放行 md 里的 HTML token；来源不明的 .md 可能携带脚本，
-// 统一在插入 DOM 前去掉 <script>/<iframe>/<object>/<embed>、on* 事件
-// 属性与 javascript:/vbscript: 链接协议。
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<(script|iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '')
-    .replace(/<(script|iframe|object|embed)\b[^>]*\/?>/gi, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/\s(href|src|action|xlink:href)\s*=\s*("\s*(javascript|vbscript):[^"]*"|'\s*(javascript|vbscript):[^']*')/gi, '')
-    .replace(/\s(href|src|action|xlink:href)\s*=\s*(javascript|vbscript):[^\s>]*/gi, '')
+// marked 会原样放行 md 里的 HTML token；来源不明的 .md 可能携带脚本。
+// 字符串级正则黑名单对抗不了 HTML 解析器（实体解码、formaction、<meta>/<base>
+// 等向量都能绕过），必须走真实 DOM 解析的 DOMPurify（随构建打包，运行时离线）。
+// 禁 style 标签/属性：既防 url() 外发探测，也与「100% 离线」承诺一致。
+
+// 清洗期间是否拦截远程资源；DOMPurify hook 是全局注册，单线程下先用模块级
+// 开关传递本次调用（JS 单线程，同步调用期间不会被并发修改）。
+let blockRemoteNow = false
+let remoteAllowNow = ''
+let hookInstalled = false
+
+function ensureRemoteHook(): void {
+  if (hookInstalled) return
+  hookInstalled = true
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (!blockRemoteNow || !(node instanceof Element)) return
+    const tag = node.tagName.toLowerCase()
+    const src = node.getAttribute('src') ?? ''
+    // 原始 HTML 里的远程 <img>/<video>/<audio>/<source> 等一律换成占位（白名单除外）
+    if (src && !remotePasses(src) && tag !== 'script') {
+      node.setAttribute('src', BLOCKED_IMG_DATA_URI)
+      node.setAttribute('alt', node.getAttribute('alt') || t('img.blocked'))
+    }
+    // SVG <image href="https://..."> 同理
+    const href = node.getAttribute('href') ?? ''
+    if (tag === 'image' && !remotePasses(href)) {
+      node.setAttribute('href', BLOCKED_IMG_DATA_URI)
+    }
+  })
+}
+
+function sanitizeHtml(html: string, blockRemote = true, remoteAllow = ''): string {
+  ensureRemoteHook()
+  blockRemoteNow = blockRemote
+  remoteAllowNow = remoteAllow
+  try {
+    return DOMPurify.sanitize(html, {
+      USE_PROFILES: { html: true, svg: true },
+      FORBID_TAGS: ['style', 'base', 'meta', 'form', 'input', 'button'],
+      FORBID_ATTR: ['style']
+    })
+  } finally {
+    blockRemoteNow = false
+    remoteAllowNow = ''
+  }
 }
 
 function hexEncode(s: string): string {
@@ -263,14 +337,18 @@ export function diagramKindOf(lang: string, text: string): DiagramKind | '' {
   return ''
 }
 
-/** 内联 SVG 清洗：去掉脚本、外联对象与事件属性。 */
+/** 内联 SVG 清洗：走 DOMPurify 真实 DOM 解析，去掉脚本、foreignObject、
+ * 事件/危险属性与远程引用（外链 image/xlink:href 会外发请求，违反离线承诺）。 */
 export function sanitizeSvg(code: string): string {
+  const clean = DOMPurify.sanitize(code, {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    FORBID_TAGS: ['script', 'foreignObject', 'style'],
+    FORBID_ATTR: ['style']
+  })
   return normalizeSvgRoot(
-    code
-      .replace(/<\s*(script|foreignObject)\b[\s\S]*?<\/\s*\1\s*>/gi, '')
-      .replace(/<\s*(script|foreignObject)\b[^>]*\/?\s*>/gi, '')
-      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-      .replace(/\s(href|xlink:href)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '')
+    clean
+      .replace(/\s(xlink:href|href)\s*=\s*("|')(https?:)?\/\/[^"']*\2/gi, ' $1=""')
+      .replace(/\ssrc\s*=\s*("|')(https?:)?\/\/[^"']*\1/gi, ' src=""')
   )
 }
 
@@ -321,7 +399,7 @@ export function diagramCard(kind: DiagramKind, label: string, code: string): str
     `<span class="md-diagram-tools">` +
     `<span class="md-diagram-meta">${escapeHtml(label)}</span>` +
     `<button type="button" class="md-diagram-btn" data-toggle-src title="${escapeHtml(t('diag.viewSrc'))}">${escapeHtml(t('diag.src'))}</button>` +
-    `<button type="button" class="md-diagram-btn" data-copy="${enc}" title="${escapeHtml(t('diag.copySrc'))}">${COPY_ICON}</button>` +
+    `<button type="button" class="md-diagram-btn" data-copy title="${escapeHtml(t('diag.copySrc'))}">${COPY_ICON}</button>` +
     `</span>` +
     `</div>` +
     `<div class="md-diagram-body"><div class="md-diagram-src">` +
@@ -334,7 +412,12 @@ export function diagramCard(kind: DiagramKind, label: string, code: string): str
 
 // ---------- 主渲染 ----------
 
-export async function renderMarkdown(src: string, baseDir: string): Promise<RenderResult> {
+export async function renderMarkdown(
+  src: string,
+  baseDir: string,
+  blockRemote = true,
+  remoteAllow = ''
+): Promise<RenderResult> {
   const [marked, hljs] = await Promise.all([freshMarked(), ensureHljs()])
   const slug = makeSluger()
   const { md, footnotes } = preprocess(src)
@@ -370,15 +453,20 @@ export async function renderMarkdown(src: string, baseDir: string): Promise<Rend
         `<div class="code-head">` +
         `<span class="code-lang">${lang ? escapeHtml(lang) : 'text'}</span>` +
         `<span class="code-tools">` +
-        `<button type="button" class="code-copy" data-copy="${encodeURIComponent(text)}" title="${escapeHtml(t('code.copy.tip'))}">${COPY_ICON}</button>` +
+        `<button type="button" class="code-copy" data-copy title="${escapeHtml(t('code.copy.tip'))}">${COPY_ICON}</button>` +
         `</span>` +
         `</div>` +
         `<pre><code${cls}>${body}</code></pre></div>\n`
       )
     },
     image(token: any) {
-      const href = resolveImgHref(token.href ?? '', baseDir)
+      let href = resolveImgHref(token.href ?? '', baseDir)
       const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
+      // 远程资源拦截（默认开）：不外发请求，用本地占位图代替；命中白名单的放行
+      if (blockRemote && isRemoteSrc(href) && !remoteAllowed(href, remoteAllow)) {
+        href = BLOCKED_IMG_DATA_URI
+        return `<img src="${href}" alt="${escapeHtml(token.text ?? '')}" title="${escapeHtml(t('img.blocked'))}" class="md-img-blocked" loading="lazy">`
+      }
       return `<img src="${escapeHtml(href)}"${title} alt="${escapeHtml(token.text ?? '')}" loading="lazy">`
     },
     link(token: any) {
@@ -400,7 +488,7 @@ export async function renderMarkdown(src: string, baseDir: string): Promise<Rend
   marked.use({ gfm: true, breaks: false, renderer })
 
   let html = String(marked.parse(md))
-  html = sanitizeHtml(html)
+  html = sanitizeHtml(html, blockRemote, remoteAllow)
   html = postprocessAlerts(html)
   html += await buildFootnotesHtml(footnotes)
 

@@ -1,6 +1,7 @@
 package mdv
 
 import (
+	"html"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,8 @@ const exportMid = "</title>\n" +
 	"mark{background:#fde68a;padding:0 1px;border-radius:2px}</style>\n</head>\n<body>\n"
 
 // ExportHtml 将前端渲染好的 HTML 片段包装为独立单文件写到 target。
-func ExportHtml(title, html, target string) (string, error) {
+// 参数名叫 bodyHtml 而不是 html：局部变量/参数会遮蔽 html 标准库包名。
+func ExportHtml(title, bodyHtml, target string) (string, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		target = "mdview-export-" + time.Now().Format("20060102-150405") + ".html"
@@ -31,9 +33,9 @@ func ExportHtml(title, html, target string) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString(exportHead)
-	b.WriteString(strings.ReplaceAll(title, "<", "&lt;"))
+	b.WriteString(html.EscapeString(title))
 	b.WriteString(exportMid)
-	b.WriteString(html)
+	b.WriteString(bodyHtml)
 	b.WriteString("\n</body>\n</html>\n")
 	if err := os.WriteFile(target, []byte(b.String()), 0o644); err != nil {
 		return "", err

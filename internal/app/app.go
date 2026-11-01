@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -20,6 +21,13 @@ import (
 // 否则新进程会撞上单实例锁，被当成二次启动转交后直接退出。
 const RelaunchFlag = "--mdview-relaunch"
 
+// BuildDate 编译时间（UTC），由 build.ps1 经 -ldflags -X 注入；开发态为 "dev"。
+var BuildDate = "dev"
+
+// WaitPidFlagPrefix 旧进程 PID 参数：新进程轮询该 PID 退出后再启动，
+// 替代固定 sleep——慢机器上 1.2s 未必够，快机器上白等。
+const WaitPidFlagPrefix = "--mdview-wait-pid="
+
 // IsRelaunch 判断本进程是否由设置页「重启」拉起。
 func IsRelaunch(args []string) bool {
 	for _, arg := range args {
@@ -29,6 +37,21 @@ func IsRelaunch(args []string) bool {
 	}
 	return false
 }
+
+// WaitPidOf 从命令行参数解析要等待退出的旧进程 PID；没有则返回 0。
+func WaitPidOf(args []string) int {
+	for _, arg := range args {
+		if p, ok := strings.CutPrefix(arg, WaitPidFlagPrefix); ok {
+			if n, err := strconv.Atoi(p); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+// ProcessAlive 判断 pid 对应的进程是否仍在运行（Windows 用 OpenProcess 探测）。
+func ProcessAlive(pid int) bool { return processAlive(pid) }
 
 // App Wails 绑定层：前端可调用的全部方法挂在这里。
 type App struct {
@@ -101,18 +124,24 @@ func (a *App) saveWindowState(ctx context.Context) {
 }
 
 // startupFile "发送到"/双击打开传入的命令行 md 路径。
-var startupFile = func() string {
-	for _, arg := range os.Args[1:] {
-		if strings.EqualFold(filepath.Ext(arg), ".md") || strings.EqualFold(filepath.Ext(arg), ".markdown") {
-			if abs, err := filepath.Abs(arg); err == nil {
-				if _, err := os.Stat(abs); err == nil {
-					return abs
+// 二次实例 goroutine 写、前端绑定 goroutine 读，用 atomic.Pointer 同步。
+var startupFile atomic.Pointer[string]
+
+func init() {
+	startupFile.Store(func() *string {
+		for _, arg := range os.Args[1:] {
+			if strings.EqualFold(filepath.Ext(arg), ".md") || strings.EqualFold(filepath.Ext(arg), ".markdown") {
+				if abs, err := filepath.Abs(arg); err == nil {
+					if _, err := os.Stat(abs); err == nil {
+						return &abs
+					}
 				}
 			}
 		}
-	}
-	return ""
-}()
+		p := ""
+		return &p
+	}())
+}
 
 // EmitOpenFile 通知前端打开一个文件（拖拽/二次实例共用）。
 func (a *App) EmitOpenFile(path string) {
@@ -134,10 +163,20 @@ func (a *App) BringToFront() {
 }
 
 // GetStartupFile 前端 mount 后拉取启动文件。
-func (a *App) GetStartupFile() string { return startupFile }
+func (a *App) GetStartupFile() string {
+	if p := startupFile.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
+// BuildInfo 设置页底部显示的编译信息（编译时间，build.ps1 注入）。
+func (a *App) BuildInfo() string { return BuildDate }
 
 // SetStartupFile 供二次实例启动时更新。
-func (a *App) SetStartupFile(p string) { startupFile = p }
+func (a *App) SetStartupFile(p string) {
+	startupFile.Store(&p)
+}
 
 // OpenFolderDialog 选择目录。
 func (a *App) OpenFolderDialog() (string, error) {
@@ -242,15 +281,16 @@ func (a *App) RestartApp() error {
 	return nil
 }
 
-// launchSelf 拉起新进程。新进程带 RelaunchFlag，由 main 等旧进程释放单实例锁后再启动。
+// launchSelf 拉起新进程。新进程带 RelaunchFlag 与旧进程 PID，
+// 由 main 轮询等旧进程退出（释放单实例锁）后再启动。
 func (a *App) launchSelf() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	args := []string{RelaunchFlag}
+	args := []string{RelaunchFlag, fmt.Sprintf("%s%d", WaitPidFlagPrefix, os.Getpid())}
 	for _, arg := range os.Args[1:] {
-		if arg != RelaunchFlag { // 连续重启时不要把标记越叠越多
+		if arg != RelaunchFlag && !strings.HasPrefix(arg, WaitPidFlagPrefix) { // 连续重启时不要把标记越叠越多
 			args = append(args, arg)
 		}
 	}

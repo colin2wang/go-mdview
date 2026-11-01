@@ -107,14 +107,18 @@ watch(
     const cur = cm.getCursor()
     const info = cm.getScrollInfo()
     applying = true
-    cm.setValue(v)
     try {
-      cm.setCursor(Math.min(cur.line, Math.max(0, cm.lineCount() - 1)))
-    } catch {
-      /* 行数变少时忽略 */
+      cm.setValue(v)
+      try {
+        cm.setCursor(Math.min(cur.line, Math.max(0, cm.lineCount() - 1)))
+      } catch {
+        /* 行数变少时忽略 */
+      }
+      cm.scrollTo(info.left ?? 0, info.top)
+    } finally {
+      // 异常时也必须复位，否则后续输入不再回传
+      applying = false
     }
-    cm.scrollTo(info.left ?? 0, info.top)
-    applying = false
     emitCaret()
   }
 )

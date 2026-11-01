@@ -45,18 +45,23 @@ Pop-Location
 # 3) Backend exe (prefer wails CLI, fall back to go build if missing)
 $outDir = "$root\build\bin"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+# Build date injected into the exe (shown at the bottom of the Settings dialog).
+# Local time (not UTC), ISO with no spaces: safe for go -ldflags -X; the frontend
+# renders it as "(build yyyy-MM-dd HH:mm:ss)".
+$buildDate = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+$ldflags = "-X mdview/internal/app.BuildDate=$buildDate"
 $wails = Get-Command wails -ErrorAction SilentlyContinue
 if ($wails) {
-    Write-Host "==> wails build (windows/amd64)"
+    Write-Host "==> wails build (windows/amd64, build $buildDate)"
     Push-Location $root
-    wails build -s -platform windows/amd64 -webview2 embed -o mdview.exe
+    wails build -s -platform windows/amd64 -webview2 embed -ldflags $ldflags -o mdview.exe
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "wails build failed" }
     Pop-Location
 } else {
     Write-Host "==> wails CLI not found, falling back to go build (desktop,production tags)"
     Push-Location $root
     $env:GOOS = "windows"; $env:GOARCH = "amd64"; $env:CGO_ENABLED = "0"
-    go build -tags "desktop,production" -ldflags "-w -s -H windowsgui" -o "$outDir\mdview.exe" .
+    go build -tags "desktop,production" -ldflags "-w -s -H windowsgui $ldflags" -o "$outDir\mdview.exe" .
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "go build failed" }
     Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED -ErrorAction SilentlyContinue
     Pop-Location

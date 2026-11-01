@@ -141,7 +141,8 @@ function onDraftInput() {
   draftTimer = window.setTimeout(() => void renderDraft(draft.value), 300)
 }
 
-// 切换文件：有未保存改动时先提示，再还原编辑态
+// 切换文件：有未保存改动时先提示，再无条件退编辑态——
+// 不能把新文件内容当草稿继续渲染，那与「切换文件即还原」的语义相悖
 watch(
   () => store.current?.path,
   async () => {
@@ -149,8 +150,8 @@ watch(
     if (editing.value && draft.value && draft.value !== sourceText.value) {
       toast(t('toast.discardedDraft'), 'error')
     }
-    draft.value = editing.value ? sourceText.value : ''
-    if (editing.value) void renderDraft(draft.value)
+    editing.value = false
+    draft.value = ''
   }
 )
 
@@ -450,12 +451,12 @@ function scrollToAnchor(anchor: string) {
   sc.scrollTo({ top: sc.scrollTop + top - 8, behavior: 'smooth' })
 }
 
+// 标题元素缓存：渲染后收集一次，滚动时只读缓存，避免每帧 querySelectorAll
+let headCache: HTMLElement[] = []
+
 function spyHeading(sc: HTMLElement) {
-  const heads = Array.from(
-    articleEl.value?.querySelectorAll<HTMLElement>('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]') ?? []
-  )
   let active = ''
-  for (const h of heads) {
+  for (const h of headCache) {
     if (h.offsetTop <= sc.scrollTop + 80) active = h.id
     else break
   }
@@ -483,7 +484,8 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
   await postRender(art, redrawDiagram)
   // 预览字数按渲染后可见文本统计（图形内部文字、复制按钮等不计）
   status.previewChars = store.currentKind === 'markdown' ? countPreviewText(art) : 0
-  // 渲染结果变了 → 锚点表失效，重建后再还原滚动位置
+  // 渲染结果变了 → 标题缓存与锚点表失效，重建后再还原滚动位置
+  headCache = Array.from(art.querySelectorAll<HTMLElement>('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]'))
   rebuildAnchors()
 
   const sc = renderScrollEl.value
@@ -508,28 +510,44 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
   }
 }
 
+// scroll 事件一帧可触发多次，且处理里有 DOM 读写；统一 rAF 节流，一帧最多算一次
+let renderRaf = 0
 function onRenderScroll() {
-  const sc = renderScrollEl.value
-  if (!sc) return
-  rememberRender(sc)
-  // 程序写入的位置只记账、不再往回同步，否则两边互相牵引
-  if (justMirrored()) return
-  spyHeading(sc)
-  syncPreviewToSource()
+  if (renderRaf) return
+  renderRaf = requestAnimationFrame(() => {
+    renderRaf = 0
+    const sc = renderScrollEl.value
+    if (!sc) return
+    rememberRender(sc)
+    // 程序写入的位置只记账、不再往回同步，否则两边互相牵引
+    if (justMirrored()) return
+    spyHeading(sc)
+    syncPreviewToSource()
+  })
 }
 
 /** 源码侧滚动（CodeMirror 的 scroll 事件）：按锚点表同步到正文 */
+let srcRaf = 0
 function onSrcScroll() {
-  if (justMirrored()) return
-  syncSourceToPreview()
+  if (srcRaf) return
+  srcRaf = requestAnimationFrame(() => {
+    srcRaf = 0
+    if (justMirrored()) return
+    syncSourceToPreview()
+  })
 }
 
+// 渲染序号：渲染（nextTick/afterRender）是异步的，快速连续切文件时
+// 旧回调可能晚到并覆盖新内容/滚动位置，落地前必须比对序号
+let renderSeq = 0
 watch(
   () => store.html,
   async () => {
+    const seq = ++renderSeq
     // v-html 替换会让正文高度先归零，替换前先按比例记账，替换后才能还原到同一位置
     const ratio = renderRatio()
     await nextTick()
+    if (seq !== renderSeq) return
     await afterRender(false, ratio)
   }
 )
@@ -636,11 +654,14 @@ async function onArtClick(e: MouseEvent) {
     await openWikiLink(wiki.getAttribute('data-wiki') ?? '')
     return
   }
-  // 代码/源码复制
+  // 代码/源码复制：按钮只带 data-copy 标志，复制内容点击时从所在卡片的
+  // <pre> 取 textContent——避免每段代码全文在 DOM 属性里再存一份
   const btn = tgt.closest('button[data-copy]') as HTMLButtonElement | null
   if (btn) {
+    const holder = btn.closest('.code-block') ?? btn.closest('.md-diagram')
+    const code = holder?.querySelector('pre code, pre.md-diagram-code code')?.textContent ?? ''
     const api = await getApi()
-    await api.CopyText(decodeURIComponent(btn.getAttribute('data-copy') ?? ''))
+    await api.CopyText(code)
     toast(t('toast.codeCopied'))
     btn.classList.add('done')
     setTimeout(() => btn.classList.remove('done'), 1200)

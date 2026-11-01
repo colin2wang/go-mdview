@@ -27,20 +27,49 @@ watch(open, (v) => {
   if (v) {
     window.addEventListener('keydown', onKey)
     void refreshAssoc()
+    void refreshBuildInfo()
   } else {
     window.removeEventListener('keydown', onKey)
   }
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
+// 编译信息（build.ps1 经 ldflags 注入；开发态显示 dev）
+const buildInfo = ref('')
+const buildLabel = computed(() => {
+  if (!buildInfo.value) return ''
+  // ISO 串转显示格式：2026-11-01T14:14:23Z → 2026-11-01 14:14:23
+  return buildInfo.value.replace('T', ' ').replace(/Z$/, '')
+})
+async function refreshBuildInfo() {
+  try {
+    const api = await getApi()
+    buildInfo.value = await api.BuildInfo()
+  } catch {
+    buildInfo.value = ''
+  }
+}
+
 function setThemeEvt(v: string) {
   patchSettings({ theme: v })
+}
+// 滑块拖动（@input）只更新本地显示，松手（@change）才写盘——
+// 一次拖动几十格，原来每格都触发 patchSettings → Go 端原子写
+const fsLocal = ref<number | null>(null)
+const mmLocal = ref<number | null>(null)
+function setFsInput(e: Event) {
+  const v = parseInt((e.target as HTMLInputElement).value, 10)
+  if (!Number.isNaN(v)) fsLocal.value = v
 }
 function setFs(e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isNaN(v)) patchSettings({ fontSize: v })
 }
 // 思维导图节点/备注单行最大字符数（Go 端 8–60 校验，超界回落默认 20）
+function setMmMaxLenInput(e: Event) {
+  const v = parseInt((e.target as HTMLInputElement).value, 10)
+  if (!Number.isNaN(v)) mmLocal.value = v
+}
 function setMmMaxLen(e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isNaN(v)) patchSettings({ mmMaxLen: v })
@@ -53,6 +82,19 @@ function setLineNo(e: Event) {
 }
 function setAutoReload(e: Event) {
   patchSettings({ autoReload: (e.target as HTMLInputElement).checked })
+}
+function setBlockRemote(e: Event) {
+  patchSettings({ blockRemote: (e.target as HTMLInputElement).checked })
+}
+function setRemoteAllow(e: Event) {
+  const v = (e.target as HTMLTextAreaElement).value
+  // 每行一个通配符模式；去掉行尾空白
+  patchSettings({ remoteAllow: v.split(/\r?\n/).map((s) => s.replace(/\s+$/, '')).join('\n') })
+}
+// 启用 yml 配置源：SaveSettings 检测到 useYaml 且文件缺失时会创建带英文注释的
+// mdview.yml（exe 同目录），此后读写都走 yml，settings.json 冻结不再更新
+function setUseYaml(e: Event) {
+  patchSettings({ useYaml: (e.target as HTMLInputElement).checked })
 }
 function setPinned() {
   // 走 togglePin：既写设置也立刻应用到窗口
@@ -180,11 +222,12 @@ const assocTip = computed(() => {
                   min="12"
                   max="28"
                   step="1"
-                  :value="st?.fontSize ?? 16"
+                  :value="fsLocal ?? st?.fontSize ?? 16"
                   data-testid="font-range"
-                  @input="setFs"
+                  @input="setFsInput"
+                  @change="setFs"
                 />
-                <b class="fs-num" data-testid="font-num">{{ st?.fontSize ?? 16 }}px</b>
+                <b class="fs-num" data-testid="font-num">{{ fsLocal ?? st?.fontSize ?? 16 }}px</b>
               </span>
             </div>
             <div class="set-row">
@@ -197,10 +240,30 @@ const assocTip = computed(() => {
                 @change="setWrap"
               />
             </div>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.lineNo') }}</span>
+              <input
+                type="checkbox"
+                class="set-switch"
+                :checked="st?.lineNo ?? true"
+                data-testid="lineNo-check"
+                @change="setLineNo"
+              />
+            </div>
           </section>
 
           <section class="set-block">
             <h4 class="set-block-title">{{ t('set.window') }}</h4>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.pin') }}</span>
+              <input
+                type="checkbox"
+                class="set-switch"
+                :checked="st?.pinned ?? false"
+                data-testid="pin-check"
+                @change="setPinned"
+              />
+            </div>
             <div class="set-row">
               <span class="set-label">{{ t('set.windowGeom') }}</span>
               <button class="set-btn" data-testid="restart-btn" @click="restartApp">
@@ -208,6 +271,31 @@ const assocTip = computed(() => {
               </button>
             </div>
             <p class="set-hint">{{ t('set.restartHint') }}</p>
+          </section>
+
+          <section class="set-block">
+            <h4 class="set-block-title">{{ t('set.assoc.title') }}</h4>
+            <div class="set-row">
+              <span class="set-label">
+                {{ t('set.assoc.label') }}
+                <em class="set-sub">{{ t('set.assoc.sub') }}</em>
+              </span>
+              <button
+                class="set-btn"
+                :class="{ danger: assoc.associated }"
+                :disabled="!assoc.supported || assocBusy"
+                :title="assocTip"
+                data-testid="assoc-btn"
+                @click="toggleAssoc"
+              >
+                {{ assocLabel }}
+              </button>
+            </div>
+            <p class="set-hint" data-testid="assoc-state">
+              <span v-if="!assoc.supported">{{ assoc.message || t('assoc.unsupportedMsg') }}</span>
+              <span v-else-if="assoc.associated">{{ t('assoc.stateAssociated') }}</span>
+              <span v-else>{{ t('assoc.stateUnassociated', { owner: assoc.owner || t('assoc.ownerNone') }) }}</span>
+            </p>
           </section>
           </div>
 
@@ -241,11 +329,12 @@ const assocTip = computed(() => {
                   min="8"
                   max="60"
                   step="1"
-                  :value="st?.mmMaxLen ?? 20"
+                  :value="mmLocal ?? st?.mmMaxLen ?? 20"
                   data-testid="mmmaxlen-range"
-                  @input="setMmMaxLen"
+                  @input="setMmMaxLenInput"
+                  @change="setMmMaxLen"
                 />
-                <b class="fs-num" data-testid="mmmaxlen-num">{{ st?.mmMaxLen ?? 20 }}</b>
+                <b class="fs-num" data-testid="mmmaxlen-num">{{ mmLocal ?? st?.mmMaxLen ?? 20 }}</b>
               </span>
             </div>
             <div class="set-row">
@@ -259,56 +348,52 @@ const assocTip = computed(() => {
               />
             </div>
             <p class="set-hint">{{ t('set.autoReloadHint') }}</p>
-            <div class="set-row">
-              <span class="set-label">{{ t('set.lineNo') }}</span>
-              <input
-                type="checkbox"
-                class="set-switch"
-                :checked="st?.lineNo ?? true"
-                data-testid="lineNo-check"
-                @change="setLineNo"
-              />
-            </div>
-            <div class="set-row">
-              <span class="set-label">{{ t('set.pin') }}</span>
-              <input
-                type="checkbox"
-                class="set-switch"
-                :checked="st?.pinned ?? false"
-                data-testid="pin-check"
-                @change="setPinned"
-              />
-            </div>
           </section>
 
           <section class="set-block">
-            <h4 class="set-block-title">{{ t('set.assoc.title') }}</h4>
+            <h4 class="set-block-title">{{ t('set.network') }}</h4>
             <div class="set-row">
-              <span class="set-label">
-                {{ t('set.assoc.label') }}
-                <em class="set-sub">{{ t('set.assoc.sub') }}</em>
-              </span>
-              <button
-                class="set-btn"
-                :class="{ danger: assoc.associated }"
-                :disabled="!assoc.supported || assocBusy"
-                :title="assocTip"
-                data-testid="assoc-btn"
-                @click="toggleAssoc"
-              >
-                {{ assocLabel }}
-              </button>
+              <span class="set-label">{{ t('set.blockRemote') }}</span>
+              <input
+                type="checkbox"
+                class="set-switch"
+                :checked="st?.blockRemote ?? true"
+                data-testid="blockRemote-check"
+                @change="setBlockRemote"
+              />
             </div>
-            <p class="set-hint" data-testid="assoc-state">
-              <span v-if="!assoc.supported">{{ assoc.message || t('assoc.unsupportedMsg') }}</span>
-              <span v-else-if="assoc.associated">{{ t('assoc.stateAssociated') }}</span>
-              <span v-else>{{ t('assoc.stateUnassociated', { owner: assoc.owner || t('assoc.ownerNone') }) }}</span>
-            </p>
+            <p class="set-hint">{{ t('set.blockRemoteHint') }}</p>
+            <template v-if="st?.blockRemote ?? true">
+              <div class="set-row">
+                <span class="set-label">{{ t('set.remoteAllow') }}</span>
+              </div>
+              <textarea
+                class="set-textarea"
+                rows="4"
+                :value="st?.remoteAllow ?? ''"
+                data-testid="remoteAllow-text"
+                :placeholder="t('set.remoteAllowHint')"
+                spellcheck="false"
+                @change="setRemoteAllow"
+              ></textarea>
+              <p class="set-hint">{{ t('set.remoteAllowHint') }}</p>
+            </template>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.useYaml') }}</span>
+              <input
+                type="checkbox"
+                class="set-switch"
+                :checked="st?.useYaml ?? false"
+                data-testid="useYaml-check"
+                @change="setUseYaml"
+              />
+            </div>
+            <p class="set-hint">{{ t('set.useYamlHint') }}</p>
           </section>
           </div>
 
           <div class="set-about">
-            <p><b>mdview</b> · {{ t('set.about.desc') }}</p>
+            <p><b>mdview</b> · {{ t('set.about.desc') }} <span v-if="buildLabel" class="build-info">(build {{ buildLabel }})</span></p>
             <p class="sub">{{ t('set.about.hint') }}</p>
           </div>
         </div>

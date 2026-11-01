@@ -114,6 +114,9 @@ export namespace mdv {
 	    viewMode: string;
 	    language: string;
 	    autoReload: boolean;
+	    blockRemote: boolean;
+	    remoteAllow: string;
+	    useYaml: boolean;
 	    mmMaxLen: number;
 	    winW: number;
 	    winH: number;
@@ -138,6 +141,9 @@ export namespace mdv {
 	        this.viewMode = source["viewMode"];
 	        this.language = source["language"];
 	        this.autoReload = source["autoReload"];
+	        this.blockRemote = source["blockRemote"];
+	        this.remoteAllow = source["remoteAllow"];
+	        this.useYaml = source["useYaml"];
 	        this.mmMaxLen = source["mmMaxLen"];
 	        this.winW = source["winW"];
 	        this.winH = source["winH"];

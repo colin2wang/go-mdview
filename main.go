@@ -19,10 +19,14 @@ import (
 var assets embed.FS
 
 func main() {
-	// 「重启」拉起的进程：旧进程还在退出，先等它释放单实例锁，
-	// 否则新进程会被当成二次启动、把参数转交后直接退出
-	if mdvapp.IsRelaunch(os.Args[1:]) {
-		time.Sleep(1200 * time.Millisecond)
+	// 「重启」拉起的进程：旧进程还在退出，先等它退出（释放单实例锁），
+	// 否则新进程会被当成二次启动、把参数转交后直接退出。
+	// 轮询旧进程 PID（--mdview-wait-pid），替代固定 sleep：慢机器 1.2s 未必够，快机器白等。
+	if pid := mdvapp.WaitPidOf(os.Args[1:]); pid != 0 {
+		deadline := time.Now().Add(5 * time.Second) // 兜底上限，卡死也不无限等
+		for mdvapp.ProcessAlive(pid) && time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 
 	// 上次关闭时的窗口尺寸（位置与最大化在 app.Startup 里恢复）

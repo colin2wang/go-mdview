@@ -224,9 +224,17 @@ func TestImgHandler(t *testing.T) {
 	img := filepath.Join(dir, "pic.png")
 	_ = os.WriteFile(img, []byte{0x89, 'P', 'N', 'G'}, 0o644)
 	hexp := hex.EncodeToString([]byte(img))
-	// 正常读取
+	// 未登记目录：即使文件存在也应 403
 	req := httptest.NewRequest("GET", "/mdimg/"+hexp+"/pic.png", nil)
 	w := httptest.NewRecorder()
+	ImgHandler.ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatalf("未登记目录应 403: %d", w.Code)
+	}
+	// 登记后正常读取
+	AllowImageDir(dir)
+	req = httptest.NewRequest("GET", "/mdimg/"+hexp+"/pic.png", nil)
+	w = httptest.NewRecorder()
 	ImgHandler.ServeHTTP(w, req)
 	if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
 		t.Fatalf("图片回放失败: %d %s", w.Code, w.Header().Get("Content-Type"))

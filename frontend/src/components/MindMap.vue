@@ -69,10 +69,11 @@ async function exportSvg() {
 async function exportPng() {
   if (!ctrl) return
   const svg = ctrl.exportSvg()
+  let url = ''
   try {
     const img = new Image()
     const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
+    url = URL.createObjectURL(blob)
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve()
       img.onerror = () => reject(new Error('svg decode failed'))
@@ -87,7 +88,6 @@ async function exportPng() {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('no 2d context')
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    URL.revokeObjectURL(url)
     const dataUrl = canvas.toDataURL('image/png')
     const api = await getApi()
     const name = props.name.replace(/\.md$/i, '')
@@ -95,6 +95,9 @@ async function exportPng() {
     if (out) toast(t('toast.exported', { name: out.split(/[\\/]/).pop() ?? out }))
   } catch (e) {
     toast(t('toast.opFailed', { e: String(e) }), 'error')
+  } finally {
+    // drawImage/toDataURL 抛错时也要释放，否则 blob URL 泄漏
+    if (url) URL.revokeObjectURL(url)
   }
 }
 async function copySvg() {

@@ -10,6 +10,10 @@ export function BringToFront() {
   return window['go']['app']['App']['BringToFront']();
 }
 
+export function BuildInfo() {
+  return window['go']['app']['App']['BuildInfo']();
+}
+
 export function ClearHistory() {
   return window['go']['app']['App']['ClearHistory']();
 }

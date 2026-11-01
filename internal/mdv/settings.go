@@ -42,6 +42,9 @@ type Settings struct {
 	ViewMode     string `json:"viewMode"`     // render | source | split | mindmap
 	Language     string `json:"language"`     // 界面语言 zh-CN | en | ja | de
 	AutoReload   bool   `json:"autoReload"`   // 外部修改自动重载，默认开
+	BlockRemote  bool   `json:"blockRemote"`  // 拦截远程资源（http(s) 图片等），默认开，兑现「100% 离线」
+	RemoteAllow  string `json:"remoteAllow"`  // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中即放行
+	UseYaml      bool   `json:"useYaml"`      // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
 	MmMaxLen     int    `json:"mmMaxLen"`     // 思维导图节点/备注单行最大字符数，默认 DefaultMmMaxLen
 	WinW         int    `json:"winW"`         // 上次关闭时窗口宽 px（0 = 未记录）
 	WinH         int    `json:"winH"`         // 上次关闭时窗口高 px
@@ -59,6 +62,9 @@ var defaultSettings = Settings{
 	ViewMode:     ViewModeRender,
 	Language:     "zh-CN",
 	AutoReload:   true,
+	BlockRemote:  true,
+	RemoteAllow:  "",
+	UseYaml:      false,
 	MmMaxLen:     DefaultMmMaxLen,
 }
 
@@ -109,6 +115,12 @@ func (s *Store) GetSettings() Settings {
 	s.mu.Lock()
 	s.readJSON("settings.json", &st)
 	s.mu.Unlock()
+	// yml 配置源优先：exe 同目录存在 mdview.yml 即视为开关打开（不必依赖存储的
+	// useYaml 值），yml 中出现的键覆盖 JSON
+	if yamlExists() {
+		st.UseYaml = true
+		loadYamlSettings(&st)
+	}
 	if st.Theme != "dark" && st.Theme != "light" {
 		st.Theme = defaultSettings.Theme
 	}
@@ -140,7 +152,18 @@ func (s *Store) SaveSettings(in Settings) Settings {
 	st.Language = validLanguage(st.Language)
 	normalizeWindow(&st)
 	s.mu.Lock()
-	s.writeJSON("settings.json", &st)
+	if st.UseYaml {
+		// yml 模式：只要开关打开就写 mdview.yml（首次打开开关时立即创建带注释的
+		// 文件），settings.json 不再更新；写失败时回落 JSON，避免设置丢失
+		if err := writeYamlSettings(st); err != nil {
+			s.writeJSON("settings.json", &st)
+		}
+	} else {
+		// 关掉 yml 开关：回写 settings.json，并删除本地 yml，
+		// 避免残留旧文件让下次启动又把开关「顶」回打开状态
+		s.writeJSON("settings.json", &st)
+		removeYaml()
+	}
 	s.mu.Unlock()
 	return st
 }

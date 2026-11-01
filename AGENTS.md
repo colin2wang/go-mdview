@@ -5,7 +5,7 @@
 ## 构建与测试
 
 - 完整构建（Windows）：`.\build.ps1`（图标资源缺失时才执行 generate-icon.ps1，随后前端构建 → wails build）。`-Clean` 清理，`-Package` 打 zip。
-- 前端：在 `frontend/` 下用 **pnpm**（`pnpm install` / `pnpm run build`，build = `vue-tsc --noEmit && vite build`，类型检查失败即构建失败）。`wails.json` 里写的 npm 已被 build.ps1 改用 pnpm 取代。
+- 前端：在 `frontend/` 下用 **pnpm**（`pnpm install` / `pnpm run build`，build = `vue-tsc --noEmit && vite build`，类型检查失败即构建失败）。`wails.json` 的 `frontend:install`/`frontend:build` 也已统一为 pnpm。
 - 后端：`go test ./mdv/`；本地快速编译 `go build -tags "desktop,production" .`（需先构建前端，见下）。
 - 图标资源：`.\generate-icon.ps1` 单独生成；`build.ps1` 仅在 `build/appicon.png`、`build/windows/icon.ico`、`build/mdview.markdown.png` 任一缺失时自动调用它，全部存在则跳过。
 
@@ -13,8 +13,9 @@
 
 - `main.go`：wails.Run 入口（保持 package main 在仓库根，wails/embed 要求），frameless 窗口、单实例锁（二次启动把 .md 路径转给已有窗口，并调 `app.BringToFront()` 把已有窗口带到前台）、`//go:embed all:frontend/dist`（**go build 前必须先构建前端，否则 embed 失败**）、asset handler 挂载本地图片路由 `/mdimg/{hexpath}`；启动时按 `Settings` 的 `winW/winH` 决定初始尺寸，位置与最大化由 `app.Startup` 恢复，`app.BeforeClose` 负责落盘。
 - 二次启动/窗口前台：`App.BringToFront()` 调 `wruntime.WindowShow`（Wails 内部经 `mainWindow.Invoke` 派发到创建窗口的主线程，自带 `SetForegroundWindow` + `SetFocus`）。**不要在后台 goroutine 里直接调 user32 的窗口 API**（`ShowWindow`/`SetForegroundWindow`/`EnumWindows` 等）——窗口 API 跨线程调用会直接让进程崩溃，表现为「任务栏图标消失」。
-- `internal/app/`：暴露给前端的全部绑定方法（App.*），多为对 `mdv` 包的薄封装；`RestartApp`（设置页「重启」）清空窗口几何并把侧栏宽度复位后带 `--mdview-relaunch` 拉起新进程，main 见到该标记先等待旧进程释放单实例锁。
-- `internal/mdv/`：核心业务包——文件读取/编码探测（UTF-8/GB18030）、设置/历史/收藏持久化（存 `%AppData%\mdview\`，含窗口几何 winX/winY/winW/winH/winMax）、导出 HTML、图片服务、文件关联、外部修改监视（`watcher.go`）。平台差异用构建标签隔离（`assoc_windows.go` / `assoc_other.go`）。
+- `internal/app/`：暴露给前端的全部绑定方法（App.*），多为对 `mdv` 包的薄封装；`RestartApp`（设置页「重启」）清空窗口几何并把侧栏宽度复位后带 `--mdview-relaunch` 与 `--mdview-wait-pid=<旧pid>` 拉起新进程，main 轮询旧进程 PID 退出（上限 5s）等单实例锁释放后再启动（`ProcessAlive`，Windows 走 OpenProcess）。`startupFile` 是跨 goroutine 读写（单实例回调写、前端绑定读），用 `atomic.Pointer[string]` 同步，不要退回普通包级变量。
+- `internal/mdv/`：核心业务包——文件读取/编码探测（UTF-8/GB18030）、设置/历史/收藏持久化（存 `%AppData%\mdview\`，含窗口几何 winX/winY/winW/winH/winMax）、导出 HTML、图片服务、文件关联、外部修改监视（`watcher.go`）。平台差异用构建标签隔离（`assoc_windows.go` / `assoc_other.go`、`procpid_windows.go` / `procpid_other.go`）。
+- 安全模型：`/mdimg/{hexpath}` 图片路由有目录白名单（`AllowImageDir`，打开文件/历史/目录树时登记，越界 403），改图片相关逻辑时必须保持该校验；`Settings.blockRemote`（默认开）在渲染层拦截 http(s) 远程资源（`markdown.ts` 用占位 data URI 替换、`sanitizeSvg` 剥离远程 href），`Settings.remoteAllow` 为 URL 通配符白名单（`remoteAllowed()`，命中即放行，仅对 `<img>` 生效，SVG 卡片仍一律剥离远程引用），不要放行未命中白名单的远程 src；正文 HTML/SVG 清洗走 DOMPurify（pnpm 依赖，随构建打包，运行时离线），不要退回正则黑名单 sanitizer；`frontend/scripts/sanitize-check.mjs` 用 jsdom 驱动同一份配置，含 8 条已知绕过向量回归用例。导出 HTML 标题必须 `html.EscapeString`（`ExportHtml` 的正文参数名叫 `bodyHtml`，避免遮蔽 `html` 包名）。
 - 外部修改监视：fsnotify 目录级监视 + 400ms 防抖，`SaveMarkdown` 后 `MarkSaved` 抑制自身写入；事件经 App `EventsEmit('file:watch')` 推给前端（`store.ts handleWatchEvent`）——`changed` 按 `Settings.autoReload`（默认开）静默重载或仅 toast；`gone` 弹非独占确认框（点遮罩不生效），选「保留」内容留在窗口并置 `currentMissing`，此后保存会重建文件（含父目录，见 `SaveMarkdown`）并重新挂接监视，同时清除 `currentMissing`。
 - `frontend/src/`：Vue 3 SPA。`store.ts`（状态）、`api.ts`（调用 App 绑定）、`components/Viewer.vue`（渲染主区）、`components/CodeEditor.vue`（源码区 CodeMirror 5 封装）、`editor-bridge.ts`（源码编辑器实例桥，供目录按行跳转）、`stats.ts` + `status.ts` + `components/StatusBar.vue`（底部状态栏与统计）、`mindmap.ts`（Markdown→思维导图零依赖核心：解析/布局/SVG 渲染/交互）、`components/MindMap.vue`（导图视图容器，挂载 `mindmap.ts` 并提供工具条）。
 - 思维导图：作为第四种 `ViewMode`（`'mindmap'`，见 `types.ts`），由标题栏模式按钮与设置页「默认视图」切换；导图是渲染面板的独占视图（`Viewer.vue` 的 `isMindmap`，不叠加源码）。解析规则：`#`=根节点、`##`=左右平衡的一级分支、`###`/`####`=子节点、`>` 引用块=节点备注；无 `#` 时把唯一顶层节点提升为根。工具条支持适应/缩放/备注开关/收起(到二级)/展开/导出 SVG/导出 PNG/复制 SVG；主题切换（`store.settings.theme`）经 `MindMap.setDark` 重绘（`mindmap.ts` 按深浅主题取节点文字与淡色底配色）。节点/备注单行最大字符数由 `Settings.mmMaxLen`（默认 20，8–60，Go/前端两端各自校验）控制，超长不可断单词（如 `NEW/RUNNABLE/…`）按它硬折行，设置页滑杆即时生效（`MindMap.setMaxLen`）。设置对话框为两列 grid（`style.css` 的 `@media (min-width: 640px)`，窄窗口回落单列）。导出走后端 `SaveSvgDialog`（SVG 文本）与 `SaveImageDialog`（前端光栅化后的 PNG data URL）。
@@ -22,7 +23,7 @@
 ## 注意事项
 
 - `frontend/wailsjs/` 由 wails build 自动生成，**不要手改**；在 `internal/app/app.go` 新增绑定方法后需重新 `wails build` 再提交生成的绑定文件。
-- 窗口几何：位置/大小/是否最大化随 `settings.json` 持久化（`winX/winY/winW/winH/winMax`，由 Go 端维护；前端 `patchSettings` 靠对象展开原样带回，不要在 `defaultSettings` 之外重建 Settings）。最大化/最小化/全屏关闭时不写回普通尺寸；设置页「重启」清空几何、把侧栏宽度恢复到默认 280px 后以默认 1200×800 重启。
+- 窗口几何：位置/大小/是否最大化随 `settings.json` 持久化（`winX/winY/winW/winH/winMax`，由 Go 端维护；前端 `patchSettings` 靠对象展开原样带回，不要在 `defaultSettings` 之外重建 Settings）。配置源优先级：`Settings.useYaml` 开启且 exe 同目录存在 `mdview.yml` 时，yml 优先于 settings.json——`GetSettings` 用 yml 覆盖、`SaveSettings` 只写 yml（`internal/mdv/yamlfile.go` 整体重写并保留英文注释模板，解析是手写的 YAML 子集，不要引入 YAML 依赖）；yml 缺失时回落 settings.json，下次保存会重建 yml。设置页可开关 useYaml 并编辑远程白名单（`remoteAllow`，URL 通配符 `*`/`?`，多值每行一个）。最大化/最小化/全屏关闭时不写回普通尺寸；设置页「重启」清空几何、把侧栏宽度恢复到默认 280px 后以默认 1200×800 重启。
 - 源码面板：整块由 CodeMirror 5（`components/CodeEditor.vue`）渲染——`inputStyle: 'contenteditable'`，文字与光标同处一套排版，Markdown 走 `gfm` 模式（`gitHubSpice: false`，避免 SHA/issue 被当链接而在编辑态多出下划线）、行号/换行/只读由 settings 驱动。**不要退回「透明 textarea 叠高亮层」的做法**：那是两套独立排版，必然错行。只读态 = `readOnly: 'nocursor'`（仍可选中复制），编辑态 = 可写，两者共用同一实例、同一排版。
 - 源码区相关的跨模块访问走 `editor-bridge.ts`（`srcEditor.cm`、`srcHeadingLines()`、`scrollSrcToLine()`）：目录跳转按「扫描标题行号 → `cm.heightAtLine`」精确定位，兜底才是按比例滚动；分栏同步里源码侧滚动元素取 `cm.getScrollerElement()`，可当普通 scroll 容器用。
 - 分栏滚动同步：**按锚点表映射**（`Viewer.vue` 的 `Anchor` / `rebuildAnchors()`）——以「源码标题行 ↔ 渲染标题块」为锚点（`cm.heightAtLine` ↔ 元素 offsetTop），中间线性插值；锚点不足（无标题、预览隐藏）才回落到 `mirror()` 比例镜像，因为两边高度不成比例（源码底部留白 vs 正文图形/表格），纯比例必然对不上。目录项与源码行按**标题文本匹配**对应（`matchHeadingLines()`），不能按序号——渲染前的 `preprocess` 会增删行。锚点表在每次渲染后重建。

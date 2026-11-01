@@ -82,7 +82,12 @@ async function renderCurrent(fc: FileContent) {
   store.hasMath = false
   store.hasMermaid = false
   try {
-    const r = await renderMarkdown(fc.content, fc.dir)
+    const r = await renderMarkdown(
+      fc.content,
+      fc.dir,
+      store.settings?.blockRemote ?? true,
+      store.settings?.remoteAllow ?? ''
+    )
     store.html = r.html
     store.toc = r.toc
     store.hasMath = r.hasMath
@@ -105,7 +110,12 @@ export async function renderDraft(md: string) {
   const seq = ++draftSeq
   store.rendering = true
   try {
-    const r = await renderMarkdown(md, fc.dir)
+    const r = await renderMarkdown(
+      md,
+      fc.dir,
+      store.settings?.blockRemote ?? true,
+      store.settings?.remoteAllow ?? ''
+    )
     if (seq !== draftSeq) return // 已有更新的草稿，丢弃过期结果
     store.html = r.html
     store.toc = r.toc
@@ -349,10 +359,6 @@ export async function toggleFav(path: string) {
   const now = await api.ToggleFavorite(path)
   store.favorites = await api.GetFavorites()
   toast(now ? t('toast.favAdded') : t('toast.favRemoved'))
-}
-
-export function isFav(path: string): boolean {
-  return favOf(path)
 }
 
 export async function clearHistory() {

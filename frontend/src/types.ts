@@ -43,6 +43,9 @@ export interface Settings {
   viewMode: ViewMode
   language: string // 界面语言 zh-CN | en | ja | de
   autoReload: boolean // 外部修改自动重载，默认开
+  blockRemote: boolean // 拦截远程资源（http(s) 图片等），默认开
+  remoteAllow: string // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中放行
+  useYaml: boolean // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
   mmMaxLen: number // 思维导图节点/备注单行最大字符数（超出折行），默认 20
   // 上次关闭时的普通窗口几何（0 = 未记录）与最大化标记，由 Go 端维护
   winW: number
@@ -64,6 +67,9 @@ export const defaultSettings: Settings = {
   viewMode: 'render',
   language: 'zh-CN',
   autoReload: true,
+  blockRemote: true,
+  remoteAllow: '',
+  useYaml: false,
   mmMaxLen: 20,
   winW: 0,
   winH: 0,

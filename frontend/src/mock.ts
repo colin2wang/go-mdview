@@ -7,6 +7,9 @@ import { DEMO_MD, DEMO_IMAGE_SVG, fileBase, fileToDir, mockTree } from './demo'
  * window.go 不存在时由 api.ts 自动切换到本实现。
  */
 
+// Mock 模式演示路径：占位目录，不要写真实用户目录进仓库
+const DEMO_DIR = 'C:\\demo\\vault\\Java'
+
 const state = {
   settings: {
     theme: 'light',
@@ -14,12 +17,15 @@ const state = {
     codeWrap: false,
     lineNo: true,
     sidebarWidth: 280,
-    lastFolder: 'C:\\Users\\wangb\\OneDrive\\Obsidian\\迷你狐的知识库\\01-计算机技术\\编程语言\\Java',
+    lastFolder: DEMO_DIR,
     lastFile: '',
     pinned: false,
     viewMode: 'render',
     language: 'zh-CN',
     autoReload: true,
+    blockRemote: true,
+    remoteAllow: '',
+    useYaml: false,
     mmMaxLen: 20,
     winW: 0,
     winH: 0,
@@ -43,8 +49,7 @@ export const mockAssoc: AssocState = {
 }
 
 function mdPath(title: string): string {
-  const d = 'C:\\Users\\wangb\\OneDrive\\Obsidian\\迷你狐的知识库\\01-计算机技术\\编程语言\\Java'
-  return `${d}\\${title}`
+  return `${DEMO_DIR}\\${title}`
 }
 
 function fakeContent(path: string): FileContent {
@@ -65,6 +70,7 @@ function fakeContent(path: string): FileContent {
 
 export const mockApi: Api = {
   GetStartupFile: async () => '',
+  BuildInfo: async () => 'dev',
   OpenFolderDialog: async () => state.settings.lastFolder,
   OpenFileDialog: async () => mdPath('16-JVM 与性能调优.md'),
   ListTree: async (_dir) => mockTree() as unknown as MNode[],

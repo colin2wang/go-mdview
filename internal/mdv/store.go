@@ -13,6 +13,7 @@ import (
 // 全部落在 os.UserConfigDir()/mdview/ 下，原子写（temp+rename）。
 type Store struct {
 	mu      sync.Mutex
+	once    sync.Once
 	baseDir string
 	// 文件外部修改监视（见 watcher.go）：值语义字段，Store 零值即可用
 	watcher watcherState
@@ -23,23 +24,23 @@ func NewStore() *Store {
 }
 
 func (s *Store) base() string {
-	// 幂等且无阻塞：baseDir 一经确定不再变化，锁在此处反而会造成
-	// "外层持锁 → writeJSON → base() 再锁" 的不可重入死锁
-	if s.baseDir != "" {
-		return s.baseDir
-	}
-	if os.Getenv("MDVIEW_HOME") != "" { // 测试与便携模式可覆盖
-		s.baseDir = os.Getenv("MDVIEW_HOME")
-	} else {
-		cfg, err := os.UserConfigDir()
-		if err != nil {
-			home, _ := os.UserHomeDir()
-			s.baseDir = filepath.Join(home, ".mdview")
+	// baseDir 一经确定不再变化，用 sync.Once 只算一次：Wails 绑定方法由
+	// 不同 goroutine 并发进入，原先「判空再写」在首次并发调用下有数据竞争；
+	// 又不能直接加 s.mu——writeJSON 持锁时会再调 base()，造成不可重入死锁。
+	s.once.Do(func() {
+		if os.Getenv("MDVIEW_HOME") != "" { // 测试与便携模式可覆盖
+			s.baseDir = os.Getenv("MDVIEW_HOME")
 		} else {
-			s.baseDir = filepath.Join(cfg, "mdview")
+			cfg, err := os.UserConfigDir()
+			if err != nil {
+				home, _ := os.UserHomeDir()
+				s.baseDir = filepath.Join(home, ".mdview")
+			} else {
+				s.baseDir = filepath.Join(cfg, "mdview")
+			}
 		}
-	}
-	_ = os.MkdirAll(s.baseDir, 0o755)
+		_ = os.MkdirAll(s.baseDir, 0o755)
+	})
 	return s.baseDir
 }
 

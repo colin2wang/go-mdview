@@ -6,6 +6,8 @@ export function AssociateMd():Promise<void>;
 
 export function BringToFront():Promise<void>;
 
+export function BuildInfo():Promise<string>;
+
 export function ClearHistory():Promise<Array<mdv.Entry>>;
 
 export function CopyText(arg1:string):Promise<void>;

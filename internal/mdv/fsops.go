@@ -49,8 +49,10 @@ func (s *Store) GetHistory() []Entry {
 }
 
 // PushHistory 记录一次打开：去重置顶，超限截断。
+// 顺带登记所在目录：单独打开图片时也走这里，保证 /mdimg 能回放它。
 func (s *Store) PushHistory(path string) []Entry {
 	path = filepath.Clean(path)
+	AllowImageDir(filepath.Dir(path))
 	var list []Entry
 	s.mu.Lock()
 	s.readJSON("history.json", &list)
@@ -243,6 +245,8 @@ func (s *Store) ListTree(root string) ([]Node, error) {
 	if !fi.IsDir() {
 		root = filepath.Dir(root)
 	}
+	// 打开目录树即登记根目录：/mdimg 回放允许该目录子树内的图片
+	AllowImageDir(root)
 	var walk func(dir string, depth int) []Node
 	walk = func(dir string, depth int) []Node {
 		if depth > 12 {
