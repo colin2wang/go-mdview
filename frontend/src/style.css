@@ -804,6 +804,8 @@ button {
   flex: 1;
   height: 100%;
   min-height: 0;
+  /* body 上的 user-select:none 会继承到只读态（非 contenteditable），导致源码无法选中 */
+  user-select: text;
   font-family: var(--md-code-font);
   font-size: 13px;
   line-height: 1.7;
