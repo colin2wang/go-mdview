@@ -29,6 +29,8 @@ const articleEl = ref<HTMLElement | null>(null)
 const renderScrollEl = ref<HTMLElement | null>(null)
 const splitWrapEl = ref<HTMLElement | null>(null)
 const editorRef = ref<InstanceType<typeof CodeEditor> | null>(null)
+const srcPaneEl = ref<HTMLElement | null>(null)
+const renderPaneEl = ref<HTMLElement | null>(null)
 
 const mode = computed<ViewMode>(() => store.viewMode)
 const isSplit = computed(() => mode.value === 'split')
@@ -139,6 +141,19 @@ async function toggleEdit() {
 function onDraftInput() {
   if (draftTimer) window.clearTimeout(draftTimer)
   draftTimer = window.setTimeout(() => void renderDraft(draft.value), 300)
+}
+
+// 保存按钮与 Ctrl+S 共用一个入口：成功后由 saveSource 弹「已保存」气泡，
+// saving 防止键盘连续触发 / 双击造成并发写文件
+const saving = ref(false)
+async function saveDraft() {
+  if (!editing.value || saving.value || !store.current) return
+  saving.value = true
+  try {
+    await saveSource(draft.value)
+  } finally {
+    saving.value = false
+  }
 }
 
 // 切换文件：有未保存改动时先提示，再无条件退编辑态——
@@ -705,8 +720,102 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onSplitMove)
   document.removeEventListener('mouseup', onSplitUp)
 })
+// ---------- 快捷键 ----------
+// Ctrl+A 浏览器默认全选整页：分栏时左右两个面板（连同侧栏）会一起高亮。
+// 这里按「活动面板」只建一个选区；活动面板 = 键盘焦点所在面板，
+// 否则取最近一次点击/聚焦过的面板（且必须当前可见）。
+type ActivePane = 'source' | 'render'
+let activePane: ActivePane = 'render'
+
+function activatePane(p: ActivePane) {
+  activePane = p
+  // 点到渲染面板时主动让源码侧失焦：否则残留的 CodeMirror 焦点会被判成活动面板
+  if (p === 'render') {
+    const ae = document.activeElement
+    if (ae instanceof HTMLElement && srcPaneEl.value?.contains(ae)) ae.blur()
+  }
+}
+
+function isTextControl(target: EventTarget | null): boolean {
+  const tag = target instanceof HTMLElement ? target.tagName : ''
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
+/** 弹窗/输入控件打开时不接管快捷键，CodeMirror 自己处理过的也不重复接管。 */
+function shortcutBlocked(e: KeyboardEvent): boolean {
+  return (
+    e.defaultPrevented ||
+    !!store.settingsOpen ||
+    !!store.goneFile ||
+    lightbox.value.open ||
+    isTextControl(e.target)
+  )
+}
+
+function activePaneFor(e: KeyboardEvent): ActivePane | null {
+  const t = e.target instanceof HTMLElement && e.target !== document.body ? e.target : null
+  const ae =
+    document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : null
+  const el = t ?? ae
+  if (el) {
+    if (srcPaneEl.value?.contains(el)) return 'source'
+    if (renderPaneEl.value?.contains(el)) return 'render'
+  }
+  if (activePane === 'source' && showSource.value) return 'source'
+  if (activePane === 'render' && showRender.value) return 'render'
+  return showSource.value ? 'source' : showRender.value ? 'render' : null
+}
+
+/** 只选中指定面板的内容，不惊动另一个面板。 */
+function selectAllIn(pane: ActivePane) {
+  const sel = window.getSelection()
+  if (!sel) return
+  if (pane === 'source') {
+    const sc = sourceScroller()
+    // 让 CodeMirror 内部选区也覆盖全文（编辑态复制能拿到完整源码）
+    editorRef.value?.selectAll()
+    const cmFocused = !!srcPaneEl.value?.contains(document.activeElement)
+    // CM 有焦点时它自己已画出选区；只读态（nocursor）拿不到焦点，用原生 Range 兜底
+    if (cmFocused && sel.anchorNode && sc?.contains(sel.anchorNode)) return
+    const code = sc?.querySelector('.CodeMirror-lines') ?? sc
+    if (!code) return
+    const r = document.createRange()
+    r.selectNodeContents(code)
+    sel.removeAllRanges()
+    sel.addRange(r)
+    return
+  }
+  const host = renderScrollEl.value
+  if (!host) return
+  // 焦点仍在源码侧时先移走，避免 CodeMirror 把新选区抢回去
+  const ae = document.activeElement
+  if (ae instanceof HTMLElement && srcPaneEl.value?.contains(ae)) ae.blur()
+  const r = document.createRange()
+  r.selectNodeContents(host)
+  sel.removeAllRanges()
+  sel.addRange(r)
+}
+
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && !store.settingsOpen) hideMenu()
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
+  const key = e.key.toLowerCase()
+  if (key === 's' || e.code === 'KeyS') {
+    // 编辑态全局保存；成功后 saveSource 会弹「已保存」气泡
+    if (!editing.value || e.repeat || shortcutBlocked(e)) return
+    e.preventDefault()
+    void saveDraft()
+    return
+  }
+  if (key === 'a' || e.code === 'KeyA') {
+    if (shortcutBlocked(e) || !store.current) return
+    const pane = activePaneFor(e)
+    if (!pane) return
+    e.preventDefault()
+    selectAllIn(pane)
+  }
 }
 </script>
 
@@ -727,8 +836,11 @@ function onKey(e: KeyboardEvent) {
       <!-- 源码面板：对照模式下固定在左侧 -->
       <section
         v-show="showSource"
+        ref="srcPaneEl"
         class="viewer-pane src-pane"
         :class="{ 'is-split': isSplit }"
+        @pointerdown="activatePane('source')"
+        @focusin="activatePane('source')"
         :style="isSplit ? { flex: `0 0 ${splitRatio * 100}%` } : {}"
         data-testid="source-pane"
       >
@@ -756,10 +868,10 @@ function onKey(e: KeyboardEvent) {
           </button>
           <button
             class="src-btn primary"
-            :disabled="!editing"
+            :disabled="!editing || saving"
             :title="t('src.save.tip')"
             data-testid="src-save"
-            @click="saveSource(draft)"
+            @click="saveDraft"
           >
             {{ t('src.save') }}
           </button>
@@ -808,8 +920,11 @@ function onKey(e: KeyboardEvent) {
       <!-- 渲染正文：用 v-show 保持 DOM，切换源码回来时图形/滚动不丢 -->
       <section
         v-show="showRender"
+        ref="renderPaneEl"
         class="viewer-pane"
         :class="{ 'is-split': isSplit }"
+        @pointerdown="activatePane('render')"
+        @focusin="activatePane('render')"
         :style="isSplit ? { flex: '1 1 0' } : {}"
         data-testid="render-pane"
       >

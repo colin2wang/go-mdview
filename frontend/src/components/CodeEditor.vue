@@ -152,6 +152,8 @@ defineExpose({
   scroller: (): HTMLElement | null => cm?.getScrollerElement() ?? null,
   refresh: () => cm?.refresh(),
   focus: () => cm?.focus(),
+  /** Ctrl+A：让 CodeMirror 内部选区覆盖全文（只读态也可由调用方补原生 Range） */
+  selectAll: () => cm?.execCommand('selectAll'),
   lineCount: () => cm?.lineCount() ?? 0
 })
 </script>
