@@ -476,6 +476,11 @@ export async function renderMarkdown(
       if (/^(https?:|mailto:)/i.test(href)) {
         return `<a href="${escapeHtml(href)}"${title} target="_blank" rel="noopener noreferrer">${text}</a>`
       }
+      if (href.startsWith('#')) {
+        // 文内锚点：保留真实 href（可聚焦、可复制地址），点击统一由 Viewer 拦截后平滑滚动。
+        // 不要用 javascript:void(0)：DOMPurify 会删掉该 href，链接退化成没有目标的 <a>。
+        return `<a href="${escapeHtml(href)}" class="md-link-anchor" data-anchor="${escapeHtml(href)}"${title}>${text}</a>`
+      }
       if (/\.(md|markdown)$/i.test(href.split('#')[0] ?? '')) {
         const abs = resolveMdHref(href.split('#')[0], baseDir)
         const anchor = href.includes('#') ? '#' + href.split('#')[1] : ''

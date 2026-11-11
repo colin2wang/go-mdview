@@ -446,21 +446,49 @@ let pendingPost = false
 // 切到纯源码前记住正文滚动位置，切回来还原
 let renderScrollTop = 0
 
+/**
+ * 标题锚点规范化：与 markdown.ts 的 makeSluger() 保持同一套 GitHub slug 规则。
+ * 渲染器给标题的 id 是 `h-<slug>`（前缀避开页面组件 id），而 md 里的 (#...)
+ * 链接写的是不带前缀的标准 slug，两者不能直接按 id 相等匹配。
+ */
+function anchorSlug(s: string): string {
+  return (
+    s
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\p{L}\p{N}-]+/gu, '') || 'h'
+  )
+}
+
 function scrollToAnchor(anchor: string) {
   const art = articleEl.value
   const sc = renderScrollEl.value
   if (!art || !sc) return
-  const target = decodeURIComponent(anchor).trim()
+  let target = anchor.replace(/^#/, '').trim()
+  try {
+    target = decodeURIComponent(target)
+  } catch {
+    /* 源码里带了裸 % 时 decode 会抛错，保留原样 */
+  }
   if (!target) return
-  let node: HTMLElement | undefined
   const heads = Array.from(art.querySelectorAll<HTMLElement>('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]'))
-  for (const h of heads) {
-    if ((h.textContent ?? '').trim() === target) {
-      node = h
-      break
+  let node: HTMLElement | undefined
+  // 1. 标题原文：跨文件锚点常直接写成标题文字
+  node = heads.find((h) => (h.textContent ?? '').trim() === target)
+  // 2. 元素 id：脚注往返（fn-*/fnref-*）、md 里自带的自定义锚点
+  if (!node) node = document.getElementById(target) ?? undefined
+  // 3. 渲染器产出的标题 id 带 h- 前缀，标准 Markdown 锚点不带
+  if (!node) node = document.getElementById(`h-${target}`) ?? undefined
+  // 4. 兜底：锚点写法未必是标准 slug（带点、空格、大小写等），规范化后再比
+  if (!node) {
+    const want = anchorSlug(target)
+    if (want) {
+      node = heads.find(
+        (h) => anchorSlug(h.textContent ?? '') === want || anchorSlug(h.id.replace(/^h-/, '')) === want
+      )
     }
   }
-  if (!node) node = document.getElementById(target) ?? undefined
   if (!node) return
   const top = node.getBoundingClientRect().top - sc.getBoundingClientRect().top
   sc.scrollTo({ top: sc.scrollTop + top - 8, behavior: 'smooth' })
@@ -660,6 +688,14 @@ async function onArtClick(e: MouseEvent) {
     e.preventDefault()
     pendingAnchor = (mdl.getAttribute('data-anchor') ?? '').replace(/^#/, '')
     openEntry(mdl.getAttribute('data-mdlink') ?? '')
+    return
+  }
+  // 文内锚点：渲染器产出的 # 链接（data-anchor）与脚注往返链接（href="#fn-*"）
+  // 统一拦下来自己滚，避免 WebView 走原生 fragment 导航改掉页面地址
+  const al = tgt.closest('a.md-link-anchor, a[href^="#"]') as HTMLElement | null
+  if (al) {
+    e.preventDefault()
+    scrollToAnchor(al.getAttribute('data-anchor') ?? al.getAttribute('href') ?? '')
     return
   }
   // wikilink
