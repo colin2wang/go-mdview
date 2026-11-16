@@ -7,15 +7,14 @@ import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const DOMPurifyPkg = require('dompurify')
 
-// 与 src/markdown.ts sanitizeHtml 保持一致的配置
+// 配置唯一来源：src/sanitize-config.json（src/markdown.ts 同样引用它）
+const sanitizeConfig = require('../src/sanitize-config.json')
+
+// 与 src/markdown.ts sanitizeHtml 使用同一份配置
 function sanitizeHtml(html) {
   const window = new JSDOM('').window
   const DOMPurify = DOMPurifyPkg(window)
-  return DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true, svg: true },
-    FORBID_TAGS: ['style', 'base', 'meta', 'form', 'input', 'button'],
-    FORBID_ATTR: ['style']
-  })
+  return DOMPurify.sanitize(html, sanitizeConfig)
 }
 
 // 危险子串：输出中出现任何一条即视为失败

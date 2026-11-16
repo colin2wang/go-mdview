@@ -44,7 +44,7 @@ export const mockAssoc: AssocState = {
   supported: false,
   exePath: '',
   associated: false,
-  owner: '（未设置）',
+  owner: '',
   message: '浏览器模式不支持文件关联'
 }
 
@@ -150,7 +150,7 @@ export const mockApi: Api = {
   },
   UnassociateMd: async () => {
     mockAssoc.associated = false
-    mockAssoc.owner = '（未设置）'
+    mockAssoc.owner = ''
   }
 }
 

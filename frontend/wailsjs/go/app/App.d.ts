@@ -8,7 +8,7 @@ export function BringToFront():Promise<void>;
 
 export function BuildInfo():Promise<string>;
 
-export function ClearHistory():Promise<Array<mdv.Entry>>;
+export function ClearHistory():Promise<void>;
 
 export function CopyText(arg1:string):Promise<void>;
 
@@ -32,7 +32,7 @@ export function OpenFileDialog():Promise<string>;
 
 export function OpenFolderDialog():Promise<string>;
 
-export function PushHistory(arg1:string):Promise<Array<mdv.Entry>>;
+export function PushHistory(arg1:string):Promise<void>;
 
 export function ReadMarkdown(arg1:string):Promise<mdv.FileContent>;
 
@@ -60,7 +60,7 @@ export function StatFile(arg1:string):Promise<boolean>;
 
 export function StopWatch():Promise<void>;
 
-export function ToggleFavorite(arg1:string):Promise<boolean|Array<mdv.Entry>>;
+export function ToggleFavorite(arg1:string):Promise<boolean>;
 
 export function UnassociateMd():Promise<void>;
 

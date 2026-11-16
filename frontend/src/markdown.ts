@@ -2,6 +2,7 @@ import type { TocItem } from './types'
 import { ensureHljs, ensureKatex, freshMarked, maybeMath, loadScript } from './vendor'
 import { t } from './i18n'
 import DOMPurify from 'dompurify'
+import sanitizeConfig from './sanitize-config.json'
 
 /**
  * Markdown 渲染管线（样式对齐 mdview demo）：
@@ -12,19 +13,31 @@ import DOMPurify from 'dompurify'
 export interface RenderResult {
   html: string
   toc: TocItem[]
+  /** 与 toc 同源的同步滚动锚点：标题的源码行号（0 基，按 preprocess 前的原文计）。 */
+  anchors: SrcAnchor[]
   hasMath: boolean
   hasMermaid: boolean
+}
+
+/** 同步滚动锚点：id 与渲染 DOM 的标题 id 一致。 */
+export interface SrcAnchor {
+  line: number
+  id: string
 }
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-/** 远程资源被拦截时显示的占位图（data URI，本地生成不外发请求）。 */
-const BLOCKED_IMG_DATA_URI =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="28"><rect width="120" height="28" rx="4" fill="#f0f0f0"/><text x="60" y="18" font-size="11" text-anchor="middle" fill="#999">🚫 ${t('img.blocked')}</text></svg>`
+/** 远程资源被拦截时显示的占位图（data URI，本地生成不外发请求）。
+ *  每次渲染时生成，保证语言切换后拦截文案即时跟随当前语言。 */
+function blockedImgUri(): string {
+  return (
+    'data:image/svg+xml,' +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="28"><rect width="120" height="28" rx="4" fill="#f0f0f0"/><text x="60" y="18" font-size="11" text-anchor="middle" fill="#999">🚫 ${t('img.blocked')}</text></svg>`
+    )
   )
+}
 
 /** 远程图片（http/https/协议相对）判定。 */
 function isRemoteSrc(href: string): boolean {
@@ -78,13 +91,13 @@ function ensureRemoteHook(): void {
     const src = node.getAttribute('src') ?? ''
     // 原始 HTML 里的远程 <img>/<video>/<audio>/<source> 等一律换成占位（白名单除外）
     if (src && !remotePasses(src) && tag !== 'script') {
-      node.setAttribute('src', BLOCKED_IMG_DATA_URI)
+      node.setAttribute('src', blockedImgUri())
       node.setAttribute('alt', node.getAttribute('alt') || t('img.blocked'))
     }
     // SVG <image href="https://..."> 同理
     const href = node.getAttribute('href') ?? ''
     if (tag === 'image' && !remotePasses(href)) {
-      node.setAttribute('href', BLOCKED_IMG_DATA_URI)
+      node.setAttribute('href', blockedImgUri())
     }
   })
 }
@@ -94,11 +107,7 @@ function sanitizeHtml(html: string, blockRemote = true, remoteAllow = ''): strin
   blockRemoteNow = blockRemote
   remoteAllowNow = remoteAllow
   try {
-    return DOMPurify.sanitize(html, {
-      USE_PROFILES: { html: true, svg: true },
-      FORBID_TAGS: ['style', 'base', 'meta', 'form', 'input', 'button'],
-      FORBID_ATTR: ['style']
-    })
+    return DOMPurify.sanitize(html, sanitizeConfig)
   } finally {
     blockRemoteNow = false
     remoteAllowNow = ''
@@ -464,7 +473,7 @@ export async function renderMarkdown(
       const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
       // 远程资源拦截（默认开）：不外发请求，用本地占位图代替；命中白名单的放行
       if (blockRemote && isRemoteSrc(href) && !remoteAllowed(href, remoteAllow)) {
-        href = BLOCKED_IMG_DATA_URI
+        href = blockedImgUri()
         return `<img src="${href}" alt="${escapeHtml(token.text ?? '')}" title="${escapeHtml(t('img.blocked'))}" class="md-img-blocked" loading="lazy">`
       }
       return `<img src="${escapeHtml(href)}"${title} alt="${escapeHtml(token.text ?? '')}" loading="lazy">`
@@ -497,26 +506,37 @@ export async function renderMarkdown(
   html = postprocessAlerts(html)
   html += await buildFootnotesHtml(footnotes)
 
-  // TOC 提取：独立 sluger，按相同文档顺序生成 → 与渲染 id 确定性一致
+  // TOC 与同步滚动锚点同源：同一次 lexer 遍历同时产出目录与源码行号，天然 1:1 配对。
+  // 行号映射回 preprocess 前的原文（heading 的 raw 原样出现在原文里），
+  // 预处理增删行（摘脚注定义、补空行）不会让行号错位。
   const toc: TocItem[] = []
+  const anchors: SrcAnchor[] = []
   try {
     const tocSlug = makeSluger()
-    const tokens = marked.lexer(md)
+    let cursor = 0 // 在原文中的查找游标，保证按文档顺序定位
     const walk = (arr: any[]) => {
       for (const t of arr) {
         if (t.type === 'heading') {
           const plain = plainText(t.tokens ?? [])
-          toc.push({ id: tocSlug(plain), text: plain, depth: t.depth })
+          const id = tocSlug(plain)
+          toc.push({ id, text: plain, depth: t.depth })
+          const idx = t.raw ? src.indexOf(t.raw, cursor) : -1
+          if (idx >= 0) {
+            cursor = idx + t.raw.length
+            // raw 起始行即标题行（setext 样式 raw 含上一行，同样取首行）
+            anchors.push({ line: src.slice(0, idx).split('\n').length - 1, id })
+          }
         }
+        // 覆盖引用块/列表内标题
         if (t.type !== 'heading' && t.tokens) walk(t.tokens)
       }
     }
-    walk(tokens)
+    walk(marked.lexer(md))
   } catch {
     /* TOC 提取失败不阻塞渲染 */
   }
 
-  return { html, toc, hasMath: maybeMath(md), hasMermaid: html.includes('data-mermaid') }
+  return { html, toc, anchors, hasMath: maybeMath(md), hasMermaid: html.includes('data-mermaid') }
 }
 
 /** 渲染数学公式（KaTeX auto-render）。 */

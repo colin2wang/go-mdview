@@ -1,0 +1,5 @@
+{
+  "USE_PROFILES": { "html": true, "svg": true },
+  "FORBID_TAGS": ["style", "base", "meta", "form", "input", "button"],
+  "FORBID_ATTR": ["style"]
+}

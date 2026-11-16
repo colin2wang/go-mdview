@@ -12,7 +12,7 @@ func ExePath() string { return "" }
 
 // GetAssocState 非 Windows：明确告知不支持，避免前端给出可点击的无效按钮。
 func GetAssocState() AssocState {
-	return AssocState{Supported: false, Owner: "（未设置）", Message: errAssocUnsupported.Error()}
+	return AssocState{Supported: false, Owner: "", Message: errAssocUnsupported.Error()}
 }
 
 // AssociateMd 非 Windows：不支持。

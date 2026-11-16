@@ -159,7 +159,7 @@ const assocLabel = computed(() => {
 })
 const assocTip = computed(() => {
   if (assoc.value.associated) return t('assoc.tipRestore')
-  return assoc.value.owner && assoc.value.owner !== t('assoc.ownerNone')
+  return assoc.value.owner
     ? t('assoc.tipOwner', { owner: assoc.value.owner })
     : t('assoc.tipSet')
 })

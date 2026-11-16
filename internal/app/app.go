@@ -232,14 +232,17 @@ func (a *App) StopWatch() { a.store.StopWatch() }
 func (a *App) FindByTitle(root, title string) string { return a.store.FindByTitle(root, title) }
 
 // GetHistory / PushHistory / ClearHistory 历史。
-func (a *App) GetHistory() []mdv.Entry             { return a.store.GetHistory() }
-func (a *App) PushHistory(path string) []mdv.Entry { return a.store.PushHistory(path) }
-func (a *App) ClearHistory() []mdv.Entry           { return a.store.ClearHistory() }
+// PushHistory/ClearHistory 不回传列表：前端拿到后会自行 GetHistory 刷新，
+// 绑定层多返回值会让 Wails 生成 boolean|Array 联合类型，与手写 api.ts 漂移。
+func (a *App) GetHistory() []mdv.Entry { return a.store.GetHistory() }
+func (a *App) PushHistory(path string) { a.store.PushHistory(path) }
+func (a *App) ClearHistory()           { a.store.ClearHistory() }
 
-// GetFavorites / ToggleFavorite 收藏。
+// GetFavorites / ToggleFavorite 收藏。只回传切换后的状态，列表由前端经 GetFavorites 刷新。
 func (a *App) GetFavorites() []mdv.Entry { return a.store.GetFavorites() }
-func (a *App) ToggleFavorite(path string) (bool, []mdv.Entry) {
-	return a.store.ToggleFavorite(path)
+func (a *App) ToggleFavorite(path string) bool {
+	added, _ := a.store.ToggleFavorite(path)
+	return added
 }
 
 // GetSettings / SaveSettings 设置。

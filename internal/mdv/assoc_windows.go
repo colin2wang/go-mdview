@@ -42,7 +42,7 @@ func assocCommandValue() string { return `"` + ExePath() + `" "%1"` }
 
 // GetAssocState 读取当前 .md 的关联情况。
 func GetAssocState() AssocState {
-	st := AssocState{Supported: true, ExePath: ExePath(), Owner: "（未设置）"}
+	st := AssocState{Supported: true, ExePath: ExePath(), Owner: ""}
 	if st.ExePath == "" {
 		st.Message = "无法定位可执行文件路径"
 		return st

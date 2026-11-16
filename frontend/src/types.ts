@@ -102,6 +102,6 @@ export const defaultAssocState: AssocState = {
   supported: false,
   exePath: '',
   associated: false,
-  owner: '（未设置）',
+  owner: '',
   message: ''
 }

@@ -37,5 +37,3 @@ require (
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 )
-
-// replace github.com/wailsapp/wails/v2 v2.10.1 => /home/z/go/pkg/mod

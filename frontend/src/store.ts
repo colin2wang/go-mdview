@@ -3,7 +3,7 @@ import type { Entry, FileContent, MNode, Settings, TocItem, ViewMode } from './t
 import { defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
 import { fileBase, fileToDir } from './demo'
-import { renderMarkdown, resolveImgHref } from './markdown'
+import { renderMarkdown, resolveImgHref, type SrcAnchor } from './markdown'
 import { setLang, t } from './i18n'
 
 export type TabKey = 'toc' | 'history' | 'fav' | 'files'
@@ -27,6 +27,8 @@ export const store = reactive({
   imgUrl: '',
   html: '',
   toc: [] as TocItem[],
+  /** 与 toc 同源的同步滚动锚点（标题源码行号 + DOM id），见 markdown.ts */
+  srcAnchors: [] as SrcAnchor[],
   activeHeading: '',
   hasMath: false,
   hasMermaid: false,
@@ -90,6 +92,7 @@ async function renderCurrent(fc: FileContent) {
     )
     store.html = r.html
     store.toc = r.toc
+    store.srcAnchors = r.anchors
     store.hasMath = r.hasMath
     store.hasMermaid = r.hasMermaid
   } catch (e) {
@@ -119,6 +122,7 @@ export async function renderDraft(md: string) {
     if (seq !== draftSeq) return // 已有更新的草稿，丢弃过期结果
     store.html = r.html
     store.toc = r.toc
+    store.srcAnchors = r.anchors
     store.hasMath = r.hasMath
     store.hasMermaid = r.hasMermaid
   } catch {
@@ -199,6 +203,7 @@ export async function resolveGoneFile(keep: boolean) {
     store.currentKind = 'markdown'
     store.html = ''
     store.toc = []
+    store.srcAnchors = []
     store.demoMode = false
     store.currentMissing = false
   }
@@ -232,6 +237,7 @@ export async function openFile(path: string, opts: { pushHistory?: boolean; reRo
       store.currentMissing = false
       store.html = ''
       store.toc = []
+      store.srcAnchors = []
       store.hasMath = false
       store.hasMermaid = false
       store.imgUrl = resolveImgHref(path, '')
@@ -248,6 +254,7 @@ export async function openFile(path: string, opts: { pushHistory?: boolean; reRo
         // 纯文本：不渲染 Markdown，直接整段展示
         store.html = ''
         store.toc = []
+        store.srcAnchors = []
         store.hasMath = false
         store.hasMermaid = false
       }

@@ -23,6 +23,8 @@ export function getLang(): Lang {
 
 export function setLang(v: string | undefined) {
   lang.value = (LANGS.some((l) => l.key === v) ? v : 'zh-CN') as Lang
+  // 同步 <html lang>：影响无障碍/拼写检查/字体回退
+  document.documentElement.lang = lang.value
 }
 
 type Dict = Record<string, string>
@@ -808,7 +810,7 @@ const DICTS: Record<Lang, Dict> = { 'zh-CN': zhCN, en, ja, de }
 export function t(key: string, params?: Record<string, string | number>): string {
   let s = DICTS[lang.value][key] ?? zhCN[key] ?? key
   if (params) {
-    for (const [k, v] of Object.entries(params)) s = s.replace(`{${k}}`, String(v))
+    s = s.replace(new RegExp(`\\{(${Object.keys(params).join('|')})\\}`, 'g'), (m, k) => String(params[k] ?? m))
   }
   return s
 }

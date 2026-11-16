@@ -253,61 +253,20 @@ function srcLineCount(): number {
   return srcEditor.cm?.lineCount() ?? shownText.value.split('\n').length
 }
 
-/**
- * 目录项 → 源码行号：按标题文本匹配。
- * 不能按序号对应——渲染前的 preprocess 会增删行（摘除脚注定义、补空行）。
- */
-function matchHeadingLines(): number[] {
-  const cm = srcEditor.cm
-  if (!cm) return []
-  const norm = (s: string) =>
-    s
-      .replace(/^\s{0,3}#{1,6}\s*/, '')
-      .replace(/[*_`~]/g, '')
-      .replace(/\[([^[\]]*)\]\([^()]*\)/g, '$1')
-      .trim()
-  const heads: { line: number; text: string }[] = []
-  for (let i = 0; i < cm.lineCount(); i++) {
-    const raw = cm.getLine(i) ?? ''
-    if (/^\s{0,3}#{1,6}(\s|$)/.test(raw)) heads.push({ line: i, text: norm(raw) })
-  }
-  const out: number[] = []
-  let j = 0
-  for (const it of store.toc) {
-    const want = norm(it.text ?? '')
-    let hit = -1
-    for (let k = j; k < heads.length; k++) {
-      if (heads[k]!.text === want) {
-        hit = heads[k]!.line
-        j = k + 1
-        break
-      }
-    }
-    if (hit < 0) break // 对不上就停止，后续区间交给相邻锚点插值
-    out.push(hit)
-  }
-  return out
-}
-
-/** 重建锚点表：目录项（标题）的源码行号 ↔ 渲染块在正文里的位置。 */
+/** 重建锚点表：同源锚点（markdown.ts 一次 lexer 遍历产出）的源码行号 ↔ 渲染块在正文里的位置。 */
 function rebuildAnchors(): Anchor[] {
   anchors = []
   const sc = renderScrollEl.value
   if (!sc || !showRender.value || store.currentKind !== 'markdown') return anchors
   const pvMax = Math.max(0, sc.scrollHeight - sc.clientHeight)
-  const heads = matchHeadingLines()
   const list: Anchor[] = [{ line: 0, srcTop: 0, pvTop: 0 }]
-  const n = Math.min(heads.length, store.toc.length)
-  for (let i = 0; i < n; i++) {
-    const id = store.toc[i]?.id
-    if (!id) continue
-    const el = document.getElementById(id)
+  for (const a of store.srcAnchors) {
+    const el = document.getElementById(a.id)
     if (!el || !sc.contains(el)) continue
     const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop
-    const line = heads[i]!
-    const st = srcLineTop(line)
+    const st = srcLineTop(a.line)
     if (st <= list[list.length - 1]!.srcTop) continue // 保持单调
-    list.push({ line, srcTop: st, pvTop: Math.max(0, Math.min(top - 8, pvMax)) })
+    list.push({ line: a.line, srcTop: st, pvTop: Math.max(0, Math.min(top - 8, pvMax)) })
   }
   const lastLine = Math.max(0, srcLineCount() - 1)
   // 末尾锚点用「源码可滚动到底」而不是最后一行行高：源码底部还有阅读留白
@@ -320,8 +279,19 @@ function rebuildAnchors(): Anchor[] {
   return anchors
 }
 
+// Mermaid/KaTeX/懒加载图片会在渲染完成后继续改变布局，锚点表里的 offsetTop 会过期；
+// 置脏后等下次滚动同步前再重建，避免持续全量重算
+let anchorsDirty = true
+function invalidateAnchors(): void {
+  anchorsDirty = true
+}
+
 function useAnchors(): Anchor[] {
-  return anchors.length >= 2 ? anchors : rebuildAnchors()
+  if (anchorsDirty || anchors.length < 2) {
+    anchorsDirty = false
+    rebuildAnchors()
+  }
+  return anchors
 }
 
 /** 源码滚动位置 → 正文滚动位置（锚点间线性插值；返回 null 表示锚点不足） */
@@ -530,6 +500,7 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
   // 渲染结果变了 → 标题缓存与锚点表失效，重建后再还原滚动位置
   headCache = Array.from(art.querySelectorAll<HTMLElement>('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]'))
   rebuildAnchors()
+  anchorsDirty = false
 
   const sc = renderScrollEl.value
   if (!sc) return
@@ -749,12 +720,22 @@ function onResize() {
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   window.addEventListener('resize', onResize)
+  // 异步布局变化（懒加载图片、Mermaid 出图）让锚点表过期：捕获阶段接 img load，RO 接尺寸变化
+  artResize = new ResizeObserver(() => invalidateAnchors())
+  if (articleEl.value) {
+    artResize.observe(articleEl.value)
+    articleEl.value.addEventListener('load', invalidateAnchors, true)
+  }
 })
+let artResize: ResizeObserver | null = null
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('resize', onResize)
   document.removeEventListener('mousemove', onSplitMove)
   document.removeEventListener('mouseup', onSplitUp)
+  artResize?.disconnect()
+  artResize = null
+  articleEl.value?.removeEventListener('load', invalidateAnchors, true)
 })
 // ---------- 快捷键 ----------
 // Ctrl+A 浏览器默认全选整页：分栏时左右两个面板（连同侧栏）会一起高亮。
