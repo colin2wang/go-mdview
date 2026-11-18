@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -70,6 +71,22 @@ func (s *Store) PushHistory(path string) []Entry {
 	s.writeJSON("history.json", &out)
 	s.mu.Unlock()
 	return out
+}
+
+// RemoveHistory 从历史里移除单条（不删除磁盘文件）。
+func (s *Store) RemoveHistory(path string) {
+	path = filepath.Clean(path)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var list []Entry
+	s.readJSON("history.json", &list)
+	out := make([]Entry, 0, len(list))
+	for _, e := range list {
+		if filepath.Clean(e.Path) != path {
+			out = append(out, e)
+		}
+	}
+	s.writeJSON("history.json", &out)
 }
 
 // ClearHistory 清空历史。
@@ -235,9 +252,37 @@ func sortNodes(nodes []Node) {
 	}
 }
 
+// maxTreeNodes 单棵目录树的最大节点数，防止超大 vault 一次性递归把 UI 卡死。
+const maxTreeNodes = 5000
+
+type treeCacheEntry struct {
+	at    time.Time
+	nodes []Node
+}
+
+var (
+	treeCacheMu  sync.Mutex
+	treeCache    = map[string]treeCacheEntry{}
+	treeCacheTTL = 2 * time.Second
+)
+
+// InvalidateTreeCache 在显式刷新/保存后调用，让下一次 ListTree 重新扫描磁盘。
+func InvalidateTreeCache() {
+	treeCacheMu.Lock()
+	treeCache = map[string]treeCacheEntry{}
+	treeCacheMu.Unlock()
+}
+
 // ListTree 扫描 root 下的目录与 markdown 文件（跳过隐藏/垃圾目录）。
 func (s *Store) ListTree(root string) ([]Node, error) {
 	root = filepath.Clean(root)
+	treeCacheMu.Lock()
+	if c, ok := treeCache[root]; ok && time.Since(c.at) < treeCacheTTL {
+		nodes := c.nodes
+		treeCacheMu.Unlock()
+		return nodes, nil
+	}
+	treeCacheMu.Unlock()
 	fi, err := os.Stat(root)
 	if err != nil {
 		return nil, err
@@ -247,9 +292,10 @@ func (s *Store) ListTree(root string) ([]Node, error) {
 	}
 	// 打开目录树即登记根目录：/mdimg 回放允许该目录子树内的图片
 	AllowImageDir(root)
+	remaining := maxTreeNodes
 	var walk func(dir string, depth int) []Node
 	walk = func(dir string, depth int) []Node {
-		if depth > 12 {
+		if depth > 12 || remaining <= 0 {
 			return nil
 		}
 		ents, err := os.ReadDir(dir)
@@ -272,12 +318,21 @@ func (s *Store) ListTree(root string) ([]Node, error) {
 					continue // 空目录不进树
 				}
 				nodes = append(nodes, Node{Name: name, Path: p, IsDir: true, Supported: true, Children: children})
+				remaining--
 			} else {
 				nodes = append(nodes, Node{Name: name, Path: p, Supported: previewable(strings.ToLower(filepath.Ext(name)))})
+				remaining--
+			}
+			if remaining <= 0 {
+				break
 			}
 		}
 		sortNodes(nodes)
 		return nodes
 	}
-	return walk(root, 0), nil
+	nodes := walk(root, 0)
+	treeCacheMu.Lock()
+	treeCache[root] = treeCacheEntry{at: time.Now(), nodes: nodes}
+	treeCacheMu.Unlock()
+	return nodes, nil
 }

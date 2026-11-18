@@ -44,14 +44,23 @@ function supported(node: MNode): boolean {
 <template>
   <li>
     <!-- 目录 -->
-    <a v-if="node.isDir" class="tree-row dir" :title="node.path" @click="expand.toggle(node.path)">
+    <button
+      v-if="node.isDir"
+      type="button"
+      class="tree-row dir"
+      :title="node.path"
+      :aria-expanded="isOpen()"
+      @click="expand.toggle(node.path)"
+      @contextmenu.prevent="menu($event, node)"
+    >
       <svg class="chev" :class="{ open: isOpen() }" viewBox="0 0 16 16" width="12" height="12"><path d="M5.5 4 10 8l-4.5 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       <svg class="ficon" viewBox="0 0 16 16" width="14" height="14"><path d="M1.5 3.5h4l1.5 2h7.5v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9Z" fill="currentColor" opacity=".8"/></svg>
       <span class="tree-name">{{ node.name }}</span>
-    </a>
+    </button>
     <!-- 文件 -->
-    <a
+    <button
       v-else
+      type="button"
       class="tree-row file"
       :class="{ current: store.current?.path === node.path, unsupported: !supported(node) }"
       :title="node.path"
@@ -62,7 +71,7 @@ function supported(node: MNode): boolean {
       <span class="tree-name">{{ node.name }}</span>
       <span v-if="!supported(node)" class="no-preview">{{ t('tree.noPreview') }}</span>
       <span v-else-if="store.current?.path === node.path" class="cur-badge">{{ t('tree.current') }}</span>
-    </a>
+    </button>
 
     <ul v-if="node.isDir && isOpen()" class="tree-sub">
       <TreeItem v-for="c in node.children ?? []" :key="c.path" :node="c" />

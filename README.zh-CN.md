@@ -24,7 +24,7 @@
 - **实时预览编辑** —— 在对照模式中改写源码，右侧即时预览，保存时按原编码写回文件
 - **目录级浏览** —— 打开笔记文件夹（如 Obsidian 库），文件树、历史、收藏随手可用
 - **深浅主题 × 四语言** —— 简体中文 / English / 日本語 / Deutsch，设置中即时切换
-- **100% 本地** —— 单个约 13MB 的 `mdview.exe`，无运行时、无网络、无遥测；笔记永不离开你的电脑
+- **100% 本地** —— 单个约 16MB 的 `mdview.exe`，无运行时、无网络、无遥测；笔记永不离开你的电脑
 
 ---
 
@@ -162,7 +162,7 @@ go-mdview/
 ```
 
 ```powershell
-# 依赖：Go 1.25+、Node 18+、pnpm、（推荐）wails CLI v2
+# 依赖：Go 1.27+、Node 20+、pnpm 8+、（推荐）wails CLI v2
 .\build.ps1            # 增量构建（图标缺失时生成 → 前端 → 后端 exe）
 .\build.ps1 -Clean     # 清理后构建
 .\build.ps1 -Package   # 构建 + 打 zip
@@ -170,7 +170,19 @@ go-mdview/
 
 构建脚本先检查图标资源（`build/appicon.png`、`build/windows/icon.ico`、`build/mdview.markdown.png`），任一缺失才执行 `generate-icon.ps1`（全部存在则跳过并输出提示），随后执行 `frontend/` 下的 `pnpm install && pnpm run build`（vue-tsc 类型检查 + vite 构建），再 `wails build`（未安装 wails CLI 时回退为 `go build -tags "desktop,production"`）。产物：`build\bin\mdview.exe`。
 
-运行 Go 测试：`go test ./internal/mdv/`。
+### 本地验证
+
+```powershell
+cd frontend
+pnpm install
+pnpm run build      # vue-tsc --noEmit && vite build && sanitize-check 回归
+pnpm test           # Vitest 纯函数 / jsdom 用例
+cd ..
+go vet ./...
+go test -race ./internal/mdv/
+```
+
+`pnpm run build` 会随 `build.ps1` 中的 `wails build` 重新生成 `frontend/wailsjs/`，新增的 `App.*` 绑定才会真正可用。
 
 ---
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { store, patchSettings, setViewMode, togglePin, toast } from '../store'
+import { store, patchSettings, setViewMode, togglePin, toast, confirmDiscard } from '../store'
 import { getApi } from '../api'
 import { t, LANGS } from '../i18n'
 import type { AssocState, ViewMode } from '../types'
@@ -111,6 +111,7 @@ function setLangEvt(v: string) {
 // ---------- 重启 ----------
 // Go 端先清空记住的窗口几何与侧栏宽度，再拉起新进程退出自己（新进程会恢复默认大小、位置与侧栏宽度）
 async function restartApp() {
+  if (!(await confirmDiscard('restart'))) return
   try {
     const api = await getApi()
     await api.RestartApp()
@@ -182,16 +183,22 @@ const assocTip = computed(() => {
               <span class="set-label">{{ t('set.theme') }}</span>
               <span class="set-seg" role="radiogroup">
                 <button
+                  type="button"
                   class="seg-btn"
                   :class="{ on: st?.theme === 'light' }"
+                  role="radio"
+                  :aria-checked="st?.theme === 'light'"
                   data-testid="theme-light"
                   @click="setThemeEvt('light')"
                 >
                   {{ t('set.light') }}
                 </button>
                 <button
+                  type="button"
                   class="seg-btn"
                   :class="{ on: st?.theme === 'dark' }"
+                  role="radio"
+                  :aria-checked="st?.theme === 'dark'"
                   data-testid="theme-dark"
                   @click="setThemeEvt('dark')"
                 >
@@ -205,8 +212,11 @@ const assocTip = computed(() => {
                 <button
                   v-for="l in LANGS"
                   :key="l.key"
+                  type="button"
                   class="seg-btn"
                   :class="{ on: (st?.language ?? 'zh-CN') === l.key }"
+                  role="radio"
+                  :aria-checked="(st?.language ?? 'zh-CN') === l.key"
                   :data-testid="'lang-' + l.key"
                   @click="setLangEvt(l.key)"
                 >
@@ -308,8 +318,11 @@ const assocTip = computed(() => {
                 <button
                   v-for="m in viewModes"
                   :key="m.key"
+                  type="button"
                   class="seg-btn"
                   :class="{ on: (st?.viewMode ?? 'render') === m.key }"
+                  role="radio"
+                  :aria-checked="(st?.viewMode ?? 'render') === m.key"
                   :data-testid="'view-' + m.key"
                   @click="setViewModeEvt(m.key)"
                 >

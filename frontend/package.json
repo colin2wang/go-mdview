@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "build": "vue-tsc --noEmit && vite build && pnpm run sanitize-check",
+    "preview": "vite preview",
+    "sanitize-check": "node scripts/sanitize-check.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "codemirror": "^5.65.16",
@@ -15,11 +18,18 @@
   },
   "devDependencies": {
     "@types/codemirror": "^5.60.8",
+    "@types/node": "^18.19.0",
     "@vitejs/plugin-vue": "^3.0.3",
     "jsdom": "^24.1.0",
     "typescript": "^4.6.4",
     "vite": "^3.0.7",
     "vue-tsc": "^1.8.27",
+    "vitest": "^0.34.6",
     "@babel/types": "^7.18.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/node": "^18.19.0"
+    }
   }
 }

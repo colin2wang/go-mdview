@@ -15,15 +15,18 @@ export function countStats(content: string | null | undefined): CountStats {
     .replace(/[#*`~\[\]()>_|\\-]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+  // 中文无空格：按字计词，拉丁文仍按空格分词（对纯中文不再恒等于 1）
+  const cjk = (text.match(/[⺀-鿿]/g) ?? []).length
+  const latin = text.replace(/[⺀-鿿]/g, ' ').trim()
   return {
-    words: text ? text.split(/\s+/).length : 0,
+    words: cjk + (latin ? latin.split(/\s+/).length : 0),
     chars: (content || '').length,
     lines: content ? content.split('\n').length : 0
   }
 }
 
 /** 跳过脚本/样式、隐藏的 KaTeX MathML、图形内部文字与 UI 按钮等非正文节点。 */
-const SKIP_CLASS = ['katex-mathml', 'copy-btn', 'code-line-num', 'md-diagram-src', 'mm-toolbar']
+const SKIP_CLASS = ['katex-mathml', 'copy-btn', 'code-copy', 'code-line-num', 'md-diagram-src', 'md-diagram-code', 'mm-toolbar', 'hidden']
 
 export function countPreviewText(root: Node | null | undefined): number {
   if (!root) return 0
@@ -36,8 +39,8 @@ export function countPreviewText(root: Node | null | undefined): number {
     if (node.nodeType !== 1) return
     const el = node as HTMLElement
     const tag = (el.tagName || '').toLowerCase()
-    if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg') return
-    if (el.hidden) return
+    if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg' || tag === 'button' || tag === 'input') return
+    if (el.hidden || el.getAttribute('aria-hidden') === 'true') return
     const cls = el.classList
     if (cls && SKIP_CLASS.some((c) => cls.contains(c))) return
     const style = el.style

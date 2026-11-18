@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { store, togglePin, setViewMode } from '../store'
+import { store, togglePin, setViewMode, confirmDiscard } from '../store'
 import { getApi } from '../api'
 import { t } from '../i18n'
 import type { ViewMode } from '../types'
@@ -25,7 +25,11 @@ async function maxToggle() {
   if (store.desktop) (await getApi()).WindowMaxToggle()
 }
 async function close() {
-  if (store.desktop) (await getApi()).WindowClose()
+  if (!store.desktop) return
+  if (!(await confirmDiscard('close'))) return
+  const api = await getApi()
+  await api.SetDraftDirty(false)
+  api.WindowClose()
 }
 async function fullscreen() {
   if (store.desktop) (await getApi()).WindowFullscreenToggle()
@@ -59,6 +63,8 @@ function dblMax(e: MouseEvent) {
           class="tb-mode-btn"
           :class="{ on: store.viewMode === m.key }"
           :disabled="!store.current || (m.key === 'mindmap' && store.currentKind !== 'markdown')"
+          role="radio"
+          :aria-checked="store.viewMode === m.key"
           :title="m.title"
           :data-testid="'btn-mode-' + m.key"
           @click="setViewMode(m.key)"

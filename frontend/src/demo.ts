@@ -132,10 +132,10 @@ export const DEMO_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="64
 export function mockTree(): { name: string; path: string; isDir: boolean; children?: any[] }[] {
   const java = (n: number, title: string) => ({
     name: `${String(n).padStart(2, '0')}-${title}.md`,
-    path: `C:\\Users\\wangb\\OneDrive\\Obsidian\\迷你狐的知识库\\01-计算机技术\\编程语言\\Java\\${String(n).padStart(2, '0')}-${title}.md`,
+    path: `C:\\demo\\vault\\01-计算机技术\\编程语言\\Java\\${String(n).padStart(2, '0')}-${title}.md`,
     isDir: false
   })
-  const dir = 'C:\\Users\\wangb\\OneDrive\\Obsidian\\迷你狐的知识库\\01-计算机技术\\编程语言\\Java'
+  const dir = 'C:\\demo\\vault\\01-计算机技术\\编程语言\\Java'
   return [
     {
       name: 'Java',

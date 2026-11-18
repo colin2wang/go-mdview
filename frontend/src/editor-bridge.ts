@@ -14,8 +14,21 @@ export function srcHeadingLines(): number[] {
   const cm = srcEditor.cm
   if (!cm) return []
   const out: number[] = []
+  let inFence = false
+  let fenceMark = ''
   for (let i = 0; i < cm.lineCount(); i++) {
-    if (/^\s{0,3}#{1,6}(\s|$)/.test(cm.getLine(i) ?? '')) out.push(i)
+    const line = cm.getLine(i) ?? ''
+    const fm = /^\s*(```|~~~)/.exec(line)
+    if (fm) {
+      if (!inFence) {
+        inFence = true
+        fenceMark = fm[1]
+      } else if (line.trim().startsWith(fenceMark)) {
+        inFence = false
+      }
+      continue
+    }
+    if (!inFence && /^\s{0,3}#{1,6}(\s|$)/.test(line)) out.push(i)
   }
   return out
 }

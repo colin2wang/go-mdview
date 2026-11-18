@@ -12,7 +12,11 @@ export function loadScript(src: string): Promise<void> {
     const s = document.createElement('script')
     s.src = src
     s.onload = () => resolve()
-    s.onerror = () => reject(new Error('script load failed: ' + src))
+    s.onerror = () => {
+      s.remove()
+      loaded.delete(src) // 失败不缓存：下次可重试，避免一次加载失败永久降级
+      reject(new Error('script load failed: ' + src))
+    }
     document.head.appendChild(s)
   })
   loaded.set(src, p)
@@ -32,7 +36,11 @@ export function loadCss(href: string, id?: string): Promise<void> {
     link.href = href
     if (id) link.id = id
     link.onload = () => resolve()
-    link.onerror = () => reject(new Error('css load failed: ' + href))
+    link.onerror = () => {
+      link.remove()
+      loaded.delete(href) // 同脚本：失败后允许重试
+      reject(new Error('css load failed: ' + href))
+    }
     document.head.appendChild(link)
   })
   loaded.set(href, p)
@@ -101,9 +109,7 @@ export async function ensureMermaid(): Promise<any> {
   if (mermaidReady && w.mermaid) return w.mermaid
   await loadScript('/static/mermaid.min.js')
   const m = (window as any).mermaid
-  if (m && !mermaidReady) {
-    m.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' })
-    mermaidReady = true
-  }
+  if (m && !mermaidReady) mermaidReady = true
+  // 主题口径统一由 renderDiagramsIn 决定（dark/default），这里不再初始化成 neutral
   return m
 }

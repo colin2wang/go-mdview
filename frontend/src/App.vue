@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { store, initApp, openEntry, toggleFavorite, applySettings, resolveGoneFile } from './store'
+import {
+  store,
+  initApp,
+  toggleFavorite,
+  applySettings,
+  resolveGoneFile,
+  resolveDiscard,
+  discardMessage,
+  toast
+} from './store'
 import { getApi, isDesktop } from './api'
 import { t } from './i18n'
 import TitleBar from './components/TitleBar.vue'
@@ -31,8 +40,8 @@ onMounted(() => {
     dropHint.value = false
     // 桌面端由 Wails runtime.OnFileDrop 接管（能拿到绝对路径），这里只做浏览器兜底
     if (isDesktop()) return
-    const f = (e as DragEvent).dataTransfer?.files?.[0]
-    if (f && /\.(md|markdown|mdown|mkd)$/i.test(f.name)) openEntry((f as any).path ?? '', { reRoot: true })
+    // 浏览器沙箱拿不到本地绝对路径（File.path 恒为空），只能用 Wails 的 OnFileDrop
+    if ((e as DragEvent).dataTransfer?.files?.length) toast(t('drop.browserNoPath'), 'error')
   })
 })
 
@@ -79,6 +88,19 @@ watch(
           <div class="gone-actions">
             <button class="set-btn danger" data-testid="gone-close" @click="resolveGoneFile(false)">{{ t('gone.close') }}</button>
             <button class="set-btn" data-testid="gone-keep" @click="resolveGoneFile(true)">{{ t('gone.keep') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+    <!-- 未保存草稿确认：点遮罩不生效，只认「保留修改 / 放弃修改」 -->
+    <Teleport to="body">
+      <div v-if="store.discardReason" class="modal-mask" data-testid="discard-mask">
+        <div class="modal gone-modal" data-testid="discard-modal">
+          <h3 class="gone-title">{{ t('discard.title') }}</h3>
+          <p class="gone-body">{{ discardMessage(store.discardReason) }}</p>
+          <div class="gone-actions">
+            <button class="set-btn" data-testid="discard-keep" @click="resolveDiscard(true)">{{ t('discard.keep') }}</button>
+            <button class="set-btn danger" data-testid="discard-drop" @click="resolveDiscard(false)">{{ t('discard.drop') }}</button>
           </div>
         </div>
       </div>

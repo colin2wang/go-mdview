@@ -5,7 +5,7 @@
 A lightweight native Markdown reader for Windows. Double-click a `.md` file and it opens *rendered* — not in an editor — with diagrams, math, mind maps, and live preview built in.
 
 ![Platform](https://img.shields.io/badge/platform-Windows-blue?logo=windows&logoColor=white)
-![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.27%2B-00ADD8?logo=go&logoColor=white)
 ![Wails](https://img.shields.io/badge/Wails-v2-red?logo=wails&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-4-3178C6?logo=typescript&logoColor=white)
@@ -24,7 +24,7 @@ A lightweight native Markdown reader for Windows. Double-click a `.md` file and 
 - **Live preview editing** — rewrite in Split view, watch the preview update instantly, save back in the file's original encoding
 - **Folder-friendly** — open a notes folder (e.g. an Obsidian vault) and browse its file tree, history, and favorites
 - **Light / dark × 4 languages** — zh-CN / English / 日本語 / Deutsch, switchable live
-- **100% local** — one ~13 MB `mdview.exe`, no runtime, no network, no telemetry; your notes never leave your PC. Remote resources (http(s) images, etc.) referenced by documents are blocked by default (toggle in Settings) so opening an untrusted note never sends outbound requests
+- **100% local** — one ~16 MB `mdview.exe`, no runtime, no network, no telemetry; your notes never leave your PC. Remote resources (http(s) images, etc.) referenced by documents are blocked by default (toggle in Settings) so opening an untrusted note never sends outbound requests
 
 ---
 
@@ -164,7 +164,7 @@ go-mdview/
 ```
 
 ```powershell
-# Requires: Go 1.25+, Node 18+, pnpm, (recommended) wails CLI v2
+# Requires: Go 1.27+, Node 20+, pnpm 8+, (recommended) wails CLI v2
 .\build.ps1            # Incremental build (icons if missing → frontend → exe)
 .\build.ps1 -Clean     # Clean build
 .\build.ps1 -Package   # Build + zip
@@ -172,7 +172,19 @@ go-mdview/
 
 The script checks the icon assets (`build/appicon.png`, `build/windows/icon.ico`, `build/mdview.markdown.png`) and runs `generate-icon.ps1` only when any of them is missing (otherwise it skips with a message), then runs `pnpm install && pnpm run build` in `frontend/` (vue-tsc type check + vite build), then `wails build` (falling back to `go build -tags "desktop,production"` if the wails CLI is missing). Output: `build\bin\mdview.exe`.
 
-Run Go tests: `go test ./internal/mdv/`.
+### Verify locally
+
+```powershell
+cd frontend
+pnpm install
+pnpm run build      # vue-tsc --noEmit && vite build && sanitize-check 回归
+pnpm test           # Vitest 纯函数 / jsdom 用例
+cd ..
+go vet ./...
+go test -race ./internal/mdv/
+```
+
+`pnpm run build` will regenerate `frontend/wailsjs/` (via `wails build` in `build.ps1`) so newly added `App.*` bindings become available at runtime.
 
 ---
 

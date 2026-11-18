@@ -3,7 +3,7 @@ import type { Entry, FileContent, MNode, Settings, TocItem, ViewMode } from './t
 import { defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
 import { fileBase, fileToDir } from './demo'
-import { renderMarkdown, resolveImgHref, type SrcAnchor } from './markdown'
+import { renderMarkdown, resolveImgHref, sanitizeHtml, type SrcAnchor } from './markdown'
 import { setLang, t } from './i18n'
 
 export type TabKey = 'toc' | 'history' | 'fav' | 'files'
@@ -30,6 +30,8 @@ export const store = reactive({
   /** 与 toc 同源的同步滚动锚点（标题源码行号 + DOM id），见 markdown.ts */
   srcAnchors: [] as SrcAnchor[],
   activeHeading: '',
+  /** 跨文件锚点：wiki 链接带 #heading 时，渲染完成后由 Viewer 消费 */
+  pendingAnchor: '',
   hasMath: false,
   hasMermaid: false,
   history: [] as Entry[],
@@ -42,8 +44,90 @@ export const store = reactive({
   /** 当前文件已被外部删除/改名且用户选择保留：内容仍在窗口中，但已失效 */
   currentMissing: false,
   /** 外部删除确认弹窗：非空时显示「保留/关闭」询问 */
-  goneFile: null as string | null
+  goneFile: null as string | null,
+  /** 源码编辑态与草稿提升到 store：关闭/重启/切换/重载/退出编辑共用同一份状态 */
+  editing: false,
+  draft: '',
+  /** 未保存改动确认弹窗：非空时显示「保留修改/放弃」询问 */
+  discardReason: '' as '' | 'close' | 'restart' | 'switch' | 'reload' | 'exit'
 })
+
+const DISCARD_REASON_KEYS: Record<string, string> = {
+  close: 'discard.close',
+  restart: 'discard.restart',
+  switch: 'discard.switch',
+  reload: 'discard.reload',
+  exit: 'discard.exit'
+}
+
+let draftTimer: number | undefined
+let discardResolve: ((keep: boolean) => void) | null = null
+
+/** 是否有未保存的草稿改动。 */
+export function hasUnsaved(): boolean {
+  return store.editing && !!store.current && store.draft !== store.current.content
+}
+
+/** 同步未保存标记给 Go：标题栏 ✕ / 系统关闭都能被 BeforeClose 拦下来弹确认。 */
+export function syncDraftDirty() {
+  if (store.desktop) void getApi().then((api) => api.SetDraftDirty(hasUnsaved()))
+}
+
+/** 统一确认入口：无未保存改动直接放行；否则弹窗，返回 true=放弃修改继续操作。 */
+export function confirmDiscard(reason: 'close' | 'restart' | 'switch' | 'reload' | 'exit'): Promise<boolean> {
+  if (!hasUnsaved()) return Promise.resolve(true)
+  if (discardResolve) return Promise.resolve(false) // 已有确认弹窗未处理，拒绝重入
+  store.discardReason = reason
+  return new Promise((resolve) => {
+    discardResolve = resolve
+  })
+}
+
+/** 确认弹窗正文（按触发出口给不同提示，全部走 i18n）。 */
+export function discardMessage(reason: string): string {
+  return t(DISCARD_REASON_KEYS[reason] ?? 'discard.switch')
+}
+
+/** 确认弹窗按钮：keep=true 保留修改并取消原操作；否则放弃并继续。
+ *  confirmDiscard 的 resolve 语义是 true=继续操作，因此这里必须取反。 */
+export function resolveDiscard(keep: boolean) {
+  const resolve = discardResolve
+  discardResolve = null
+  store.discardReason = ''
+  resolve?.(!keep)
+}
+
+/** 取消草稿重渲染定时器：换文件/退出编辑后不能让旧草稿覆盖正文。 */
+export function cancelDraftRender() {
+  if (draftTimer !== undefined) {
+    window.clearTimeout(draftTimer)
+    draftTimer = undefined
+  }
+}
+
+/** 编辑器输入：300ms 防抖后重渲染预览（draftSeq 负责丢弃过期结果）。 */
+export function setDraftText(v: string, debounce = true) {
+  store.draft = v
+  syncDraftDirty()
+  if (draftTimer !== undefined) window.clearTimeout(draftTimer)
+  if (!debounce) {
+    draftTimer = undefined
+    void renderDraft(v)
+    return
+  }
+  draftTimer = window.setTimeout(() => {
+    draftTimer = undefined
+    void renderDraft(v)
+  }, 300)
+}
+
+/** 清空编辑态（保存成功 / 放弃修改 / 切换文件后调用）。 */
+export function clearDraft() {
+  cancelDraftRender()
+  store.editing = false
+  store.draft = ''
+  syncDraftDirty()
+}
 
 /** 非法/缺失的 viewMode 回落到 render。 */
 function normalizeViewMode(v: unknown): ViewMode {
@@ -96,7 +180,12 @@ async function renderCurrent(fc: FileContent) {
     store.hasMath = r.hasMath
     store.hasMermaid = r.hasMermaid
   } catch (e) {
-    store.html = `<div class="render-error"><h3>渲染失败</h3><pre>${String(e)}</pre></div>`
+    // 异常文本可能含不可信内容（路径、markdown 片段），统一走净化出口。
+    store.html = sanitizeHtml(
+      `<div class="render-error"><h3>${t('error.renderFailed')}</h3><pre>${String(e)}</pre></div>`,
+      store.settings?.blockRemote ?? true,
+      store.settings?.remoteAllow ?? ''
+    )
   } finally {
     store.rendering = false
   }
@@ -178,7 +267,7 @@ async function handleWatchEvent(ev: WatchEvent) {
   reloading = true
   try {
     // 静默重载：不推历史、不改树根；保存/滚动位置由既有流程处理
-    await openFile(ev.path, { pushHistory: false })
+    await openFile(ev.path, { pushHistory: false, reason: 'reload' })
     // 3 秒气泡 + 去重：文件被反复修改/更新时同一消息只保留一条
     toast(t('toast.fileReloaded'), 'info', { dedupe: true, duration: 3000 })
   } catch {
@@ -194,6 +283,7 @@ export async function resolveGoneFile(keep: boolean) {
   store.goneFile = null
   if (!p) return
   const api = await getApi()
+  if (!keep && !(await confirmDiscard('switch'))) return
   await api.StopWatch()
   if (keep && store.current?.path === p) {
     store.currentMissing = true
@@ -222,10 +312,19 @@ export function fileKind(path: string): 'markdown' | 'image' | 'text' {
   return 'text'
 }
 
-export async function openFile(path: string, opts: { pushHistory?: boolean; reRoot?: boolean } = {}) {
+export async function openFile(
+  path: string,
+  opts: { pushHistory?: boolean; reRoot?: boolean; reason?: 'switch' | 'reload' } = {}
+): Promise<boolean> {
+  // 五个丢弃出口之一：切换文件（外部重载传 reason='reload'）。
+  if (!(await confirmDiscard(opts.reason ?? 'switch'))) return false
   const api = await getApi()
   const kind = fileKind(path)
   try {
+    // 所有文件类型统一登记图片目录并等待完成，否则单独打开图片 /
+    // 启动恢复（pushHistory:false）时 /mdimg 会因白名单未登记而 403。
+    await api.AllowImageDir(fileToDir(path))
+    clearDraft()
     if (kind === 'image') {
       // 图片：不走文本读取，直接用 /mdimg 回放路由
       store.current = {
@@ -272,12 +371,17 @@ export async function openFile(path: string, opts: { pushHistory?: boolean; reRo
     if (opts.pushHistory !== false) {
       api.PushHistory(path).then(() => api.GetHistory().then((h) => (store.history = h)))
     }
-    const st = { ...(store.settings ?? defaultSettings), lastFile: path, lastFolder: dir }
+    // lastFolder 只在真正切换文件夹树根时更新，避免面板标题与实际树内容不符
+    const st = { ...(store.settings ?? defaultSettings), lastFile: path }
+    if (opts.reRoot && store.rootName === dir) st.lastFolder = dir
     store.settings = st
     api.SaveSettings(st)
     api.SetWindowTitle(`${path} - mdview`)
+    return true
   } catch (e) {
-    toast(t('toast.openFailed', { e: fileBase(path) }), 'error')
+    if (String(e).includes('file too large')) toast(t('error.tooLarge'), 'error')
+    else toast(t('toast.openFailed', { e: fileBase(path) }), 'error')
+    return false
   }
 }
 
@@ -289,7 +393,7 @@ export async function refreshTree() {
   }
   const api = await getApi()
   try {
-    store.tree = await api.ListTree(dir)
+    store.tree = await api.RefreshTree(dir)
     const mdCount = countMd(store.tree)
     toast(mdCount ? t('toast.refreshed', { n: mdCount }) : t('toast.noNotes'))
   } catch {
@@ -316,6 +420,8 @@ export async function openFolder() {
   }
   store.rootName = dir
   store.tree = tree
+  // 目录树里的图片也要能回放（与单文件打开走同一登记入口）
+  await api.AllowImageDir(dir)
   const st = { ...(store.settings ?? defaultSettings), lastFolder: dir }
   store.settings = st
   api.SaveSettings(st)
@@ -323,21 +429,37 @@ export async function openFolder() {
   toast(mdCount ? t('toast.loadedFolder', { n: mdCount }) : t('toast.noNotes'))
 }
 
+/** 只统计可预览的 Markdown 笔记，图片/文本文件不计入「笔记数」。 */
 export function countMd(nodes: MNode[]): number {
   let n = 0
   for (const x of nodes) {
     if (x.isDir) n += countMd(x.children ?? [])
-    else if (x.supported !== false) n++
+    else if (x.supported !== false && fileKind(x.path) === 'markdown') n++
   }
   return n
 }
 
-export async function openWikiLink(title: string) {
+export async function openWikiLink(title: string, anchor = '') {
   if (!store.current) return
   const api = await getApi()
-  const hit = await api.FindByTitle(fileToDir(store.current.path), title)
-  if (hit) await openFile(hit)
-  else toast(t('toast.noteNotFound', { title }))
+  // 支持 [[folder/note]] 与 [[note#heading]]：取 basename 建索引，锚点交给渲染完成后跳转
+  const base = title.split(/[\\/]/).pop()?.replace(/\.md$/i, '') ?? title
+  store.pendingAnchor = anchor.replace(/^#/, '')
+  const hits = await api.FindByTitles(fileToDir(store.current.path), base)
+  if (hits.length > 1) {
+    // 同名笔记不静默取第一个：弹列表让用户选
+    const { showMenu } = await import('./components/ContextMenu.vue')
+    showMenu(
+      Math.round(window.innerWidth / 2),
+      Math.round(window.innerHeight / 2),
+      hits.map((p) => ({ label: p, action: () => void openFile(p) }))
+    )
+  } else if (hits.length === 1) {
+    await openFile(hits[0])
+  } else {
+    store.pendingAnchor = ''
+    toast(t('toast.noteNotFound', { title: base }))
+  }
 }
 
 // ---------- 收藏/历史 ----------
@@ -368,6 +490,12 @@ export async function toggleFav(path: string) {
   toast(now ? t('toast.favAdded') : t('toast.favRemoved'))
 }
 
+export async function removeHistory(path: string) {
+  const api = await getApi()
+  await api.RemoveHistory(path)
+  store.history = await api.GetHistory()
+}
+
 export async function clearHistory() {
   const api = await getApi()
   await api.ClearHistory()
@@ -377,10 +505,10 @@ export async function clearHistory() {
 // ---------- 显示模式 ----------
 
 /** 显示模式：仅渲染 / 仅源码 / 源码 ⇄ 渲染对照。设置随 settings 一起落盘。 */
-export function setViewMode(mode: ViewMode) {
+export async function setViewMode(mode: ViewMode) {
   if (store.viewMode === mode) return
   store.viewMode = mode
-  patchSettings({ viewMode: mode })
+  await patchSettings({ viewMode: mode })
 }
 
 // ---------- 设置 ----------
@@ -402,30 +530,59 @@ export async function applyTheme(theme: string) {
 }
 
 export async function setTheme(theme: string) {
-  store.settings = { ...(store.settings ?? defaultSettings), theme }
+  await patchSettings({ theme })
   await applySettings(store.settings)
-  const api = await getApi()
-  api.SetTheme(theme)
-  api.SaveSettings(store.settings)
+}
+
+/** 设置写盘：120ms 合并 + 串行落盘，以 Go 返回的规范化结果为准。 */
+let settingsChain: Promise<void> = Promise.resolve()
+let settingsTimer: number | undefined
+let pendingSettings: Settings | null = null
+let pendingTheme: string | undefined
+let settingsWaiters: Array<() => void> = []
+
+function flushSettings() {
+  settingsTimer = undefined
+  const st = pendingSettings
+  const theme = pendingTheme
+  const waiters = settingsWaiters
+  pendingSettings = null
+  pendingTheme = undefined
+  settingsWaiters = []
+  if (!st) return
+  settingsChain = settingsChain
+    .then(async () => {
+      const api = await getApi()
+      if (theme !== undefined) await api.SetTheme(theme)
+      const saved = await api.SaveSettings(st)
+      if (saved) store.settings = saved
+      const err = await api.GetLastError()
+      if (err) toast(t('toast.settingsWriteFailed', { e: err }), 'error')
+    })
+    .catch(() => undefined)
+    .finally(() => waiters.forEach((resolve) => resolve()))
 }
 
 export async function patchSettings(patch: Partial<Settings>) {
   const st = { ...(store.settings ?? defaultSettings), ...patch }
   store.settings = st
   await applySettings(st)
-  const api = await getApi()
-  if (patch.theme !== undefined) api.SetTheme(st.theme)
-  api.SaveSettings(st)
+  pendingSettings = st
+  if (patch.theme !== undefined) pendingTheme = st.theme
+  await new Promise<void>((resolve) => {
+    settingsWaiters.push(resolve)
+    if (settingsTimer !== undefined) window.clearTimeout(settingsTimer)
+    settingsTimer = window.setTimeout(flushSettings, 120)
+  })
 }
 
 // ---------- 窗口 ----------
 
 export async function togglePin() {
-  const st = { ...(store.settings ?? defaultSettings), pinned: !(store.settings ?? defaultSettings).pinned }
-  store.settings = st
+  const pinned = !(store.settings ?? defaultSettings).pinned
   const api = await getApi()
-  api.WindowPin(st.pinned)
-  api.SaveSettings(st)
+  api.WindowPin(pinned)
+  await patchSettings({ pinned })
 }
 
 // ---------- 导出 ----------
@@ -438,10 +595,14 @@ export async function exportHtml() {
   const api = await getApi()
   const art = document.querySelector('.md-article')
   const inner = art ? art.innerHTML : store.html
+  // 导出是脱离应用的独立 HTML：强制开启远程拦截并二次净化，
+  // 后端再把 /mdimg/{hex}/{name} 内嵌为 base64（见 mdv.ExportHtml）。
+  const safe = sanitizeHtml(inner, true, '')
+  const base = fileBase(store.current.path).replace(/\.md$/i, '')
   const out = await api.SaveHtmlDialog(
-    fileBase(store.current.path).replace(/\.md$/i, ''),
-    inner,
-    fileBase(store.current.path).replace(/\.md$/i, '') + '.html'
+    base + (hasUnsaved() ? ` (${t('export.draft')})` : ''),
+    safe,
+    base + '.html'
   )
   if (out) toast(t('toast.exported', { name: fileBase(out) }))
 }
@@ -504,14 +665,34 @@ export async function initApp() {
     rt?.EventsOn?.('mdv:openfile', (p: string) => handleOpenEvent(p))
     // 外部修改/删除监视：后端 mdv watcher 经 EventsEmit 推送
     rt?.EventsOn?.('file:watch', (ev: WatchEvent) => handleWatchEvent(ev))
+    // 系统级关闭（标题栏 ✕ / Alt+F4）被 Go BeforeClose 拦下后，在这里统一弹确认
+    rt?.EventsOn?.('draft:close-request', async () => {
+      if (await confirmDiscard('close')) {
+        await api.SetDraftDirty(false)
+        api.WindowClose()
+      }
+    })
     // Windows 下必须由 JS 端调用 OnFileDrop，drop 事件才会生效（Wails v2 已知问题 #3985）
     rt?.OnFileDrop?.((_x: number, _y: number, paths: string[]) => {
-      for (const p of paths) {
-        if (/\.(md|markdown|mdown|mkd)$/i.test(p)) {
-          handleOpenEvent(p)
-          return
-        }
+      // 放开全部可预览类型（markdown / 图片 / 文本），交给 fileKind 分发
+      const files = paths.filter((p) => fileKind(p) !== 'text' || /\.(txt|text|log|json|yaml|yml|ini|csv)$/i.test(p))
+      if (!files.length) return
+      if (files.length === 1) {
+        void handleOpenEvent(files[0])
+        return
       }
+      void import('./components/ContextMenu.vue').then(({ showMenu }) => {
+        showMenu(Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), [
+          { label: t('drop.openFirst'), action: () => void handleOpenEvent(files[0]) },
+          {
+            label: t('drop.addAll'),
+            action: () => {
+              void handleOpenEvent(files[0])
+              files.slice(1).forEach((p) => void api.PushHistory(p))
+            }
+          }
+        ])
+      })
     }, false)
   } else {
     window.addEventListener('mdv:mock-openfile', (e) => {

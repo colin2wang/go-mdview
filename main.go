@@ -65,7 +65,9 @@ func main() {
 				// 只是默默切了文件，用户看不到），再把新文件转给它
 				app.BringToFront()
 				for _, arg := range data.Args {
-					if l := strings.ToLower(arg); strings.HasSuffix(l, ".md") || strings.HasSuffix(l, ".markdown") {
+					l := strings.ToLower(arg)
+					if strings.HasSuffix(l, ".md") || strings.HasSuffix(l, ".markdown") ||
+						strings.HasSuffix(l, ".mdown") || strings.HasSuffix(l, ".mkd") {
 						app.SetStartupFile(arg)
 						app.EmitOpenFile(arg)
 						return

@@ -23,7 +23,7 @@ const (
 )
 
 // AssocExts 支持关联的扩展名。
-var AssocExts = []string{".md", ".markdown"}
+var AssocExts = []string{".md", ".markdown", ".mdown", ".mkd"}
 
 // ExePath 当前可执行文件的绝对路径（解析符号链接后）。
 func ExePath() string {
@@ -40,7 +40,21 @@ func ExePath() string {
 func assocIconValue() string    { return `"` + ExePath() + `",0` }
 func assocCommandValue() string { return `"` + ExePath() + `" "%1"` }
 
-// GetAssocState 读取当前 .md 的关联情况。
+// userChoiceProgID 读取 Windows UserChoice（优先级高于 Software\Classes 默认值）。
+func userChoiceProgID(ext string) string {
+	return readValue(registry.CURRENT_USER,
+		`Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\`+ext+`\UserChoice`, "ProgId")
+}
+
+// effectiveProgID 返回真正生效的 ProgID：UserChoice 存在时以它为准。
+func effectiveProgID(ext string) string {
+	if v := userChoiceProgID(ext); v != "" {
+		return v
+	}
+	return readDefault(registry.CURRENT_USER, `Software\Classes\`+ext)
+}
+
+// GetAssocState 读取当前受管扩展名的关联情况。
 func GetAssocState() AssocState {
 	st := AssocState{Supported: true, ExePath: ExePath(), Owner: ""}
 	if st.ExePath == "" {
@@ -48,7 +62,7 @@ func GetAssocState() AssocState {
 		return st
 	}
 	st.Associated = IsAssociated()
-	owner := readDefault(registry.CURRENT_USER, `Software\Classes\`+AssocExts[0])
+	owner := effectiveProgID(AssocExts[0])
 	if owner == "" {
 		return st
 	}
@@ -57,14 +71,16 @@ func GetAssocState() AssocState {
 		return st
 	}
 	st.Owner = friendlyName(owner)
+	if userChoiceProgID(AssocExts[0]) != "" {
+		st.Message = "Windows 已为 .md 记录用户选择，请在「打开方式」中手动选择 mdview"
+	}
 	return st
 }
 
-// IsAssociated 所有受管扩展名是否都指向 mdview。
+// IsAssociated 所有受管扩展名的生效 ProgID 是否都指向 mdview。
 func IsAssociated() bool {
 	for _, ext := range AssocExts {
-		v := readDefault(registry.CURRENT_USER, `Software\Classes\`+ext)
-		if !strings.EqualFold(v, assocProgID) {
+		if !strings.EqualFold(effectiveProgID(ext), assocProgID) {
 			return false
 		}
 	}
@@ -141,6 +157,12 @@ func AssociateMd() error {
 	}
 
 	notifyShell()
+	// UserChoice 受 Windows 保护，程序无法可靠改写：注册表已就绪，仍需用户在「打开方式」里选一次。
+	for _, ext := range AssocExts {
+		if v := userChoiceProgID(ext); v != "" && !strings.EqualFold(v, assocProgID) {
+			return errors.New("已在注册表登记 mdview，但 Windows 记住了其他程序，请在文件「打开方式」中选择 mdview")
+		}
+	}
 	return nil
 }
 
@@ -167,7 +189,19 @@ func UnassociateMd() error {
 	_ = deleteTree(`Software\Classes\` + assocProgID)
 	_ = deleteTree(assocAppKey)
 	_ = deleteTree(assocCfgKey)
+	// UserChoice 若仍指向 mdview，尝试清掉；Windows 保护该键时提示用户手动改回。
+	for _, ext := range AssocExts {
+		p := `Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\` + ext + `\UserChoice`
+		if strings.EqualFold(userChoiceProgID(ext), assocProgID) {
+			_ = registry.DeleteKey(registry.CURRENT_USER, p)
+		}
+	}
 	notifyShell()
+	for _, ext := range AssocExts {
+		if strings.EqualFold(userChoiceProgID(ext), assocProgID) {
+			return errors.New("注册表关联已移除，但 Windows 仍记住 mdview，请在文件「打开方式」中改回原程序")
+		}
+	}
 	return nil
 }
 

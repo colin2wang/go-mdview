@@ -1,5 +1,12 @@
 {
   "USE_PROFILES": { "html": true, "svg": true },
-  "FORBID_TAGS": ["style", "base", "meta", "form", "input", "button"],
-  "FORBID_ATTR": ["style"]
+  "FORBID_TAGS": ["style", "base", "meta", "form"],
+  "FORBID_ATTR": ["style", "formaction", "formtarget", "formmethod", "formenctype", "formnovalidate", "http-equiv"],
+  "ADD_TAGS": ["input", "button"],
+  "ADD_ATTR": ["checked", "disabled", "xlink:href"],
+  "X_REMOTE_ATTRS": ["src", "srcset", "poster", "data", "background", "xlink:href"],
+  "X_REMOTE_HREF_TAGS": ["image", "use"],
+  "X_INPUT_ALLOW_ATTRS": ["type", "checked", "disabled", "name", "id", "class"],
+  "X_SVG_USE_PROFILES": { "svg": true, "svgFilters": true },
+  "X_SVG_FORBID_TAGS": ["script", "foreignObject", "style"]
 }

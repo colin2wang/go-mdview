@@ -1,6 +1,7 @@
 package mdv
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -9,6 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -303,5 +308,114 @@ func TestFindByTitle(t *testing.T) {
 	}
 	if s.FindByTitle(root, "不存在") != "" {
 		t.Fatal("应返回空")
+	}
+}
+
+func TestWatcherSwitchNoPanic(t *testing.T) {
+	s := newTestStore(t)
+	dir := t.TempDir()
+	p1 := filepath.Join(dir, "a.md")
+	p2 := filepath.Join(dir, "b.md")
+	_ = os.WriteFile(p1, []byte("a"), 0o644)
+	_ = os.WriteFile(p2, []byte("b"), 0o644)
+	s.SetFileChangeCallback(func(FileEvent) {})
+	for i := 0; i < 20; i++ {
+		s.WatchFile(p1)
+		s.WatchFile(p2)
+	}
+	s.StopWatch()
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestWatcherSuppressesOnlyOwnWrites(t *testing.T) {
+	s := newTestStore(t)
+	p := filepath.Join(t.TempDir(), "w.md")
+	_ = os.WriteFile(p, []byte("v1"), 0o644)
+	ch := make(chan FileEvent, 1)
+	s.SetFileChangeCallback(func(ev FileEvent) {
+		select {
+		case ch <- ev:
+		default:
+		}
+	})
+	s.WatchFile(p)
+	s.MarkSaved()
+	_ = os.WriteFile(p, []byte("external-change"), 0o644)
+	select {
+	case ev := <-ch:
+		if ev.Kind != "changed" {
+			t.Fatalf("期望 changed，收到 %q", ev.Kind)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("2 秒抑制窗口内的外部修改被吞掉了")
+	}
+	s.StopWatch()
+}
+
+func TestYamlRoundTripAndMindmap(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MDVIEW_YAML", filepath.Join(dir, "mdview.yml"))
+	s := newTestStore(t)
+	in := s.GetSettings()
+	in.ViewMode = ViewModeMindmap
+	in.Language = "de"
+	in.UseYaml = true
+	in.RemoteAllow = "https://a.b/*\nhttps://c.d"
+	got := s.SaveSettings(in)
+	if got.ViewMode != ViewModeMindmap || got.Language != "de" {
+		t.Fatalf("SaveSettings 返回值漂移: %+v", got)
+	}
+	raw, err := os.ReadFile(YamlConfigPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "viewMode: mindmap") {
+		t.Fatalf("yml 未含 mindmap: %s", raw)
+	}
+	reread := s.GetSettings()
+	if reread.ViewMode != ViewModeMindmap || reread.Language != "de" {
+		t.Fatalf("yml 往返失败: %+v", reread)
+	}
+}
+
+func TestSaveMarkdownPreservesEncodingAndCRLF(t *testing.T) {
+	s := newTestStore(t)
+	p := filepath.Join(t.TempDir(), "gb.md")
+	_ = os.WriteFile(p, encodeText("标题\r\n正文", "gb18030", "\r\n", false), 0o644)
+	got, err := s.SaveMarkdown(p, "新标题\r\n新正文", "utf-8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Encoding != "gb18030" {
+		t.Fatalf("编码未保留: %q", got.Encoding)
+	}
+	raw, _ := os.ReadFile(p)
+	if !bytes.Contains(raw, []byte("\r\n")) {
+		t.Fatalf("CRLF 未保留: %q", raw)
+	}
+	decoded, err := io.ReadAll(transform.NewReader(bytes.NewReader(raw), simplifiedchinese.GB18030.NewDecoder()))
+	if err != nil || string(decoded) != "新标题\r\n新正文" {
+		t.Fatalf("GB18030 回写失败: %q, %v", decoded, err)
+	}
+}
+
+func TestImgPathAllowedSymlink(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed")
+	outside := filepath.Join(dir, "outside")
+	_ = os.MkdirAll(allowed, 0o755)
+	_ = os.MkdirAll(outside, 0o755)
+	secret := filepath.Join(outside, "secret.png")
+	_ = os.WriteFile(secret, []byte("x"), 0o644)
+	AllowImageDir(allowed)
+	if !imgPathAllowed(filepath.Join(allowed, "a.png")) {
+		t.Fatal("白名单内普通路径应放行")
+	}
+	link := filepath.Join(allowed, "link.png")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("当前环境无法创建符号链接: %v", err)
+	}
+	if imgPathAllowed(link) {
+		t.Fatal("指向白名单外的符号链接必须拒绝")
 	}
 }

@@ -1499,3 +1499,73 @@ button {
 .mm-canvas .mm-clickable:hover {
   opacity: 0.75;
 }
+
+/* Ctrl+F 查找条：浮在正文上方，不占布局高度 */
+.viewer-search {
+  position: absolute;
+  top: 8px;
+  right: 22px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--md-border, #d8dde3);
+  border-radius: 8px;
+  background: var(--md-panel-bg, #fff);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+}
+.viewer-search input {
+  width: 190px;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: var(--md-code-bg, #f5f6f8);
+  color: var(--md-text, #1f2328);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.viewer-search button {
+  min-width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--md-text, #1f2328);
+  cursor: pointer;
+}
+.viewer-search button:hover {
+  background: var(--md-code-bg, #f5f6f8);
+}
+
+/* ---------- 可访问性：键盘焦点与降低动效 ---------- */
+button.tree-row,
+button.entry,
+button.toc-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+}
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--md-link, #2563eb);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+[role='radiogroup'] button[role='radio'] {
+  border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

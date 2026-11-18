@@ -33,11 +33,15 @@ async function menu(e: MouseEvent, path: string) {
     </p>
     <ul v-else class="entry-list">
       <li v-for="e in store.favorites" :key="e.path">
-        <a
+        <div
           class="entry"
+          role="button"
+          tabindex="0"
           :class="{ dead: !e.exists, current: store.current?.path === e.path }"
           :title="e.path"
           @click="openEntry(e.path)"
+          @keydown.enter.prevent="openEntry(e.path)"
+          @keydown.space.prevent="openEntry(e.path)"
           @contextmenu.prevent="menu($event, e.path)"
         >
           <span class="entry-name">{{ e.name }}</span>
@@ -45,7 +49,7 @@ async function menu(e: MouseEvent, path: string) {
             <span class="entry-dir">{{ e.dir }}</span>
             <button class="star-btn on" :title="t('fav.unstar')" @click.stop="toggleFavorite(e.path)">★</button>
           </span>
-        </a>
+        </div>
       </li>
     </ul>
   </div>

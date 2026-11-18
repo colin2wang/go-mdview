@@ -10,7 +10,12 @@ import {
   openEntry,
   openFolder,
   openWikiLink,
-  toast
+  toast,
+  setDraftText,
+  clearDraft,
+  cancelDraftRender,
+  confirmDiscard,
+  syncDraftDirty
 } from '../store'
 import { showMenu, hideMenu } from './ContextMenu.vue'
 import CodeEditor from './CodeEditor.vue'
@@ -57,9 +62,15 @@ const sourceMeta = computed(() => {
 // Markdown 走 gfm 模式（含围栏代码高亮），其余纯文本
 const srcMode = computed(() => (store.currentKind === 'markdown' ? 'gfm' : 'text/plain'))
 
-// 源码编辑草稿：只改内存里的渲染结果，不写回文件；关闭编辑或切换文件即还原
-const editing = ref(false)
-const draft = ref('')
+// 源码编辑草稿提升到 store：关闭/重启/切换/外部重载/退出编辑共用同一份状态与确认出口
+const editing = computed({
+  get: () => store.editing,
+  set: (v: boolean) => { store.editing = v }
+})
+const draft = computed({
+  get: () => store.draft,
+  set: (v: string) => { store.draft = v }
+})
 // 编辑器实际内容：编辑中是草稿，否则是文件内容
 const shownText = computed(() => (editing.value ? draft.value : sourceText.value))
 
@@ -100,22 +111,20 @@ let syncing = false
 // ---------- 源码编辑（对照模式） ----------
 // 行号槽开关：统一由设置对话框控制，编辑/只读两种状态共用
 const showLineNo = computed(() => store.settings?.lineNo ?? true)
-let draftTimer: number | undefined
 
 /** 取消待执行的草稿重渲染：退出编辑/换文件后不能再拿旧草稿覆盖正文。 */
 function cancelDraftTimer() {
-  if (draftTimer) {
-    window.clearTimeout(draftTimer)
-    draftTimer = undefined
-  }
+  cancelDraftRender()
 }
 
 /** 编辑器里的文本变化（只读态 CodeMirror 不会触发） */
 function onEditorInput(v: string) {
-  draft.value = v
+  setDraftText(v)
 }
 
 async function toggleEdit() {
+  // 退出编辑是五个丢弃出口之一：有未保存改动时先确认
+  if (editing.value && !(await confirmDiscard('exit'))) return
   // 只读与编辑共用同一个 CodeMirror 实例，只切换 readOnly；
   // 行高/排版完全不变，滚动位置不用换算
   cancelDraftTimer()
@@ -125,8 +134,9 @@ async function toggleEdit() {
   editing.value = !editing.value
   if (editing.value) {
     draft.value = sourceText.value
+    syncDraftDirty()
   } else {
-    draft.value = ''
+    clearDraft()
     void renderDraft(sourceText.value) // 还原为文件内容
   }
 
@@ -139,8 +149,7 @@ async function toggleEdit() {
 }
 
 function onDraftInput() {
-  if (draftTimer) window.clearTimeout(draftTimer)
-  draftTimer = window.setTimeout(() => void renderDraft(draft.value), 300)
+  setDraftText(draft.value)
 }
 
 // 保存按钮与 Ctrl+S 共用一个入口：成功后由 saveSource 弹「已保存」气泡，
@@ -151,23 +160,18 @@ async function saveDraft() {
   saving.value = true
   try {
     await saveSource(draft.value)
+    // 保存成功后草稿内容 == 文件内容，未保存标记自动清零
+    syncDraftDirty()
   } finally {
     saving.value = false
   }
 }
 
-// 切换文件：有未保存改动时先提示，再无条件退编辑态——
-// 不能把新文件内容当草稿继续渲染，那与「切换文件即还原」的语义相悖
+// 切换文件：确认与清理由 store.openFile → confirmDiscard / clearDraft 统一负责；
+// 这里只兜底取消尚未落地的防抖渲染，不能再拿旧草稿覆盖新文件内容。
 watch(
   () => store.current?.path,
-  async () => {
-    cancelDraftTimer()
-    if (editing.value && draft.value && draft.value !== sourceText.value) {
-      toast(t('toast.discardedDraft'), 'error')
-    }
-    editing.value = false
-    draft.value = ''
-  }
+  () => cancelDraftTimer()
 )
 
 /** 编辑器挂载/重新可见后需要重算尺寸（v-show 隐藏期间容器无尺寸） */
@@ -496,7 +500,10 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
   }
   await postRender(art, redrawDiagram)
   // 预览字数按渲染后可见文本统计（图形内部文字、复制按钮等不计）
-  status.previewChars = store.currentKind === 'markdown' ? countPreviewText(art) : 0
+  status.previewChars =
+    store.currentKind === 'markdown' && mode.value !== 'mindmap' && mode.value !== 'source'
+      ? countPreviewText(art)
+      : 0
   // 渲染结果变了 → 标题缓存与锚点表失效，重建后再还原滚动位置
   headCache = Array.from(art.querySelectorAll<HTMLElement>('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]'))
   rebuildAnchors()
@@ -517,8 +524,10 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
     savedRatio = 0
     savedFor = path
   }
-  if (pendingAnchor) {
-    const a = pendingAnchor
+  const crossAnchor = store.pendingAnchor
+  if (crossAnchor) store.pendingAnchor = ''
+  const a = crossAnchor || pendingAnchor
+  if (a) {
     pendingAnchor = ''
     scrollToAnchor(a)
   }
@@ -576,10 +585,13 @@ watch(
 watch(mode, async (to, from) => {
   const sc = renderScrollEl.value
   if (to === 'render' && editing.value) {
-    // 只剩渲染视图时没有编辑入口，还原为文件内容
+    // 只剩渲染视图时没有编辑入口：先确认，用户保留修改则退回对照模式继续编辑
+    if (!(await confirmDiscard('exit'))) {
+      setViewMode('split')
+      return
+    }
     cancelDraftTimer()
-    editing.value = false
-    draft.value = ''
+    clearDraft()
     await renderDraft(sourceText.value)
   }
   if (to === 'source') {
@@ -661,6 +673,13 @@ async function onArtClick(e: MouseEvent) {
     openEntry(mdl.getAttribute('data-mdlink') ?? '')
     return
   }
+  // 死链：href="#" 只是为了可聚焦，点击不应滚到页首
+  const dl = tgt.closest('a[data-dead]') as HTMLElement | null
+  if (dl) {
+    e.preventDefault()
+    toast(t('toast.deadLink', { href: dl.getAttribute('data-dead') ?? '' }), 'error')
+    return
+  }
   // 文内锚点：渲染器产出的 # 链接（data-anchor）与脚注往返链接（href="#fn-*"）
   // 统一拦下来自己滚，避免 WebView 走原生 fragment 导航改掉页面地址
   const al = tgt.closest('a.md-link-anchor, a[href^="#"]') as HTMLElement | null
@@ -673,7 +692,7 @@ async function onArtClick(e: MouseEvent) {
   const wiki = tgt.closest('a[data-wiki]') as HTMLElement | null
   if (wiki) {
     e.preventDefault()
-    await openWikiLink(wiki.getAttribute('data-wiki') ?? '')
+    await openWikiLink(wiki.getAttribute('data-wiki') ?? '', wiki.getAttribute('data-anchor') ?? '')
     return
   }
   // 代码/源码复制：按钮只带 data-copy 标志，复制内容点击时从所在卡片的
@@ -706,7 +725,10 @@ async function onContext(e: MouseEvent) {
       },
       { label: t('menu.copyPath'), action: () => api.CopyText(store.current!.path) },
       { label: t('menu.reveal'), action: () => api.RevealInShell(store.current!.path) },
-      { label: t('menu.exportHtml'), action: () => exportHtml() }
+      // 图片/纯文本/导图模式下正文不是 HTML 文档，导出会得到空文件，直接不提供入口
+      ...(store.currentKind === 'markdown' && mode.value !== 'mindmap'
+        ? [{ label: t('menu.exportHtml'), action: () => exportHtml() }]
+        : [])
     )
   }
   showMenu(e.clientX, e.clientY, items)
@@ -764,6 +786,8 @@ function shortcutBlocked(e: KeyboardEvent): boolean {
     e.defaultPrevented ||
     !!store.settingsOpen ||
     !!store.goneFile ||
+    !!store.discardReason ||
+    searchOpen.value ||
     lightbox.value.open ||
     isTextControl(e.target)
   )
@@ -815,10 +839,61 @@ function selectAllIn(pane: ActivePane) {
   sel.addRange(r)
 }
 
+// ---------- 阅读快捷入口：Ctrl+O 打开 / Ctrl+P 最近文件 / Ctrl+F 查找 ----------
+const searchOpen = ref(false)
+const searchText = ref('')
+const searchInput = ref<HTMLInputElement | null>(null)
+
+async function openByDialog() {
+  const api = await getApi()
+  const p = await api.OpenFileDialog()
+  if (p) void openEntry(p, { reRoot: true })
+}
+
+async function quickSwitch() {
+  const recent = store.history.slice(0, 10).map((e) => e.path).filter(Boolean)
+  if (!recent.length) {
+    toast(t('toast.noRecent'), 'info')
+    return
+  }
+  const { showMenu } = await import('./ContextMenu.vue')
+  showMenu(120, 64, recent.map((p) => ({ label: p, action: () => void openEntry(p) })))
+}
+
+function findText(backwards = false) {
+  const q = searchText.value.trim()
+  if (!q) return
+  const found = window.find(q, false, backwards, true, false, false)
+  if (!found) toast(t('toast.findNone', { q }), 'info')
+}
+
 function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && searchOpen.value) {
+    searchOpen.value = false
+    return
+  }
   if (e.key === 'Escape' && !store.settingsOpen) hideMenu()
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
   const key = e.key.toLowerCase()
+  if (key === 'o' || e.code === 'KeyO') {
+    if (shortcutBlocked(e)) return
+    e.preventDefault()
+    void openByDialog()
+    return
+  }
+  if (key === 'p' || e.code === 'KeyP') {
+    if (shortcutBlocked(e)) return
+    e.preventDefault()
+    void quickSwitch()
+    return
+  }
+  if (key === 'f' || e.code === 'KeyF') {
+    if (shortcutBlocked(e)) return
+    e.preventDefault()
+    searchOpen.value = true
+    void nextTick(() => searchInput.value?.focus())
+    return
+  }
   if (key === 's' || e.code === 'KeyS') {
     // 编辑态全局保存；成功后 saveSource 会弹「已保存」气泡
     if (!editing.value || e.repeat || shortcutBlocked(e)) return
@@ -838,6 +913,21 @@ function onKey(e: KeyboardEvent) {
 
 <template>
   <main class="viewer" data-testid="viewer">
+    <!-- Ctrl+F 查找条：用 WebView 原生查找，命中高亮由浏览器负责 -->
+    <div v-if="searchOpen" class="viewer-search">
+      <input
+        ref="searchInput"
+        v-model="searchText"
+        type="search"
+        :placeholder="t('find.placeholder')"
+        :aria-label="t('find.placeholder')"
+        @keydown.enter.prevent="findText(false)"
+        @keydown.shift.enter.prevent="findText(true)"
+      />
+      <button type="button" :title="t('find.prev')" @click="findText(true)">↑</button>
+      <button type="button" :title="t('find.next')" @click="findText(false)">↓</button>
+      <button type="button" :title="t('find.close')" @click="searchOpen = false">✕</button>
+    </div>
     <!-- 空状态：未打开任何文件 -->
     <div v-if="!store.current" class="viewer-empty">
       <AppIcon :size="76" class="empty-logo" />

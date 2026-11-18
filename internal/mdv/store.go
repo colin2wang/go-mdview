@@ -4,6 +4,7 @@ package mdv
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,29 @@ type Store struct {
 	baseDir string
 	// 文件外部修改监视（见 watcher.go）：值语义字段，Store 零值即可用
 	watcher watcherState
+
+	// 最近一次持久化错误：前端保存设置后可取回提示，同时写本地日志。
+	errMu   sync.Mutex
+	lastErr string
+}
+
+// LastError 返回并清空最近一次持久化错误（前端每次保存后取一次）。
+func (s *Store) LastError() string {
+	s.errMu.Lock()
+	defer s.errMu.Unlock()
+	v := s.lastErr
+	s.lastErr = ""
+	return v
+}
+
+func (s *Store) setError(err error) {
+	if err == nil {
+		return
+	}
+	s.errMu.Lock()
+	s.lastErr = err.Error()
+	s.errMu.Unlock()
+	log.Printf("mdview: %v", err)
 }
 
 func NewStore() *Store {
@@ -44,23 +68,37 @@ func (s *Store) base() string {
 	return s.baseDir
 }
 
-func (s *Store) readJSON(name string, v interface{}) {
-	data, err := os.ReadFile(filepath.Join(s.base(), name))
+func (s *Store) readJSON(name string, v interface{}) error {
+	path := filepath.Join(s.base(), name)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return
+		if !os.IsNotExist(err) {
+			s.setError(err)
+		}
+		return err
 	}
-	_ = json.Unmarshal(data, v)
+	if err := json.Unmarshal(data, v); err != nil {
+		s.setError(err)
+		return err
+	}
+	return nil
 }
 
-func (s *Store) writeJSON(name string, v interface{}) {
+func (s *Store) writeJSON(name string, v interface{}) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return
+		s.setError(err)
+		return err
 	}
 	target := filepath.Join(s.base(), name)
 	tmp := target + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return
+		s.setError(err)
+		return err
 	}
-	_ = os.Rename(tmp, target)
+	if err := os.Rename(tmp, target); err != nil {
+		s.setError(err)
+		return err
+	}
+	return nil
 }

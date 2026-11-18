@@ -7,13 +7,14 @@ defineEmits<{ (e: 'jump', id: string): void }>()
 
 <template>
   <li>
-    <a
+    <button
+      type="button"
       class="toc-item"
       :class="{ active: activeId === item.id }"
       :title="item.text"
       :data-testid="'toc-' + item.id"
       @click="$emit('jump', item.id)"
-      >{{ item.text }}</a
+      >{{ item.text }}</button
     >
     <ul v-if="item.children.length" class="toc-branch">
       <TocNode

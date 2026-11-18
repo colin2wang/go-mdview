@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      # 新增 vitest 后需由维护者本地 pnpm install 更新 lock；CI 暂不强制 frozen
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm run build      # vue-tsc --noEmit && vite build && sanitize-check 回归
+      - run: pnpm test           # Vitest 纯函数 / jsdom 用例
+
+  backend:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # go:embed frontend/dist 要求先有前端产物；CI 里用最小占位目录即可让 go test 通过
+      - name: Ensure embed target
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path frontend/dist | Out-Null
+      - run: go vet ./...
+      - run: go test -race ./...

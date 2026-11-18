@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { store, openEntry, clearHistory, toggleFavorite } from '../store'
+import { store, openEntry, clearHistory, removeHistory, toggleFavorite } from '../store'
 import { showMenu } from './ContextMenu.vue'
 import { getApi } from '../api'
 import { t } from '../i18n'
@@ -20,7 +20,11 @@ function relTime(ts: number): string {
   if (diff < 86400) return t('time.hourAgo', { n: Math.floor(diff / 3600) })
   if (diff < 7 * 86400) return t('time.dayAgo', { n: Math.floor(diff / 86400) })
   const d = new Date(ts * 1000)
-  return `${d.getMonth() + 1}-${d.getDate()}`
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+
+function clear() {
+  if (window.confirm(t('hist.clearConfirm'))) void clearHistory()
 }
 
 async function menu(e: MouseEvent, path: string) {
@@ -30,7 +34,8 @@ async function menu(e: MouseEvent, path: string) {
     { label: t('menu.open'), action: () => openEntry(path) },
     { label: fav ? t('menu.unfav') : t('menu.fav'), action: () => toggleFavorite(path) },
     { label: t('menu.copyPath'), action: () => copyPath(path) },
-    { label: t('menu.reveal'), action: () => api.RevealInShell(path) }
+    { label: t('menu.reveal'), action: () => api.RevealInShell(path) },
+    { label: t('menu.removeHistory'), danger: true, action: () => void removeHistory(path) }
   ])
 }
 
@@ -47,7 +52,7 @@ function copyPath(path: string) {
   <div class="panel" data-testid="history-panel">
     <div class="panel-head">
       <span class="panel-title">{{ t('hist.title') }}</span>
-      <button class="link-btn" data-testid="history-clear" @click="clearHistory">{{ t('hist.clear') }}</button>
+      <button class="link-btn" data-testid="history-clear" @click="clear">{{ t('hist.clear') }}</button>
     </div>
     <input
       v-if="store.history.length"
@@ -60,7 +65,8 @@ function copyPath(path: string) {
     <p v-if="!list.length" class="panel-empty">{{ q.trim() ? t('hist.noMatch') : t('hist.empty') }}</p>
     <ul v-else class="entry-list">
       <li v-for="e in list" :key="e.path">
-        <a
+        <button
+          type="button"
           class="entry"
           :class="{ dead: !e.exists, current: store.current?.path === e.path }"
           :title="e.path"
@@ -72,7 +78,7 @@ function copyPath(path: string) {
             <span class="entry-dir">{{ e.dir }}</span>
             <span class="entry-time">{{ relTime(e.openedAt) }}</span>
           </span>
-        </a>
+        </button>
       </li>
     </ul>
   </div>

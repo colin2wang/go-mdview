@@ -58,6 +58,7 @@ type App struct {
 	ctx        context.Context
 	store      *mdv.Store
 	restarting atomic.Bool // 重启中：关闭前不能再把当前几何写回设置
+	draftDirty atomic.Bool // 前端有未保存草稿：BeforeClose 先取消关闭，让前端弹确认
 }
 
 func NewApp() *App { return &App{store: mdv.NewStore()} }
@@ -94,9 +95,24 @@ func (a *App) restoreWindowPosition(ctx context.Context, x, y int) {
 }
 
 // BeforeClose 窗口关闭前记录几何，供下次启动还原（返回 false 不阻断关闭）。
+// 有未保存草稿时先取消关闭并让前端弹确认；用户确认后前端清标志再调 WindowClose。
 func (a *App) BeforeClose(ctx context.Context) bool {
+	if a.draftDirty.Load() {
+		wruntime.EventsEmit(ctx, "draft:close-request")
+		return true // 阻断本次关闭，等待前端决定
+	}
 	a.saveWindowState(ctx)
 	return false
+}
+
+// SetDraftDirty 由前端同步「是否有未保存草稿」；关闭确认桥使用。
+func (a *App) SetDraftDirty(dirty bool) {
+	a.draftDirty.Store(dirty)
+}
+
+// AllowImageDir 登记允许通过 /mdimg 回放的目录；打开图片 / 启动恢复均需 await 后再显示。
+func (a *App) AllowImageDir(dir string) {
+	mdv.AllowImageDir(dir)
 }
 
 // saveWindowState 只记录可还原的普通窗口几何：
@@ -178,24 +194,46 @@ func (a *App) SetStartupFile(p string) {
 	startupFile.Store(&p)
 }
 
+// dialogTitle 原生对话框标题跟随设置语言，避免切到英/日/德仍显示中文。
+func (a *App) dialogTitle(zh, en, ja, de string) string {
+	switch a.store.GetSettings().Language {
+	case "en":
+		return en
+	case "ja":
+		return ja
+	case "de":
+		return de
+	default:
+		return zh
+	}
+}
+
 // OpenFolderDialog 选择目录。
 func (a *App) OpenFolderDialog() (string, error) {
-	return wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: "选择 Markdown 目录"})
+	return wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{
+		Title: a.dialogTitle("选择 Markdown 目录", "Select Markdown folder", "Markdown フォルダーを選択", "Markdown-Ordner auswählen"),
+	})
 }
 
 // OpenFileDialog 选择 .md 文件。
 func (a *App) OpenFileDialog() (string, error) {
 	return wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
-		Title: "打开 Markdown 文件",
+		Title: a.dialogTitle("打开 Markdown 文件", "Open Markdown file", "Markdown ファイルを開く", "Markdown-Datei öffnen"),
 		Filters: []wruntime.FileFilter{
 			{DisplayName: "Markdown (*.md)", Pattern: "*.md;*.markdown;*.mdown;*.mkd"},
-			{DisplayName: "所有文件 (*.*)", Pattern: "*.*"},
+			{DisplayName: a.dialogTitle("所有文件 (*.*)", "All files (*.*)", "すべてのファイル (*.*)", "Alle Dateien (*.*)"), Pattern: "*.*"},
 		},
 	})
 }
 
-// ListTree 目录树。
+// ListTree 目录树（带 2s 缓存）。
 func (a *App) ListTree(dir string) ([]mdv.Node, error) { return a.store.ListTree(dir) }
+
+// RefreshTree 显式刷新：先失效缓存再扫描磁盘。
+func (a *App) RefreshTree(dir string) ([]mdv.Node, error) {
+	mdv.InvalidateTreeCache()
+	return a.store.ListTree(dir)
+}
 
 // StatFile 判断文件是否仍存在（前端打开前的预检）。
 // Wails 绑定只会把第一个返回值透传给 JS，因此这里只返回 bool。
@@ -228,15 +266,17 @@ func (a *App) SaveMarkdown(path, content, encoding string) (mdv.FileContent, err
 // StopWatch 停止外部修改监视（前端关闭当前文件时调用）。
 func (a *App) StopWatch() { a.store.StopWatch() }
 
-// FindByTitle wiki 链接解析。
-func (a *App) FindByTitle(root, title string) string { return a.store.FindByTitle(root, title) }
+// FindByTitle wiki 链接解析（兼容旧调用）；FindByTitles 返回全部同名候选供消歧。
+func (a *App) FindByTitle(root, title string) string    { return a.store.FindByTitle(root, title) }
+func (a *App) FindByTitles(root, title string) []string { return a.store.FindByTitles(root, title) }
 
 // GetHistory / PushHistory / ClearHistory 历史。
 // PushHistory/ClearHistory 不回传列表：前端拿到后会自行 GetHistory 刷新，
 // 绑定层多返回值会让 Wails 生成 boolean|Array 联合类型，与手写 api.ts 漂移。
-func (a *App) GetHistory() []mdv.Entry { return a.store.GetHistory() }
-func (a *App) PushHistory(path string) { a.store.PushHistory(path) }
-func (a *App) ClearHistory()           { a.store.ClearHistory() }
+func (a *App) GetHistory() []mdv.Entry   { return a.store.GetHistory() }
+func (a *App) PushHistory(path string)   { a.store.PushHistory(path) }
+func (a *App) ClearHistory()             { a.store.ClearHistory() }
+func (a *App) RemoveHistory(path string) { a.store.RemoveHistory(path) }
 
 // GetFavorites / ToggleFavorite 收藏。只回传切换后的状态，列表由前端经 GetFavorites 刷新。
 func (a *App) GetFavorites() []mdv.Entry { return a.store.GetFavorites() }
@@ -248,6 +288,7 @@ func (a *App) ToggleFavorite(path string) bool {
 // GetSettings / SaveSettings 设置。
 func (a *App) GetSettings() mdv.Settings                { return a.store.GetSettings() }
 func (a *App) SaveSettings(s mdv.Settings) mdv.Settings { return a.store.SaveSettings(s) }
+func (a *App) GetLastError() string                     { return a.store.LastError() }
 
 // SetTheme 记录主题偏好（应用内配色由前端 data-theme 控制）。
 func (a *App) SetTheme(theme string) {
@@ -272,6 +313,7 @@ func (a *App) RestartApp() error {
 	if a.restarting.Swap(true) { // 防重复点击拉起多个实例
 		return nil
 	}
+	a.draftDirty.Store(false) // 前端已确认丢弃草稿，别让 BeforeClose 再弹一次
 	st := a.store.GetSettings()
 	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = 0, 0, 0, 0, false
 	st.SidebarWidth = mdv.DefaultSidebarWidth
@@ -348,7 +390,7 @@ func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {
 		defaultName += ".html"
 	}
 	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title:           "导出 HTML",
+		Title:           a.dialogTitle("导出 HTML", "Export HTML", "HTML を書き出す", "HTML exportieren"),
 		DefaultFilename: defaultName,
 		Filters: []wruntime.FileFilter{
 			{DisplayName: "HTML (*.html)", Pattern: "*.html"},
@@ -372,7 +414,7 @@ func (a *App) SaveSvgDialog(title, content, defaultName string) (string, error) 
 		defaultName += ".svg"
 	}
 	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title:           "导出 SVG",
+		Title:           a.dialogTitle("导出 SVG", "Export SVG", "SVG を書き出す", "SVG exportieren"),
 		DefaultFilename: defaultName,
 		Filters: []wruntime.FileFilter{
 			{DisplayName: "SVG (*.svg)", Pattern: "*.svg"},
@@ -399,7 +441,7 @@ func (a *App) SaveImageDialog(defaultName string, dataURL string) (string, error
 		defaultName += ".png"
 	}
 	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title:           "导出 PNG",
+		Title:           a.dialogTitle("导出 PNG", "Export PNG", "PNG を書き出す", "PNG exportieren"),
 		DefaultFilename: defaultName,
 		Filters: []wruntime.FileFilter{
 			{DisplayName: "PNG (*.png)", Pattern: "*.png"},

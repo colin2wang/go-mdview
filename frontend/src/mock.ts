@@ -74,6 +74,7 @@ export const mockApi: Api = {
   OpenFolderDialog: async () => state.settings.lastFolder,
   OpenFileDialog: async () => mdPath('16-JVM 与性能调优.md'),
   ListTree: async (_dir) => mockTree() as unknown as MNode[],
+  RefreshTree: async (_dir) => mockTree() as unknown as MNode[],
   ReadMarkdown: async (path) => fakeContent(path),
     SaveMarkdown: async (path, content) => {
     const fc = fakeContent(path)
@@ -81,7 +82,10 @@ export const mockApi: Api = {
     return { ...fc, content, size: content.length, modTime: Date.now() }
   },
   StopWatch: async () => {},
+  AllowImageDir: async () => {},
+  SetDraftDirty: async () => {},
   FindByTitle: async (_root, title) => mdPath(title.endsWith('.md') ? title : title + '.md'),
+  FindByTitles: async (_root, title) => [mdPath(title.endsWith('.md') ? title : title + '.md')],
   StatFile: async () => true,
   GetHistory: async () => [...state.history],
   PushHistory: async (path) => {
@@ -93,6 +97,9 @@ export const mockApi: Api = {
       exists: true,
       openedAt: Math.floor(Date.now() / 1000)
     })
+  },
+  RemoveHistory: async (path) => {
+    state.history = state.history.filter((e) => e.path !== path)
   },
   ClearHistory: async () => {
     state.history = []
@@ -114,6 +121,7 @@ export const mockApi: Api = {
     return true
   },
   GetSettings: async () => ({ ...state.settings }),
+  GetLastError: async () => '',
   SaveSettings: async (s) => {
     state.settings = { ...s }
     return { ...state.settings }

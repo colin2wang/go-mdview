@@ -10,18 +10,24 @@ export interface Api {
   OpenFolderDialog(): Promise<string>
   OpenFileDialog(): Promise<string>
   ListTree(dir: string): Promise<MNode[]>
+  RefreshTree(dir: string): Promise<MNode[]>
   ReadMarkdown(path: string): Promise<FileContent>
   SaveMarkdown(path: string, content: string, encoding: string): Promise<FileContent>
   StopWatch(): Promise<void>
+  AllowImageDir(dir: string): Promise<void>
+  SetDraftDirty(dirty: boolean): Promise<void>
   FindByTitle(root: string, title: string): Promise<string>
+  FindByTitles(root: string, title: string): Promise<string[]>
   StatFile(path: string): Promise<boolean>
   GetHistory(): Promise<Entry[]>
   PushHistory(path: string): Promise<void>
   ClearHistory(): Promise<void>
+  RemoveHistory(path: string): Promise<void>
   GetFavorites(): Promise<Entry[]>
   ToggleFavorite(path: string): Promise<boolean>
   GetSettings(): Promise<Settings>
   SaveSettings(s: Settings): Promise<Settings>
+  GetLastError(): Promise<string>
   SetTheme(theme: string): Promise<void>
   WindowPin(pin: boolean): Promise<void>
   WindowMin(): Promise<void>
@@ -55,18 +61,25 @@ function desktopApi(): Api {
     OpenFolderDialog: () => a.OpenFolderDialog(),
     OpenFileDialog: () => a.OpenFileDialog(),
     ListTree: (d) => a.ListTree(d),
+    RefreshTree: (d) => (a.RefreshTree ? a.RefreshTree(d) : a.ListTree(d)),
     ReadMarkdown: (p) => a.ReadMarkdown(p),
     SaveMarkdown: (p, c, e) => a.SaveMarkdown(p, c, e),
     StopWatch: () => a.StopWatch(),
+    // 新增绑定需重新 wails build 才会生成到 window.go；生成前用可选调用兜底，避免早期版本报错。
+    AllowImageDir: (d) => (a.AllowImageDir ? a.AllowImageDir(d) : Promise.resolve()),
+    SetDraftDirty: (d) => (a.SetDraftDirty ? a.SetDraftDirty(d) : Promise.resolve()),
     FindByTitle: (r, t) => a.FindByTitle(r, t),
+    FindByTitles: (r, t) => (a.FindByTitles ? a.FindByTitles(r, t) : a.FindByTitle(r, t).then((p: string) => (p ? [p] : []))),
     StatFile: (p) => a.StatFile(p),
     GetHistory: () => a.GetHistory(),
     PushHistory: (p) => a.PushHistory(p),
     ClearHistory: () => a.ClearHistory(),
+    RemoveHistory: (p) => (a.RemoveHistory ? a.RemoveHistory(p) : Promise.resolve()),
     GetFavorites: () => a.GetFavorites(),
     ToggleFavorite: (p) => a.ToggleFavorite(p),
     GetSettings: () => a.GetSettings(),
     SaveSettings: (s) => a.SaveSettings(s),
+    GetLastError: () => (a.GetLastError ? a.GetLastError() : Promise.resolve('')),
     SetTheme: (t) => a.SetTheme(t),
     WindowPin: (b) => a.WindowPin(b),
     WindowMin: () => a.WindowMin(),

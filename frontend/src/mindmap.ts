@@ -6,6 +6,8 @@
  *   • 深浅主题：文字与淡色底随主题切换
  * 该文件为纯渲染与交互层，工具条按钮由 MindMap.vue 负责（便于复用 i18n）。
  * ===================================================================== */
+import { t } from './i18n'
+
 /* ---------------- 类型 ---------------- */
 export interface MindNode {
   id: string
@@ -181,12 +183,25 @@ function mkNode(title: string, depth: number, parent: MindNode | null): MindNode
   }
 }
 export function parseMarkdown(markdown: string): MindNode {
-  const root = mkNode('未命名导图', 0, null)
+  const root = mkNode(t('mm.untitled'), 0, null)
   const stack: MindNode[] = [root]
   let current: MindNode = root
   let rootFilled = false
+  let inFence = false
+  let fenceMark = ''
   for (const raw of markdown.split(/\r?\n/)) {
     const line = raw.trimEnd()
+    const fm = /^\s*(```|~~~)/.exec(line)
+    if (fm) {
+      if (!inFence) {
+        inFence = true
+        fenceMark = fm[1]
+      } else if (line.trim().startsWith(fenceMark)) {
+        inFence = false
+      }
+      continue // 围栏代码里的 # 注释不是标题
+    }
+    if (inFence) continue
     const h = /^(#{1,6})\s+(.+?)\s*$/.exec(line)
     if (h) {
       const depth = h[1].length - 1 // # → 0
@@ -353,7 +368,7 @@ function nodeSvg(n: MindNode, dark: boolean): string {
   const clickable = n.children.length > 0
   const s: string[] = []
   s.push(`<g class="mm-node${clickable ? ' mm-clickable' : ''}" data-id="${n.id}">`)
-  if (clickable) s.push(`<title>${esc(n.title)} · 点击${n.collapsed ? '展开' : '折叠'}</title>`)
+  if (clickable) s.push(`<title>${esc(n.title)} · ${t(n.collapsed ? 'mm.clickExpand' : 'mm.clickCollapse')}</title>`)
   const x = r(n.x),
     y = r(n.y),
     w = r(n.w),

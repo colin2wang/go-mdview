@@ -1,6 +1,9 @@
 package mdv
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,14 +28,15 @@ const (
 
 // watcherState Store 的文件监视部分。事件经 callback 抛给上层（App 负责转成 Wails 事件）。
 type watcherState struct {
-	mu       sync.Mutex
-	w        *fsnotify.Watcher
-	watched  string        // 当前监视的文件路径（Clean 后）
-	knownM   int64         // 打开/上次刷新时的 mtime
-	knownS   int64         // 打开/上次刷新时的 size
-	savedAt  time.Time     // 本应用最后一次保存时间，用于抑制自身写入事件
-	stop     chan struct{} // 事件循环退出信号
-	onChange func(FileEvent)
+	mu        sync.Mutex
+	w         *fsnotify.Watcher
+	watched   string        // 当前监视的文件路径（Clean 后）
+	knownM    int64         // 打开/上次刷新时的 mtime
+	knownS    int64         // 打开/上次刷新时的 size
+	savedAt   time.Time     // 本应用最后一次保存时间
+	savedHash string        // 本应用最后一次保存的内容哈希：只有内容相同才抑制自身写入
+	stop      chan struct{} // 事件循环退出信号
+	onChange  func(FileEvent)
 }
 
 // SetFileChangeCallback 注册事件回调，须在 WatchFile 之前调用。
@@ -73,7 +77,10 @@ func (s *Store) WatchFile(path string) {
 		st.knownM, st.knownS = 0, 0
 	}
 	st.stop = make(chan struct{})
-	go s.watcherLoop(st, st.stop)
+	// events / 回调作为局部参数传入：StopWatch 会把 st.w 置 nil 并 Close，
+	// 旧 goroutine 不得再解引用共享字段（否则下一轮读 st.w.Events 直接 panic）。
+	events, errs, cb := w.Events, w.Errors, st.onChange
+	go s.watcherLoop(st, st.stop, events, errs, cb)
 }
 
 // StopWatch 停止监视当前文件（关闭文件/退出时调用）。
@@ -101,8 +108,16 @@ func (s *Store) watcherStopLocked() {
 // MarkSaved 在本应用写盘后调用，把抑制窗口设为当下。
 func (s *Store) MarkSaved() {
 	st := &s.watcher
+	h := ""
+	st.mu.Lock()
+	path := st.watched
+	st.mu.Unlock()
+	if path != "" {
+		h, _ = fileHash(path)
+	}
 	st.mu.Lock()
 	st.savedAt = time.Now()
+	st.savedHash = h
 	if st.watched != "" {
 		if fi, err := os.Stat(st.watched); err == nil {
 			st.knownM, st.knownS = fi.ModTime().UnixMilli(), fi.Size()
@@ -111,13 +126,28 @@ func (s *Store) MarkSaved() {
 	st.mu.Unlock()
 }
 
+// fileHash 计算文件内容哈希（用于区分自身写入与窗口内的外部修改）。
+func fileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 // watcherLoop 事件循环：防抖合并事件，换算成 FileEvent 抛给回调。
-func (s *Store) watcherLoop(st *watcherState, stop chan struct{}) {
+// events / errs / cb 均由 WatchFile 在创建 watcher 时捕获为局部值。
+func (s *Store) watcherLoop(st *watcherState, stop chan struct{}, events <-chan fsnotify.Event, errs <-chan error, cb func(FileEvent)) {
 	var debounce *time.Timer
 	fire := func() {
 		ev := s.watcherCheck()
-		if ev != nil && st.onChange != nil {
-			st.onChange(*ev)
+		if ev != nil && cb != nil {
+			cb(*ev)
 		}
 	}
 	debounce = time.NewTimer(time.Hour)
@@ -128,7 +158,8 @@ func (s *Store) watcherLoop(st *watcherState, stop chan struct{}) {
 		select {
 		case <-stop:
 			return
-		case ev, ok := <-st.w.Events:
+		case <-errs: // 必须排空 fsnotify 错误通道，否则内部可能阻塞
+		case ev, ok := <-events:
 			if !ok {
 				return
 			}
@@ -170,10 +201,13 @@ func (s *Store) watcherCheck() *FileEvent {
 	if m == st.knownM && sz == st.knownS {
 		return nil
 	}
-	// 本应用自己刚保存的写入：吸收掉，并刷新已知状态
+	// 本应用自己刚保存的写入：只有内容哈希与保存时一致才吸收。
+	// 纯时间窗口会吞掉这 2 秒内真正的外部修改（并把 knownM/S 更新成新值，之后永远不再报）。
 	if time.Since(st.savedAt) < saveSuppressAfter {
-		st.knownM, st.knownS = m, sz
-		return nil
+		if h, err := fileHash(st.watched); err == nil && h == st.savedHash {
+			st.knownM, st.knownS = m, sz
+			return nil
+		}
 	}
 	st.knownM, st.knownS = m, sz
 	return &FileEvent{Kind: "changed", Path: st.watched, ModTime: m, Size: sz}

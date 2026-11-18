@@ -13,6 +13,9 @@ import (
 
 // YamlConfigPath 返回 mdview.yml 的完整路径（exe 同目录）。
 func YamlConfigPath() string {
+	if override := os.Getenv("MDVIEW_YAML"); override != "" {
+		return override
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
@@ -81,7 +84,18 @@ func writeYamlSettings(st Settings) error {
 	yamlWriteLine(&b, "Window position (may be negative on multi-monitor)", "winX", strconv.Itoa(st.WinX))
 	yamlWriteLine(&b, "", "winY", strconv.Itoa(st.WinY))
 	yamlWriteLine(&b, "Window was maximized on close", "winMax", strconv.FormatBool(st.WinMax))
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	// 原子写：避免写一半被中断导致下次启动解析到半截配置
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	// 重新启用 yml 时清掉「已禁用」标记
+	_ = os.Remove(yamlDisabledPath())
+	return nil
 }
 
 // loadYamlSettings 解析 mdview.yml，把出现的键覆盖到 st 上。
@@ -198,7 +212,35 @@ func yamlExists() bool {
 	return err == nil && !fi.IsDir()
 }
 
+// yamlDisabledPath 标记文件：exe 目录只读、yml 删不掉时，用它阻止 yml 下次启动复活。
+func yamlDisabledPath() string {
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(cfg, "mdview", "yaml-disabled")
+}
+
+func yamlDisabled() bool {
+	p := yamlDisabledPath()
+	return p != "" && fileExists(p)
+}
+
 // removeYaml 删除本地 mdview.yml（用户关掉 yml 开关时调用，避免再次打开时旧文件复活）。
-func removeYaml() {
-	_ = os.Remove(YamlConfigPath())
+func removeYaml() error {
+	p := YamlConfigPath()
+	if p == "" || !yamlExists() {
+		return nil
+	}
+	if err := os.Remove(p); err != nil {
+		// 删不掉时留下标记：GetSettings 见到标记就忽略仍存在的 yml
+		if marker := yamlDisabledPath(); marker != "" {
+			_ = os.WriteFile(marker, []byte("yaml disabled by user\n"), 0o644)
+		}
+		return err
+	}
+	if marker := yamlDisabledPath(); marker != "" {
+		_ = os.Remove(marker)
+	}
+	return nil
 }

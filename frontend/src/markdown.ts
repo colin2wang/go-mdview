@@ -3,6 +3,19 @@ import { ensureHljs, ensureKatex, freshMarked, maybeMath, loadScript } from './v
 import { t } from './i18n'
 import DOMPurify from 'dompurify'
 import sanitizeConfig from './sanitize-config.json'
+import {
+  createState,
+  isRemoteSrc,
+  remoteAllowed as remoteAllowedByPattern,
+  sanitizeWith,
+  splitConfig,
+  stripSvgExternalRefs,
+  svgConfig
+} from './sanitize-common.js'
+
+export { isRemoteSrc, remoteAllowedByPattern as remoteAllowed }
+
+const parts = splitConfig(sanitizeConfig as Record<string, any>)
 
 /**
  * Markdown 渲染管线（样式对齐 mdview demo）：
@@ -39,35 +52,9 @@ function blockedImgUri(): string {
   )
 }
 
-/** 远程图片（http/https/协议相对）判定。 */
-function isRemoteSrc(href: string): boolean {
-  return /^(https?:)?\/\//i.test(href)
-}
-
-/** 远程资源白名单：URL 通配符模式（* 任意串、? 单字符），多值每行一个，不区分大小写。 */
-export function remoteAllowed(href: string, allow: string): boolean {
-  const patterns = (allow ?? '')
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-  if (!patterns.length) return false
-  return patterns.some((p) => {
-    const re = new RegExp(
-      '^' +
-        p
-          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-          .replace(/\*/g, '.*')
-          .replace(/\?/g, '.') +
-        '$',
-      'i'
-    )
-    return re.test(href)
-  })
-}
-
 /** 当前拦截判断是否放行该地址：开关未开、不是远程、或命中白名单。 */
-function remotePasses(href: string): boolean {
-  return !blockRemoteNow || !isRemoteSrc(href) || remoteAllowed(href, remoteAllowNow)
+function remotePasses(href: string, blockRemote: boolean, remoteAllow: string): boolean {
+  return !blockRemote || !isRemoteSrc(href) || remoteAllowedByPattern(href, remoteAllow)
 }
 
 // ---------- 原始 HTML 清洗（防 XSS）----------
@@ -75,43 +62,13 @@ function remotePasses(href: string): boolean {
 // 字符串级正则黑名单对抗不了 HTML 解析器（实体解码、formaction、<meta>/<base>
 // 等向量都能绕过），必须走真实 DOM 解析的 DOMPurify（随构建打包，运行时离线）。
 // 禁 style 标签/属性：既防 url() 外发探测，也与「100% 离线」承诺一致。
+// hook（远程 URL 属性覆盖、良性 button/checkbox 保留）在 sanitize-common.js
+// 中与 scripts/sanitize-check.mjs 共用同一份实现，配置来自 sanitize-config.json。
 
-// 清洗期间是否拦截远程资源；DOMPurify hook 是全局注册，单线程下先用模块级
-// 开关传递本次调用（JS 单线程，同步调用期间不会被并发修改）。
-let blockRemoteNow = false
-let remoteAllowNow = ''
-let hookInstalled = false
-
-function ensureRemoteHook(): void {
-  if (hookInstalled) return
-  hookInstalled = true
-  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-    if (!blockRemoteNow || !(node instanceof Element)) return
-    const tag = node.tagName.toLowerCase()
-    const src = node.getAttribute('src') ?? ''
-    // 原始 HTML 里的远程 <img>/<video>/<audio>/<source> 等一律换成占位（白名单除外）
-    if (src && !remotePasses(src) && tag !== 'script') {
-      node.setAttribute('src', blockedImgUri())
-      node.setAttribute('alt', node.getAttribute('alt') || t('img.blocked'))
-    }
-    // SVG <image href="https://..."> 同理
-    const href = node.getAttribute('href') ?? ''
-    if (tag === 'image' && !remotePasses(href)) {
-      node.setAttribute('href', blockedImgUri())
-    }
-  })
-}
-
-function sanitizeHtml(html: string, blockRemote = true, remoteAllow = ''): string {
-  ensureRemoteHook()
-  blockRemoteNow = blockRemote
-  remoteAllowNow = remoteAllow
-  try {
-    return DOMPurify.sanitize(html, sanitizeConfig)
-  } finally {
-    blockRemoteNow = false
-    remoteAllowNow = ''
-  }
+/** 统一 HTML 净化出口：脚注、异常兜底、导出二次净化都走这里。 */
+export function sanitizeHtml(html: string, blockRemote = true, remoteAllow = ''): string {
+  const state = createState(blockRemote, remoteAllow, blockedImgUri, t('img.blocked'))
+  return sanitizeWith(DOMPurify, parts, html, state)
 }
 
 function hexEncode(s: string): string {
@@ -200,16 +157,72 @@ function isFenceLine(line: string): boolean {
   return /^\s*(```|~~~)/.test(line)
 }
 
-export function preprocess(src: string): { md: string; footnotes: Footnote[]; usedFns: Map<string, number> } {
+export interface PreprocessResult {
+  md: string
+  footnotes: Footnote[]
+  usedFns: Map<string, number>
+  /** 输出行 → 原始行号（preprocess 前的 src），供 TOC 锚点精确回映射。 */
+  lineMap: number[]
+}
+
+export function preprocess(src: string): PreprocessResult {
   const lines = src.split(/\r?\n/)
   const defs = new Map<string, string>()
   const order: string[] = []
   const used = new Map<string, number>()
   const out: string[] = []
+  const lineMap: number[] = []
   let inFence = false
   let fenceMark = ''
 
-  for (const line of lines) {
+  // 行内变换只作用于普通文本段：跳过行内代码（`...`）与 HTML 注释，
+  // 否则 `[[x]]` / `[^1]` / `==mark==` 会把代码片段也改写掉。
+  const wikiLink = (m0: string, raw: string): string => {
+    const label = raw.trim()
+    const [targetRaw, alias] = label.split('|').map((s) => s.trim())
+    const hashAt = targetRaw.indexOf('#')
+    const target = hashAt >= 0 ? targetRaw.slice(0, hashAt) : targetRaw
+    const anchor = hashAt >= 0 ? targetRaw.slice(hashAt + 1) : ''
+    const base = target.split(/[\\/]/).pop() || target
+    const display = alias || base
+    // Obsidian 嵌入语法 ![[file]]：图片类文件转成标准 Markdown 图片，走 /mdimg 回放
+    if (m0.startsWith('!')) {
+      const ext = (target.split('.').pop() ?? '').toLowerCase()
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'].includes(ext)) {
+        return `![${escapeHtml(display)}](${encodeURI(target)})`
+      }
+      // 非图片嵌入（如 md 转录）降级为 wiki 链接，去掉多余的 !
+    }
+    const anchorAttr = anchor ? ` data-anchor="${escapeHtml(anchor)}"` : ''
+    return `<a class="wikilink" data-wiki="${escapeHtml(target)}"${anchorAttr}>${escapeHtml(display)}</a>`
+  }
+
+  const transformProse = (text: string): string => {
+    let l = text.replace(/\[\^([^\]\s]+)\]/g, (_m0, id: string) => {
+      if (!used.has(id)) used.set(id, used.size + 1)
+      const n = used.get(id)!
+      return `<sup class="md-fn-ref"><a id="fnref-${escapeHtml(id)}" class="md-fnref-link" href="#fn-${escapeHtml(id)}">${n}</a></sup>`
+    })
+    l = l.replace(/==([^=\n]+)==/g, '<mark>$1</mark>')
+    l = l.replace(/!?\[\[([^\]\n]+)\]\]/g, wikiLink)
+    return l
+  }
+
+  const transformLine = (line: string): string => {
+    const skip = /(`+)([\s\S]*?)\1|<!--[\s\S]*?-->/g
+    let result = ''
+    let last = 0
+    for (const m of line.matchAll(skip)) {
+      const at = m.index ?? 0
+      result += transformProse(line.slice(last, at))
+      result += m[0]
+      last = at + m[0].length
+    }
+    return result + transformProse(line.slice(last))
+  }
+
+  for (let lineNo = 0; lineNo < lines.length; lineNo++) {
+    const line = lines[lineNo]
     if (isFenceLine(line)) {
       const m = line.match(/^\s*(```|~~~)/)
       if (!inFence) {
@@ -219,6 +232,7 @@ export function preprocess(src: string): { md: string; footnotes: Footnote[]; us
         inFence = false
       }
       out.push(line)
+      lineMap.push(lineNo)
       continue
     }
     if (!inFence) {
@@ -228,6 +242,7 @@ export function preprocess(src: string): { md: string; footnotes: Footnote[]; us
         const prev = out[out.length - 1]
         if (prev !== undefined && prev.trim() !== '' && !/^\s*-{3,}\s*$/.test(prev) && !/^\s*>/.test(prev)) {
           out.push('')
+          lineMap.push(lineNo)
         }
       }
       // GFM Alert：标记行后补空引号行，防止 marked 把 [!NOTE] 与正文懒续行合成同一段
@@ -235,6 +250,7 @@ export function preprocess(src: string): { md: string; footnotes: Footnote[]; us
       if (am) {
         out.push(line)
         out.push('>')
+        lineMap.push(lineNo, lineNo)
         continue
       }
       const def = line.match(/^\[\^([^\]\s]+)\]:\s?(.*)$/)
@@ -243,30 +259,11 @@ export function preprocess(src: string): { md: string; footnotes: Footnote[]; us
         defs.set(def[1], def[2])
         continue // 脚注定义从正文摘除
       }
-      let l = line.replace(/\[\^([^\]\s]+)\]/g, (m0, id: string) => {
-        if (!used.has(id)) used.set(id, used.size + 1)
-        const n = used.get(id)!
-        return `<sup class="md-fn-ref"><a id="fnref-${escapeHtml(id)}" class="md-fnref-link" href="#fn-${escapeHtml(id)}">${n}</a></sup>`
-      })
-      l = l.replace(/==([^=\n]+)==/g, '<mark>$1</mark>')
-      l = l.replace(/!?\[\[([^\]\n]+)\]\]/g, (m0, t: string) => {
-        const label = t.trim()
-        // Obsidian 嵌入语法 ![[file]]：图片类文件转成标准 Markdown 图片，走 /mdimg 回放
-        if (m0.startsWith('!')) {
-          const [target, alias] = label.split('|').map((s) => s.trim())
-          const ext = (target.split('.').pop() ?? '').toLowerCase()
-          if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'].includes(ext)) {
-            return `![${escapeHtml(alias ?? target)}](${encodeURI(target)})`
-          }
-          // 非 图片嵌入（如 md 转录）降级为 wiki 链接，去掉多余的 !
-          return `<a class="wikilink" data-wiki="${escapeHtml(target)}">${escapeHtml(alias ?? target)}</a>`
-        }
-        return `<a class="wikilink" data-wiki="${escapeHtml(label)}">${escapeHtml(label)}</a>`
-      })
-      out.push(l)
+      out.push(transformLine(line))
     } else {
       out.push(line)
     }
+    lineMap.push(lineNo)
   }
 
   const footnotes: Footnote[] = []
@@ -276,7 +273,7 @@ export function preprocess(src: string): { md: string; footnotes: Footnote[]; us
     num++
     footnotes.push({ id, num: used.get(id)!, content: defs.get(id) ?? '' })
   }
-  return { md: out.join('\n'), footnotes, usedFns: used }
+  return { md: out.join('\n'), footnotes, usedFns: used, lineMap }
 }
 
 // ---------- Alert 后处理 ----------
@@ -301,7 +298,7 @@ export function postprocessAlerts(html: string): string {
 
 // ---------- 脚注区 ----------
 
-async function buildFootnotesHtml(footnotes: Footnote[]): Promise<string> {
+async function buildFootnotesHtml(footnotes: Footnote[], blockRemote: boolean, remoteAllow: string): Promise<string> {
   if (!footnotes.length) return ''
   const marked = await freshMarked()
   const items = footnotes
@@ -312,6 +309,9 @@ async function buildFootnotesHtml(footnotes: Footnote[]): Promise<string> {
       } catch {
         inner = escapeHtml(f.content)
       }
+      // 脚注区在整段 sanitize 之后追加，必须在此单独净化，否则 <img onerror> /
+      // <style>url(...)</style> / <svg onload> 会直达 v-html 绕过整套 sanitizer。
+      inner = sanitizeHtml(inner, blockRemote, remoteAllow)
       if (/^<p>[\s\S]*<\/p>$/.test(inner) && (inner.match(/<p>/g) ?? []).length === 1) {
         inner = inner.slice(3, -4)
       }
@@ -347,18 +347,27 @@ export function diagramKindOf(lang: string, text: string): DiagramKind | '' {
 }
 
 /** 内联 SVG 清洗：走 DOMPurify 真实 DOM 解析，去掉脚本、foreignObject、
- * 事件/危险属性与远程引用（外链 image/xlink:href 会外发请求，违反离线承诺）。 */
-export function sanitizeSvg(code: string): string {
-  const clean = DOMPurify.sanitize(code, {
-    USE_PROFILES: { svg: true, svgFilters: true },
-    FORBID_TAGS: ['script', 'foreignObject', 'style'],
-    FORBID_ATTR: ['style']
-  })
-  return normalizeSvgRoot(
-    clean
-      .replace(/\s(xlink:href|href)\s*=\s*("|')(https?:)?\/\/[^"']*\2/gi, ' $1=""')
-      .replace(/\ssrc\s*=\s*("|')(https?:)?\/\/[^"']*\1/gi, ' src=""')
-  )
+ * 事件/危险属性与远程引用（含 data:，外链 image/xlink:href 会外发请求，违反离线承诺）。
+ * allowStyle=true 供 Mermaid 保留主题 <style>，但由 sanitizeMermaidSvg 去掉含 url() 的样式。 */
+export function sanitizeSvg(code: string, allowStyle = false): string {
+  const state = createState(true, '', () => '', '')
+  const clean = sanitizeWith(DOMPurify, parts, stripSvgExternalRefs(code), state, svgConfig(parts, allowStyle))
+  return normalizeSvgRoot(clean)
+}
+
+/** Mermaid 输出二次净化：保留本地主题样式，剥掉任何带 url() 的 <style>（防外发）。 */
+export function sanitizeMermaidSvg(code: string): string {
+  const clean = sanitizeSvg(code, true)
+  try {
+    const doc = new DOMParser().parseFromString(clean, 'image/svg+xml')
+    const root = doc.documentElement
+    root.querySelectorAll('style').forEach((s) => {
+      if (/url\s*\(/i.test(s.textContent ?? '')) s.remove()
+    })
+    return normalizeSvgRoot(new XMLSerializer().serializeToString(root))
+  } catch {
+    return clean
+  }
 }
 
 /** 取根节点上某属性的值（仅用于 width/height 判断）。 */
@@ -429,7 +438,7 @@ export async function renderMarkdown(
 ): Promise<RenderResult> {
   const [marked, hljs] = await Promise.all([freshMarked(), ensureHljs()])
   const slug = makeSluger()
-  const { md, footnotes } = preprocess(src)
+  const { md, footnotes, lineMap } = preprocess(src)
 
   const renderer: any = {
     heading(token: any) {
@@ -472,7 +481,7 @@ export async function renderMarkdown(
       let href = resolveImgHref(token.href ?? '', baseDir)
       const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
       // 远程资源拦截（默认开）：不外发请求，用本地占位图代替；命中白名单的放行
-      if (blockRemote && isRemoteSrc(href) && !remoteAllowed(href, remoteAllow)) {
+      if (blockRemote && isRemoteSrc(href) && !remoteAllowedByPattern(href, remoteAllow)) {
         href = blockedImgUri()
         return `<img src="${href}" alt="${escapeHtml(token.text ?? '')}" title="${escapeHtml(t('img.blocked'))}" class="md-img-blocked" loading="lazy">`
       }
@@ -493,22 +502,24 @@ export async function renderMarkdown(
       if (/\.(md|markdown)$/i.test(href.split('#')[0] ?? '')) {
         const abs = resolveMdHref(href.split('#')[0], baseDir)
         const anchor = href.includes('#') ? '#' + href.split('#')[1] : ''
-        return `<a href="javascript:void(0)" class="md-link" data-mdlink="${escapeHtml(abs)}" data-anchor="${escapeHtml(anchor)}"${title}>${text}</a>`
+        return `<a href="#" class="md-link" data-mdlink="${escapeHtml(abs)}" data-anchor="${escapeHtml(anchor)}"${title}>${text}</a>`
       }
-      return `<a href="javascript:void(0)" class="md-link-dead" data-dead="${escapeHtml(href)}"${title}>${text}</a>`
+      return `<a href="#" class="md-link-dead" data-dead="${escapeHtml(href)}"${title}>${text}</a>`
     }
   }
 
   marked.use({ gfm: true, breaks: false, renderer })
 
-  let html = String(marked.parse(md))
+  // 解析一次，parse 与 TOC 复用同一批 tokens（旧实现 lexer 跑两遍）
+  const tokens = marked.lexer(md)
+  let html = String(marked.parser(tokens))
   html = sanitizeHtml(html, blockRemote, remoteAllow)
   html = postprocessAlerts(html)
-  html += await buildFootnotesHtml(footnotes)
+  html += await buildFootnotesHtml(footnotes, blockRemote, remoteAllow)
 
   // TOC 与同步滚动锚点同源：同一次 lexer 遍历同时产出目录与源码行号，天然 1:1 配对。
-  // 行号映射回 preprocess 前的原文（heading 的 raw 原样出现在原文里），
-  // 预处理增删行（摘脚注定义、补空行）不会让行号错位。
+  // 行号经 preprocess 的 lineMap 映射回原文；标题含脚注/wikilink 被改写时也不再依赖
+  // src.indexOf(t.raw)，摘脚注定义/补空行造成的增删同样不会错位。
   const toc: TocItem[] = []
   const anchors: SrcAnchor[] = []
   try {
@@ -520,18 +531,19 @@ export async function renderMarkdown(
           const plain = plainText(t.tokens ?? [])
           const id = tocSlug(plain)
           toc.push({ id, text: plain, depth: t.depth })
-          const idx = t.raw ? src.indexOf(t.raw, cursor) : -1
+          const idx = t.raw ? md.indexOf(t.raw, cursor) : -1
           if (idx >= 0) {
             cursor = idx + t.raw.length
             // raw 起始行即标题行（setext 样式 raw 含上一行，同样取首行）
-            anchors.push({ line: src.slice(0, idx).split('\n').length - 1, id })
+            const mdLine = md.slice(0, idx).split('\n').length - 1
+            anchors.push({ line: lineMap[mdLine] ?? mdLine, id })
           }
         }
         // 覆盖引用块/列表内标题
         if (t.type !== 'heading' && t.tokens) walk(t.tokens)
       }
     }
-    walk(marked.lexer(md))
+    walk(tokens)
   } catch {
     /* TOC 提取失败不阻塞渲染 */
   }
@@ -621,7 +633,7 @@ export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = f
       try {
         const id = `mdv-mm-${++mermaidSeq}`
         const res = await mermaid.render(id, code)
-        holder.innerHTML = res.svg
+        holder.innerHTML = sanitizeMermaidSvg(res.svg)
         block.dataset.done = '1'
         block.classList.add('ok')
       } catch {
@@ -636,7 +648,7 @@ export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = f
     for (const b of mmBlocks) {
       if (b.dataset.done === '1') continue
       const h = srcHolder(b)
-      if (h) h.textContent = 'Mermaid 库加载失败'
+      if (h) h.textContent = t('diag.mermaidLoadFailed')
       b.dataset.done = '1'
     }
   }

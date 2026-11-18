@@ -7,7 +7,7 @@ import TreeItem from './TreeItem.vue'
 
 const expanded = ref<Set<string>>(new Set())
 
-const rootPath = computed(() => store.settings?.lastFolder ?? '')
+const rootPath = computed(() => store.rootName || store.settings?.lastFolder || '')
 
 function isExpanded(p: string): boolean {
   return expanded.value.has(p)

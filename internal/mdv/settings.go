@@ -2,9 +2,10 @@ package mdv
 
 // ViewMode 正文显示模式。
 const (
-	ViewModeRender = "render" // 仅渲染结果
-	ViewModeSource = "source" // 仅 Markdown 源码
-	ViewModeSplit  = "split"  // 源码 ⇄ 渲染对照
+	ViewModeRender  = "render"  // 仅渲染结果
+	ViewModeSource  = "source"  // 仅 Markdown 源码
+	ViewModeSplit   = "split"   // 源码 ⇄ 渲染对照
+	ViewModeMindmap = "mindmap" // 思维导图（渲染面板独占视图）
 )
 
 // 窗口尺寸：main.go 创建窗口与 settings 校验共用，避免两处硬编码不一致。
@@ -71,7 +72,7 @@ var defaultSettings = Settings{
 // validViewMode 归一化显示模式，非法值回落到 render。
 func validViewMode(v string) string {
 	switch v {
-	case ViewModeSource, ViewModeSplit:
+	case ViewModeSource, ViewModeSplit, ViewModeMindmap:
 		return v
 	default:
 		return ViewModeRender
@@ -117,9 +118,11 @@ func (s *Store) GetSettings() Settings {
 	s.mu.Unlock()
 	// yml 配置源优先：exe 同目录存在 mdview.yml 即视为开关打开（不必依赖存储的
 	// useYaml 值），yml 中出现的键覆盖 JSON
-	if yamlExists() {
+	if yamlExists() && !yamlDisabled() {
 		st.UseYaml = true
 		loadYamlSettings(&st)
+	} else if yamlDisabled() {
+		st.UseYaml = false // 用户已关闭 yml，即使文件因权限删不掉也不让它复活
 	}
 	if st.Theme != "dark" && st.Theme != "light" {
 		st.Theme = defaultSettings.Theme
@@ -156,13 +159,16 @@ func (s *Store) SaveSettings(in Settings) Settings {
 		// yml 模式：只要开关打开就写 mdview.yml（首次打开开关时立即创建带注释的
 		// 文件），settings.json 不再更新；写失败时回落 JSON，避免设置丢失
 		if err := writeYamlSettings(st); err != nil {
+			s.setError(err) // 写 yml 失败也要可见，不再静默回落
 			s.writeJSON("settings.json", &st)
 		}
 	} else {
 		// 关掉 yml 开关：回写 settings.json，并删除本地 yml，
 		// 避免残留旧文件让下次启动又把开关「顶」回打开状态
 		s.writeJSON("settings.json", &st)
-		removeYaml()
+		if err := removeYaml(); err != nil {
+			s.setError(err)
+		}
 	}
 	s.mu.Unlock()
 	return st
