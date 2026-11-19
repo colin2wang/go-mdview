@@ -6,7 +6,9 @@ import {
   toggleFavorite,
   applySettings,
   resolveGoneFile,
-  resolveDiscard,
+  resolveDiscardSave,
+  resolveDiscardDrop,
+  resolveDiscardCancel,
   discardMessage,
   toast
 } from './store'
@@ -92,15 +94,27 @@ watch(
         </div>
       </div>
     </Teleport>
-    <!-- 未保存草稿确认：点遮罩不生效，只认「保留修改 / 放弃修改」 -->
+    <!-- 未保存草稿确认：点遮罩不生效，只认「保存 / 放弃 / 取消」 -->
     <Teleport to="body">
       <div v-if="store.discardReason" class="modal-mask" data-testid="discard-mask">
-        <div class="modal gone-modal" data-testid="discard-modal">
-          <h3 class="gone-title">{{ t('discard.title') }}</h3>
-          <p class="gone-body">{{ discardMessage(store.discardReason) }}</p>
+        <div class="modal gone-modal discard-modal" data-testid="discard-modal">
+          <div class="discard-head">
+            <div class="discard-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+                <path d="M12 17h.01" />
+              </svg>
+            </div>
+            <div class="discard-text">
+              <h3 class="gone-title">{{ t('discard.title') }}</h3>
+              <p class="gone-body">{{ discardMessage(store.discardReason) }}</p>
+            </div>
+          </div>
           <div class="gone-actions">
-            <button class="set-btn" data-testid="discard-keep" @click="resolveDiscard(true)">{{ t('discard.keep') }}</button>
-            <button class="set-btn danger" data-testid="discard-drop" @click="resolveDiscard(false)">{{ t('discard.drop') }}</button>
+            <button class="set-btn" data-testid="discard-save" :disabled="store.discardSaving" @click="resolveDiscardSave()">{{ t('discard.save') }}</button>
+            <button class="set-btn danger" data-testid="discard-drop" @click="resolveDiscardDrop()">{{ t('discard.drop') }}</button>
+            <button class="set-btn neutral" data-testid="discard-cancel" @click="resolveDiscardCancel()">{{ t('discard.cancel') }}</button>
           </div>
         </div>
       </div>

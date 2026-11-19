@@ -1316,6 +1316,49 @@ button {
 .gone-actions .set-btn {
   min-width: 96px;
 }
+
+/* ---------- 未保存修改确认弹窗（Notepad++ 风格：图标 + 左对齐 + 取消） ---------- */
+.discard-modal {
+  text-align: left;
+}
+.discard-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.discard-icon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #2d8cff;
+  color: #fff;
+}
+.discard-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.discard-text {
+  flex: 1;
+  min-width: 0;
+}
+.discard-modal .gone-body {
+  margin: 0;
+}
+.discard-modal .gone-actions {
+  margin-top: 20px;
+}
+.gone-actions .set-btn.neutral {
+  background: var(--md-bg);
+  border-color: var(--md-pre-border);
+  color: var(--md-text);
+}
+.gone-actions .set-btn.neutral:hover:not(:disabled) {
+  border-color: var(--md-accent);
+}
 .set-about {
   border-top: 1px solid var(--md-pre-border);
   padding-top: 12px;

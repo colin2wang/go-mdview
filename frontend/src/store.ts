@@ -48,8 +48,10 @@ export const store = reactive({
   /** 源码编辑态与草稿提升到 store：关闭/重启/切换/重载/退出编辑共用同一份状态 */
   editing: false,
   draft: '',
-  /** 未保存改动确认弹窗：非空时显示「保留修改/放弃」询问 */
-  discardReason: '' as '' | 'close' | 'restart' | 'switch' | 'reload' | 'exit'
+  /** 未保存改动确认弹窗：非空时显示「保存/放弃/取消」询问 */
+  discardReason: '' as '' | 'close' | 'restart' | 'switch' | 'reload' | 'exit',
+  /** 「保存」按钮正在写盘，防止重复点击 */
+  discardSaving: false
 })
 
 const DISCARD_REASON_KEYS: Record<string, string> = {
@@ -61,7 +63,7 @@ const DISCARD_REASON_KEYS: Record<string, string> = {
 }
 
 let draftTimer: number | undefined
-let discardResolve: ((keep: boolean) => void) | null = null
+let discardResolve: ((proceed: boolean) => void) | null = null
 
 /** 是否有未保存的草稿改动。 */
 export function hasUnsaved(): boolean {
@@ -73,7 +75,7 @@ export function syncDraftDirty() {
   if (store.desktop) void getApi().then((api) => api.SetDraftDirty(hasUnsaved()))
 }
 
-/** 统一确认入口：无未保存改动直接放行；否则弹窗，返回 true=放弃修改继续操作。 */
+/** 统一确认入口：无未保存改动直接放行；否则弹窗，返回 true=继续原操作（已保存或已放弃）。 */
 export function confirmDiscard(reason: 'close' | 'restart' | 'switch' | 'reload' | 'exit'): Promise<boolean> {
   if (!hasUnsaved()) return Promise.resolve(true)
   if (discardResolve) return Promise.resolve(false) // 已有确认弹窗未处理，拒绝重入
@@ -88,13 +90,36 @@ export function discardMessage(reason: string): string {
   return t(DISCARD_REASON_KEYS[reason] ?? 'discard.switch')
 }
 
-/** 确认弹窗按钮：keep=true 保留修改并取消原操作；否则放弃并继续。
- *  confirmDiscard 的 resolve 语义是 true=继续操作，因此这里必须取反。 */
-export function resolveDiscard(keep: boolean) {
+/** 确认弹窗「放弃」：丢弃草稿并继续原操作（各出口随后会 clearDraft）。 */
+export function resolveDiscardDrop() {
   const resolve = discardResolve
   discardResolve = null
   store.discardReason = ''
-  resolve?.(!keep)
+  resolve?.(true)
+}
+
+/** 确认弹窗「取消」：保留草稿、取消原操作（confirmDiscard resolve false）。 */
+export function resolveDiscardCancel() {
+  const resolve = discardResolve
+  discardResolve = null
+  store.discardReason = ''
+  resolve?.(false)
+}
+
+/** 确认弹窗「保存」：先把草稿写回原文件，再继续原操作；失败时保持弹窗供重试/改选。 */
+export async function resolveDiscardSave() {
+  if (!discardResolve || store.discardSaving) return
+  store.discardSaving = true
+  try {
+    if (!(await saveSource(store.draft))) return
+    const resolve = discardResolve
+    if (!resolve) return
+    discardResolve = null
+    store.discardReason = ''
+    resolve(true)
+  } finally {
+    store.discardSaving = false
+  }
 }
 
 /** 取消草稿重渲染定时器：换文件/退出编辑后不能让旧草稿覆盖正文。 */
