@@ -1,6 +1,6 @@
-# Wails
+# Wails3
 build/bin
-frontend/package.json.md5
+frontend/bindings
 
 # Node.js
 frontend/node_modules
