@@ -23,7 +23,9 @@
     "src/**/*.ts",
     "src/**/*.d.ts",
     "src/**/*.tsx",
-    "src/**/*.vue"
+    "src/**/*.vue",
+    "bindings/**/*.ts",
+    "bindings/**/*.d.ts"
   ],
   "references": [
     {

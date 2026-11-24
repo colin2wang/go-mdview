@@ -1,34 +1,18 @@
 {
-  "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "mdview",
   "outputfilename": "mdview",
-  "frontend:install": "pnpm install",
-  "frontend:build": "pnpm run build",
-  "frontend:dev:watcher": "pnpm run dev",
-  "frontend:dev:serverUrl": "auto",
-  "author": {
-    "name": "mdview",
-    "email": ""
+  "frontend": {
+    "dir": "./frontend",
+    "install": "pnpm install",
+    "build": "pnpm run build",
+    "dev": "pnpm run dev",
+    "devServerUrl": "http://localhost:9245"
   },
   "info": {
     "companyName": "mdview",
     "productName": "mdview",
     "productVersion": "1.0.0",
     "copyright": "Copyright © 2026 mdview",
-    "comments": "轻量 Markdown 本地阅读工具",
-    "fileAssociations": [
-      {
-        "ext": "md",
-        "name": "Markdown 文档",
-        "description": "Markdown 文档",
-        "iconName": "mdview.markdown"
-      },
-      {
-        "ext": "markdown",
-        "name": "Markdown 文档",
-        "description": "Markdown 文档",
-        "iconName": "mdview.markdown"
-      }
-    ]
+    "comments": "轻量 Markdown 本地阅读工具"
   }
 }

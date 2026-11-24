@@ -1,15 +1,14 @@
 {
-	"fixed": {
-		"file_version": "{{.Info.ProductVersion}}"
-	},
-	"info": {
-		"0000": {
-			"ProductVersion": "{{.Info.ProductVersion}}",
-			"CompanyName": "{{.Info.CompanyName}}",
-			"FileDescription": "{{.Info.ProductName}}",
-			"LegalCopyright": "{{.Info.Copyright}}",
-			"ProductName": "{{.Info.ProductName}}",
-			"Comments": "{{.Info.Comments}}"
-		}
-	}
+  "fixed": {
+    "file_version": "1.0.0.0"
+  },
+  "info": {
+    "0409": {
+      "ProductVersion": "1.0.0.0",
+      "CompanyName": "mdview",
+      "FileDescription": "mdview — 轻量 Markdown 本地阅读工具",
+      "LegalCopyright": "Copyright © 2026 mdview",
+      "ProductName": "mdview"
+    }
+  }
 }

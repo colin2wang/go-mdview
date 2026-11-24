@@ -10,7 +10,7 @@
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-4-3178C6?logo=typescript&logoColor=white)
 ![Offline](https://img.shields.io/badge/network-100%25%20local-brightgreen)
-![Size](https://img.shields.io/badge/size-~16MB-informational)
+![Size](https://img.shields.io/badge/size-~15MB-informational)
 
 **简体中文** · [English](README.md)
 
@@ -168,7 +168,7 @@ go-mdview/
 .\build.ps1 -Package   # 构建 + 打 zip
 ```
 
-构建脚本先检查图标资源（`build/appicon.png`、`build/windows/icon.ico`、`build/mdview.markdown.png`），任一缺失才执行 `generate-icon.ps1`（全部存在则跳过并输出提示），随后执行 `frontend/` 下的 `pnpm install && pnpm run build`（vue-tsc 类型检查 + vite 构建），再 `wails build`（未安装 wails CLI 时回退为 `go build -tags "desktop,production"`）。产物：`build\bin\mdview.exe`。
+构建脚本先检查图标资源（`build/appicon.png`、`build/windows/icon.ico`、`build/mdview.markdown.png`），任一缺失才执行 `generate-icon.ps1`（全部存在则跳过并输出提示），随后执行 `frontend/` 下的 `pnpm install && pnpm run build`（vue-tsc 类型检查 + vite 构建 + 净化回归），再 `go build -tags "desktop,production"`。产物：`build\bin\mdview.exe`。也可用 `wails3 build`（由根目录 `Taskfile.yml` 驱动）。
 
 ### 本地验证
 
@@ -182,7 +182,7 @@ go vet ./...
 go test -race ./internal/mdv/
 ```
 
-`pnpm run build` 会随 `build.ps1` 中的 `wails build` 重新生成 `frontend/wailsjs/`，新增的 `App.*` 绑定才会真正可用。
+前端绑定由 `wails3 generate bindings -ts -d frontend/bindings` 生成到 `frontend/bindings/`，新增的 `App.*` 绑定重新生成后才真正可用。
 
 ---
 

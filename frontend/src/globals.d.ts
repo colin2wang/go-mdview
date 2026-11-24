@@ -5,31 +5,10 @@
 declare module 'codemirror/mode/*'
 declare module 'codemirror/addon/*'
 
-// Wails 桌面端注入的绑定与运行时（浏览器/Mock 模式下不存在）
-// 包名已从 main 迁到 internal/app：实际命名空间是 go.app.App，保留 main 兼容旧构建。
-type WailsBinding = Record<string, (...args: any[]) => Promise<any>>
-
+// Wails v3 桌面端注入的运行时标志（/wails/runtime.js 自动挂载，
+// 浏览器/Mock 模式下不存在）。绑定经 frontend/bindings 导入，不再有 window.go。
 interface Window {
   // WebView2/Chromium 私有 API，TS DOM 声明里没有
   find: (text: string, caseSensitive?: boolean, backwards?: boolean, wrapAround?: boolean, wholeWord?: boolean, searchInFrames?: boolean) => boolean
-  go?: {
-    app?: { App: WailsBinding }
-    main?: { App: WailsBinding }
-  }
-  runtime?: {
-    EventsOn: (name: string, cb: (...data: any[]) => void) => () => void
-    EventsOff: (name: string, ...additional: string[]) => void
-    EventsEmit: (name: string, ...data: any[]) => void
-    OnFileDrop: (callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean) => void
-    OnFileDropOff: () => void
-    WindowMinimise: () => void
-    WindowToggleMaximise: () => void
-    Quit: () => void
-    WindowSetTitle: (title: string) => void
-    WindowSetAlwaysOnTop: (b: boolean) => void
-    WindowFullscreen: () => void
-    WindowUnfullscreen: () => void
-    BrowserOpenURL: (url: string) => void
-    ClipboardSetText: (text: string) => Promise<boolean>
-  }
+  _wails?: Record<string, any>
 }

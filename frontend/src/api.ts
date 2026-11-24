@@ -1,8 +1,10 @@
 import type { MNode, FileContent, Entry, Settings, AssocState } from './types'
+import * as App from '../bindings/mdview/internal/app/app.js'
 
 /**
- * 前端唯一依赖的后端接口。桌面端由 window.go.main.App 提供，
- * 浏览器/无头实测由 mock.ts 提供同形实现。
+ * 前端唯一依赖的后端接口。桌面端由 wails3 生成的 bindings 提供
+ * （frontend/bindings/mdview/internal/app），浏览器/无头实测由 mock.ts 提供同形实现。
+ * 类型直接从生成物派生，避免手写接口与 Go 侧漂移。
  */
 export interface Api {
   GetStartupFile(): Promise<string>
@@ -47,56 +49,13 @@ export interface Api {
 }
 
 export function isDesktop(): boolean {
-  // Wails 绑定命名空间随包名变化：main.App（迁移前）/ app.App（迁移后）
-  const g: any = typeof window !== 'undefined' ? (window as any).go : undefined
-  return g !== undefined && (g?.main?.App !== undefined || g?.app?.App !== undefined)
+  // v3 运行时自动注入 /wails/runtime.js 并挂载 window._wails；纯浏览器模式不存在
+  return typeof window !== 'undefined' && (window as any)._wails !== undefined
 }
 
 function desktopApi(): Api {
-  const g: any = (window as any).go
-  const a: any = g.app?.App ?? g.main?.App
-  return {
-    GetStartupFile: () => a.GetStartupFile(),
-    BuildInfo: () => a.BuildInfo(),
-    OpenFolderDialog: () => a.OpenFolderDialog(),
-    OpenFileDialog: () => a.OpenFileDialog(),
-    ListTree: (d) => a.ListTree(d),
-    RefreshTree: (d) => (a.RefreshTree ? a.RefreshTree(d) : a.ListTree(d)),
-    ReadMarkdown: (p) => a.ReadMarkdown(p),
-    SaveMarkdown: (p, c, e) => a.SaveMarkdown(p, c, e),
-    StopWatch: () => a.StopWatch(),
-    // 新增绑定需重新 wails build 才会生成到 window.go；生成前用可选调用兜底，避免早期版本报错。
-    AllowImageDir: (d) => (a.AllowImageDir ? a.AllowImageDir(d) : Promise.resolve()),
-    SetDraftDirty: (d) => (a.SetDraftDirty ? a.SetDraftDirty(d) : Promise.resolve()),
-    FindByTitle: (r, t) => a.FindByTitle(r, t),
-    FindByTitles: (r, t) => (a.FindByTitles ? a.FindByTitles(r, t) : a.FindByTitle(r, t).then((p: string) => (p ? [p] : []))),
-    StatFile: (p) => a.StatFile(p),
-    GetHistory: () => a.GetHistory(),
-    PushHistory: (p) => a.PushHistory(p),
-    ClearHistory: () => a.ClearHistory(),
-    RemoveHistory: (p) => (a.RemoveHistory ? a.RemoveHistory(p) : Promise.resolve()),
-    GetFavorites: () => a.GetFavorites(),
-    ToggleFavorite: (p) => a.ToggleFavorite(p),
-    GetSettings: () => a.GetSettings(),
-    SaveSettings: (s) => a.SaveSettings(s),
-    GetLastError: () => (a.GetLastError ? a.GetLastError() : Promise.resolve('')),
-    SetTheme: (t) => a.SetTheme(t),
-    WindowPin: (b) => a.WindowPin(b),
-    WindowMin: () => a.WindowMin(),
-    WindowMaxToggle: () => a.WindowMaxToggle(),
-    WindowClose: () => a.WindowClose(),
-    RestartApp: () => a.RestartApp(),
-    WindowFullscreenToggle: () => a.WindowFullscreenToggle(),
-    SetWindowTitle: (t) => a.SetWindowTitle(t),
-    RevealInShell: (p) => a.RevealInShell(p),
-    SaveHtmlDialog: (t, h, d) => a.SaveHtmlDialog(t, h, d),
-    SaveSvgDialog: (t, c, d) => a.SaveSvgDialog(t, c, d),
-    SaveImageDialog: (d, u) => a.SaveImageDialog(d, u),
-    CopyText: (t) => a.CopyText(t),
-    GetAssocState: () => a.GetAssocState(),
-    AssociateMd: () => a.AssociateMd(),
-    UnassociateMd: () => a.UnassociateMd()
-  }
+  // 生成的绑定即同形函数集，直接转发；方法名与 Go 侧一一对应
+  return App as unknown as Api
 }
 
 let current: Api | null = null

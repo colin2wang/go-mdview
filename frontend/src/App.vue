@@ -40,9 +40,9 @@ onMounted(() => {
     e.preventDefault()
     dragDepth = 0
     dropHint.value = false
-    // 桌面端由 Wails runtime.OnFileDrop 接管（能拿到绝对路径），这里只做浏览器兜底
+    // 桌面端由 Go 侧原生拖放（EnableFileDrop + WindowFilesDropped）接管，能拿到绝对路径
     if (isDesktop()) return
-    // 浏览器沙箱拿不到本地绝对路径（File.path 恒为空），只能用 Wails 的 OnFileDrop
+    // 浏览器沙箱拿不到本地绝对路径（File.path 恒为空），只能提示不支持
     if ((e as DragEvent).dataTransfer?.files?.length) toast(t('drop.browserNoPath'), 'error')
   })
 })
@@ -58,7 +58,7 @@ watch(
 </script>
 
 <template>
-  <div class="app-shell" data-testid="app-shell">
+  <div class="app-shell" data-testid="app-shell" data-file-drop-target>
     <TitleBar />
     <div class="app-main">
       <SideBar />

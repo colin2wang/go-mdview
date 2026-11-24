@@ -686,19 +686,21 @@ export async function initApp() {
   }
 
   if (isDesktop()) {
-    const rt = (window as any).runtime
-    rt?.EventsOn?.('mdv:openfile', (p: string) => handleOpenEvent(p))
-    // 外部修改/删除监视：后端 mdv watcher 经 EventsEmit 推送
-    rt?.EventsOn?.('file:watch', (ev: WatchEvent) => handleWatchEvent(ev))
-    // 系统级关闭（标题栏 ✕ / Alt+F4）被 Go BeforeClose 拦下后，在这里统一弹确认
-    rt?.EventsOn?.('draft:close-request', async () => {
+    // v3 运行时：事件回调参数是 WailsEvent 对象，载荷在 ev.data
+    const { Events } = await import('@wailsio/runtime')
+    Events.On('mdv:openfile', (ev) => handleOpenEvent(ev.data as string))
+    // 外部修改/删除监视：后端 mdv watcher 经 Event.Emit 推送
+    Events.On('file:watch', (ev) => handleWatchEvent(ev.data as WatchEvent))
+    // 系统级关闭（标题栏 ✕ / Alt+F4）被 Go 关闭拦截后，在这里统一弹确认
+    Events.On('draft:close-request', async () => {
       if (await confirmDiscard('close')) {
         await api.SetDraftDirty(false)
         api.WindowClose()
       }
     })
-    // Windows 下必须由 JS 端调用 OnFileDrop，drop 事件才会生效（Wails v2 已知问题 #3985）
-    rt?.OnFileDrop?.((_x: number, _y: number, paths: string[]) => {
+    // 原生拖放：Go 侧 EnableFileDrop + WindowFilesDropped 事件转发绝对路径
+    Events.On('mdv:files-dropped', (ev) => {
+      const paths = (ev.data as string[]) ?? []
       // 放开全部可预览类型（markdown / 图片 / 文本），交给 fileKind 分发
       const files = paths.filter((p) => fileKind(p) !== 'text' || /\.(txt|text|log|json|yaml|yml|ini|csv)$/i.test(p))
       if (!files.length) return
@@ -718,7 +720,7 @@ export async function initApp() {
           }
         ])
       })
-    }, false)
+    })
   } else {
     window.addEventListener('mdv:mock-openfile', (e) => {
       handleOpenEvent((e as CustomEvent).detail as string)

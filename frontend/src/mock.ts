@@ -4,7 +4,7 @@ import { DEMO_MD, DEMO_IMAGE_SVG, fileBase, fileToDir, mockTree } from './demo'
 
 /**
  * 浏览器 / 无头实测用 Mock 实现：内存态 + 与桌面端同形返回。
- * window.go 不存在时由 api.ts 自动切换到本实现。
+ * window._wails 不存在时由 api.ts 自动切换到本实现。
  */
 
 // Mock 模式演示路径：占位目录，不要写真实用户目录进仓库

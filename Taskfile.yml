@@ -1,0 +1,48 @@
+version: '3'
+
+vars:
+  APP_NAME: mdview
+  BIN_DIR: build/bin
+  # 与 v2 的 -ldflags 注入一致：编译时间显示在设置页底部
+  BUILD_DATE: '{{ now | date "2006-01-02T15:04:05" }}'
+
+tasks:
+  build:
+    summary: Builds the application (frontend + bindings + syso + go build)
+    deps:
+      - frontend:build
+    cmds:
+      - task: bindings
+      - task: syso
+      - go build -tags desktop,production -gcflags=all="-N -l" -ldflags="-X mdview/internal/app.BuildDate={{.BUILD_DATE}}" -o {{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} .
+
+  build:production:
+    summary: Production build (stripped, windowsgui)
+    deps:
+      - frontend:build
+    cmds:
+      - task: bindings
+      - task: syso
+      - go build -tags "desktop,production" -trimpath -ldflags="-w -s -H windowsgui -X mdview/internal/app.BuildDate={{.BUILD_DATE}}" -o {{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} .
+
+  syso:
+    summary: Generates the Windows .syso (exe icon + version info); go build links it automatically
+    cmds:
+      - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -info build/windows/info.json -manifest build/windows/wails.exe.manifest -out mdview_windows_amd64.syso
+
+  frontend:build:
+    summary: Builds the frontend (vue-tsc + vite + sanitize-check)
+    dir: frontend
+    cmds:
+      - pnpm install --no-frozen-lockfile
+      - pnpm run build
+
+  bindings:
+    summary: Generates the TS bindings for the frontend
+    cmds:
+      - wails3 generate bindings -ts -d frontend/bindings
+
+  package:
+    summary: Packages the exe into a dist zip (see build.ps1 -Package)
+    cmds:
+      - pwsh -File build.ps1 -Package

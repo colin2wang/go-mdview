@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"mdview/internal/mdv"
 )
@@ -53,56 +53,59 @@ func WaitPidOf(args []string) int {
 // ProcessAlive 判断 pid 对应的进程是否仍在运行（Windows 用 OpenProcess 探测）。
 func ProcessAlive(pid int) bool { return processAlive(pid) }
 
-// App Wails 绑定层：前端可调用的全部方法挂在这里。
+// App Wails Service：前端可调用的全部方法挂在这里。
+// v3 用 Service 模式替代 v2 的 Bind + ctx：运行期对象经 ServiceStartup 拿到。
 type App struct {
-	ctx        context.Context
+	app        *application.App
+	win        *application.WebviewWindow
 	store      *mdv.Store
 	restarting atomic.Bool // 重启中：关闭前不能再把当前几何写回设置
-	draftDirty atomic.Bool // 前端有未保存草稿：BeforeClose 先取消关闭，让前端弹确认
+	draftDirty atomic.Bool // 前端有未保存草稿：关闭拦截先让前端弹确认
 }
 
-func NewApp() *App { return &App{store: mdv.NewStore()} }
+var singleton *App
 
-// Startup Wails 生命周期回调。
-func (a *App) Startup(ctx context.Context) {
-	a.ctx = ctx
+func NewApp() *App {
+	a := &App{store: mdv.NewStore()}
+	singleton = a
+	return a
+}
+
+// Instance 返回唯一的 App Service 实例（main.go 的 SingleInstance 回调使用）。
+func Instance() *App {
+	if singleton == nil {
+		return NewApp()
+	}
+	return singleton
+}
+
+// ServiceStartup Wails 生命周期回调（v2 的 Startup）。
+func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	a.app = application.Get()
 	// 外部文件修改监视：mdv 检测到变化后经 Wails 事件推给前端
 	a.store.SetFileChangeCallback(func(ev mdv.FileEvent) {
-		wruntime.EventsEmit(ctx, "file:watch", ev)
+		a.app.Event.Emit("file:watch", ev)
 	})
-	// 还原上次关闭时的窗口几何：尺寸已由 wails.Run 的 Width/Height 初始化，
-	// 这里补位置；最大化放在最后，退出最大化时能回到记录的普通尺寸
-	if st := a.store.GetSettings(); st.WinW > 0 && st.WinH > 0 {
-		a.restoreWindowPosition(ctx, st.WinX, st.WinY)
-		if st.WinMax {
-			wruntime.WindowMaximise(ctx)
-		}
-	}
-	// 拖拽 .md 打开由前端 JS runtime.OnFileDrop 处理（store.ts initApp）：
-	// Windows 上 Go 端 OnFileDrop 必须依赖 JS 端监听才会触发（Wails v2 #3985），
-	// 为避免同一次 drop 双路触发，这里不再重复注册。
+	return nil
 }
 
-// restoreWindowPosition 把窗口放到屏幕绝对坐标 (x, y)。
-// Wails 在 Windows 上的 WindowSetPosition 以「窗口当前显示器工作区左上角」为原点，
-// 而 WindowGetPosition 返回屏幕绝对坐标：先把窗口挪到相对 (0,0) 量出工作区原点，
-// 再用相对坐标一次定位。任务栏在左侧/顶部时工作区原点不为 0，不换算会每次启动漂移；
-// 先落到原点也保证换算基准与目标在同一块屏幕上，多显示器同时用不同 DPI 时同样成立。
-func (a *App) restoreWindowPosition(ctx context.Context, x, y int) {
-	wruntime.WindowSetPosition(ctx, 0, 0)
-	ox, oy := wruntime.WindowGetPosition(ctx)
-	wruntime.WindowSetPosition(ctx, x-ox, y-oy)
+// SetWindow 由 main 在创建窗口后注入；Service 启动早于 Run，无法在回调里创建。
+func (a *App) SetWindow(w *application.WebviewWindow) {
+	a.win = w
 }
 
-// BeforeClose 窗口关闭前记录几何，供下次启动还原（返回 false 不阻断关闭）。
-// 有未保存草稿时先取消关闭并让前端弹确认；用户确认后前端清标志再调 WindowClose。
-func (a *App) BeforeClose(ctx context.Context) bool {
+// OnWindowClosing 关闭拦截（对应 v2 的 BeforeClose）：
+// Windows 上标题栏 ✕ / Alt+F4 触发 WM_CLOSE → Windows.WindowClosing，此时窗口
+// 尚未真正关闭，放行须显式调 win.Close()。有未保存草稿时先取消关闭并让前端
+// 弹确认；用户确认后前端清标志再调 WindowClose（走 Quit）。
+// 无草稿则记录几何后放行。
+func (a *App) OnWindowClosing(win *application.WebviewWindow) {
 	if a.draftDirty.Load() {
-		wruntime.EventsEmit(ctx, "draft:close-request")
-		return true // 阻断本次关闭，等待前端决定
+		a.app.Event.Emit("draft:close-request")
+		return // 本次 WM_CLOSE 被否决，等待前端决定
 	}
-	a.saveWindowState(ctx)
-	return false
+	a.saveWindowState(win)
+	win.Close()
 }
 
 // SetDraftDirty 由前端同步「是否有未保存草稿」；关闭确认桥使用。
@@ -117,21 +120,21 @@ func (a *App) AllowImageDir(dir string) {
 
 // saveWindowState 只记录可还原的普通窗口几何：
 // 最大化时保留上次普通尺寸只置标记，最小化/全屏时坐标不可靠则原样保留。
-func (a *App) saveWindowState(ctx context.Context) {
+func (a *App) saveWindowState(win *application.WebviewWindow) {
 	if a.restarting.Load() { // 重启已主动清空几何，不能再写回去
 		return
 	}
 	st := a.store.GetSettings()
 	switch {
-	case wruntime.WindowIsFullscreen(ctx), wruntime.WindowIsMinimised(ctx):
+	case win.IsFullscreen(), win.IsMinimised():
 		return
-	case wruntime.WindowIsMaximised(ctx):
+	case win.IsMaximised():
 		st.WinMax = true
 		a.store.SaveSettings(st)
 		return
 	}
-	x, y := wruntime.WindowGetPosition(ctx)
-	w, h := wruntime.WindowGetSize(ctx)
+	x, y := win.Position()
+	w, h := win.Size()
 	if w < mdv.MinWindowWidth || h < mdv.MinWindowHeight || x < -30000 || y < -30000 {
 		return // 异常几何（窗口正在销毁/刚创建）不覆盖
 	}
@@ -161,21 +164,21 @@ func init() {
 
 // EmitOpenFile 通知前端打开一个文件（拖拽/二次实例共用）。
 func (a *App) EmitOpenFile(path string) {
-	if a.ctx == nil {
+	if a.app == nil {
 		return
 	}
-	wruntime.EventsEmit(a.ctx, "mdv:openfile", path)
+	a.app.Event.Emit("mdv:openfile", path)
 }
 
 // BringToFront 把已有窗口带到前台：二次启动（双击关联 .md 文件）时已有实例在后台
 // 运行，只把文件转给它的话，用户看到的是「什么都没发生」。最小化则还原，后台则置前。
-// 走 Wails 的 WindowShow——它内部经 mainWindow.Invoke 派发到创建窗口的主线程
+// 走 Wails 的 WindowShow——它内部派发到创建窗口的主线程
 // （窗口 API 跨线程调用会直接崩溃），并自带 SetForegroundWindow + SetFocus。
 func (a *App) BringToFront() {
-	if a.ctx == nil {
+	if a.win == nil {
 		return
 	}
-	wruntime.WindowShow(a.ctx)
+	a.win.Show()
 }
 
 // GetStartupFile 前端 mount 后拉取启动文件。
@@ -208,22 +211,25 @@ func (a *App) dialogTitle(zh, en, ja, de string) string {
 	}
 }
 
-// OpenFolderDialog 选择目录。
+// OpenFolderDialog 选择目录（v3 目录选择走 OpenFile 对话框的 CanChooseDirectories）。
 func (a *App) OpenFolderDialog() (string, error) {
-	return wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{
-		Title: a.dialogTitle("选择 Markdown 目录", "Select Markdown folder", "Markdown フォルダーを選択", "Markdown-Ordner auswählen"),
-	})
+	return a.app.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
+		CanChooseDirectories: true,
+		CanChooseFiles:       false,
+		Title:                a.dialogTitle("选择 Markdown 目录", "Select Markdown folder", "Markdown フォルダーを選択", "Markdown-Ordner auswählen"),
+	}).PromptForSingleSelection()
 }
 
 // OpenFileDialog 选择 .md 文件。
 func (a *App) OpenFileDialog() (string, error) {
-	return wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
-		Title: a.dialogTitle("打开 Markdown 文件", "Open Markdown file", "Markdown ファイルを開く", "Markdown-Datei öffnen"),
-		Filters: []wruntime.FileFilter{
+	return a.app.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
+		CanChooseFiles: true,
+		Title:          a.dialogTitle("打开 Markdown 文件", "Open Markdown file", "Markdown ファイルを開く", "Markdown-Datei öffnen"),
+		Filters: []application.FileFilter{
 			{DisplayName: "Markdown (*.md)", Pattern: "*.md;*.markdown;*.mdown;*.mkd"},
 			{DisplayName: a.dialogTitle("所有文件 (*.*)", "All files (*.*)", "すべてのファイル (*.*)", "Alle Dateien (*.*)"), Pattern: "*.*"},
 		},
-	})
+	}).PromptForSingleSelection()
 }
 
 // ListTree 目录树（带 2s 缓存）。
@@ -263,29 +269,24 @@ func (a *App) SaveMarkdown(path, content, encoding string) (mdv.FileContent, err
 	return fc, err
 }
 
-// StopWatch 停止外部修改监视（前端关闭当前文件时调用）。
-func (a *App) StopWatch() { a.store.StopWatch() }
-
-// FindByTitle wiki 链接解析（兼容旧调用）；FindByTitles 返回全部同名候选供消歧。
+// FindByTitle / FindByTitles 同名标题索引（目录树跳转用）。
 func (a *App) FindByTitle(root, title string) string    { return a.store.FindByTitle(root, title) }
 func (a *App) FindByTitles(root, title string) []string { return a.store.FindByTitles(root, title) }
 
-// GetHistory / PushHistory / ClearHistory 历史。
-// PushHistory/ClearHistory 不回传列表：前端拿到后会自行 GetHistory 刷新，
-// 绑定层多返回值会让 Wails 生成 boolean|Array 联合类型，与手写 api.ts 漂移。
+// 历史 / 收藏。
 func (a *App) GetHistory() []mdv.Entry   { return a.store.GetHistory() }
 func (a *App) PushHistory(path string)   { a.store.PushHistory(path) }
 func (a *App) ClearHistory()             { a.store.ClearHistory() }
 func (a *App) RemoveHistory(path string) { a.store.RemoveHistory(path) }
 
-// GetFavorites / ToggleFavorite 收藏。只回传切换后的状态，列表由前端经 GetFavorites 刷新。
 func (a *App) GetFavorites() []mdv.Entry { return a.store.GetFavorites() }
+
+// ToggleFavorite 切换收藏。只回传切换后的状态，列表由前端经 GetFavorites 刷新。
 func (a *App) ToggleFavorite(path string) bool {
 	added, _ := a.store.ToggleFavorite(path)
 	return added
 }
 
-// GetSettings / SaveSettings 设置。
 func (a *App) GetSettings() mdv.Settings                { return a.store.GetSettings() }
 func (a *App) SaveSettings(s mdv.Settings) mdv.Settings { return a.store.SaveSettings(s) }
 func (a *App) GetLastError() string                     { return a.store.LastError() }
@@ -300,20 +301,18 @@ func (a *App) SetTheme(theme string) {
 	a.store.SaveSettings(st)
 }
 
-// WindowPin 窗口置顶切换。
-func (a *App) WindowPin(pin bool) { wruntime.WindowSetAlwaysOnTop(a.ctx, pin) }
-
-// WindowMin / WindowMaxToggle / WindowClose 无边框窗口控制。
-func (a *App) WindowMin()       { wruntime.WindowMinimise(a.ctx) }
-func (a *App) WindowMaxToggle() { wruntime.WindowToggleMaximise(a.ctx) }
-func (a *App) WindowClose()     { wruntime.Quit(a.ctx) }
+// WindowPin / WindowMin / WindowMaxToggle 无边框窗口控制。
+func (a *App) WindowPin(pin bool) { a.win.SetAlwaysOnTop(pin) }
+func (a *App) WindowMin()         { a.win.Minimise() }
+func (a *App) WindowMaxToggle()   { a.win.ToggleMaximise() }
+func (a *App) WindowClose()       { a.app.Quit() }
 
 // RestartApp 清除记住的窗口几何与侧栏宽度并重启进程（设置页「重启」）。
 func (a *App) RestartApp() error {
 	if a.restarting.Swap(true) { // 防重复点击拉起多个实例
 		return nil
 	}
-	a.draftDirty.Store(false) // 前端已确认丢弃草稿，别让 BeforeClose 再弹一次
+	a.draftDirty.Store(false) // 前端已确认丢弃草稿，别让关闭拦截再弹一次
 	st := a.store.GetSettings()
 	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = 0, 0, 0, 0, false
 	st.SidebarWidth = mdv.DefaultSidebarWidth
@@ -322,7 +321,7 @@ func (a *App) RestartApp() error {
 		a.restarting.Store(false) // 拉不起来就留在当前窗口，前端会提示错误
 		return err
 	}
-	wruntime.Quit(a.ctx)
+	a.app.Quit()
 	return nil
 }
 
@@ -346,18 +345,14 @@ func (a *App) launchSelf() error {
 
 // WindowFullscreenToggle 全屏/退出全屏切换（标题栏 ⛶ 按钮）。
 func (a *App) WindowFullscreenToggle() {
-	if wruntime.WindowIsFullscreen(a.ctx) {
-		wruntime.WindowUnfullscreen(a.ctx)
-		return
-	}
-	wruntime.WindowFullscreen(a.ctx)
+	a.win.ToggleFullscreen()
 }
 
 // CopyText 写入系统剪贴板（复制文件路径 / 复制代码块）。
-func (a *App) CopyText(text string) { _ = wruntime.ClipboardSetText(a.ctx, text) }
+func (a *App) CopyText(text string) { _ = a.app.Clipboard.SetText(text) }
 
 // SetWindowTitle 同步系统任务栏标题。
-func (a *App) SetWindowTitle(title string) { wruntime.WindowSetTitle(a.ctx, title) }
+func (a *App) SetWindowTitle(title string) { a.win.SetTitle(title) }
 
 // RevealInShell 在资源管理器中显示文件所在目录。
 func (a *App) RevealInShell(path string) {
@@ -389,13 +384,13 @@ func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {
 	if filepath.Ext(defaultName) == "" {
 		defaultName += ".html"
 	}
-	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title:           a.dialogTitle("导出 HTML", "Export HTML", "HTML を書き出す", "HTML exportieren"),
-		DefaultFilename: defaultName,
-		Filters: []wruntime.FileFilter{
+	target, err := a.app.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
+		Title:    a.dialogTitle("导出 HTML", "Export HTML", "HTML を書き出す", "HTML exportieren"),
+		Filename: defaultName,
+		Filters: []application.FileFilter{
 			{DisplayName: "HTML (*.html)", Pattern: "*.html"},
 		},
-	})
+	}).PromptForSingleSelection()
 	if err != nil {
 		return "", err
 	}
@@ -413,13 +408,13 @@ func (a *App) SaveSvgDialog(title, content, defaultName string) (string, error) 
 	if filepath.Ext(defaultName) == "" {
 		defaultName += ".svg"
 	}
-	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title:           a.dialogTitle("导出 SVG", "Export SVG", "SVG を書き出す", "SVG exportieren"),
-		DefaultFilename: defaultName,
-		Filters: []wruntime.FileFilter{
+	target, err := a.app.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
+		Title:    a.dialogTitle("导出 SVG", "Export SVG", "SVG を書き出す", "SVG exportieren"),
+		Filename: defaultName,
+		Filters: []application.FileFilter{
 			{DisplayName: "SVG (*.svg)", Pattern: "*.svg"},
 		},
-	})
+	}).PromptForSingleSelection()
 	if err != nil {
 		return "", err
 	}
@@ -440,13 +435,13 @@ func (a *App) SaveImageDialog(defaultName string, dataURL string) (string, error
 	if filepath.Ext(defaultName) == "" {
 		defaultName += ".png"
 	}
-	target, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title:           a.dialogTitle("导出 PNG", "Export PNG", "PNG を書き出す", "PNG exportieren"),
-		DefaultFilename: defaultName,
-		Filters: []wruntime.FileFilter{
+	target, err := a.app.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
+		Title:    a.dialogTitle("导出 PNG", "Export PNG", "PNG を書き出す", "PNG exportieren"),
+		Filename: defaultName,
+		Filters: []application.FileFilter{
 			{DisplayName: "PNG (*.png)", Pattern: "*.png"},
 		},
-	})
+	}).PromptForSingleSelection()
 	if err != nil {
 		return "", err
 	}
