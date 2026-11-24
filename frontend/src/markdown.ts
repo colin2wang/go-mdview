@@ -91,8 +91,9 @@ function joinPath(dir: string, name: string): string {
 export function resolveImgHref(href: string, baseDir: string): string {
   if (!href) return href
   if (/^(https?:|data:|blob:)/i.test(href)) return href
-  // 浏览器/Mock 模式：无 /mdimg 回放路由，本地图片用内置示例图兜底
-  if (!(window as any).go) {
+  // 浏览器/Mock 模式：无 /mdimg 回放路由，本地图片用内置示例图兜底。
+  // v3 运行时挂载 window._wails（v2 的 window.go 已不存在），与 api.ts 的 isDesktop 保持一致。
+  if (typeof window === 'undefined' || window._wails === undefined) {
     return '/static/mock-sample.svg'
   }
   let p = href

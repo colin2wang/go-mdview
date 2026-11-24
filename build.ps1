@@ -53,17 +53,28 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 Write-Host "==> go build (desktop,production tags, build $buildDate)"
 Push-Location $root
 $env:GOOS = "windows"; $env:GOARCH = "amd64"
-# v2 的 wails build 内置了图标/版本资源嵌入；v3 需在编译前生成 .syso
-# （exe 图标 + info.json 版本信息，go build 自动链接包目录下的 *.syso）
-$wails3 = Get-Command wails3 -ErrorAction SilentlyContinue
-if ($wails3) {
-    wails3 generate syso -arch amd64 -icon build/windows/icon.ico -info build/windows/info.json -manifest build/windows/wails.exe.manifest -out mdview_windows_amd64.syso
-    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "syso generation failed" }
-} else {
-    Write-Host "==> wails3 CLI not found, skip .syso (exe will have no icon)" -ForegroundColor Yellow
+# v2 embedded icon/version resources via wails build; v3 needs an explicit .syso
+# (exe icon + info.json version info; go build links *.syso in the package dir).
+# wails3 usually lives in $(go env GOPATH)\bin, which may be absent from PATH.
+# Fail instead of skipping: skipping silently produced an iconless exe before.
+$wails3 = (Get-Command wails3 -ErrorAction SilentlyContinue).Source
+if (-not $wails3) {
+    $fallback = Join-Path (( & go env GOPATH ).Trim()) 'bin\wails3.exe'
+    if (Test-Path $fallback) { $wails3 = $fallback }
 }
+if (-not $wails3) { Pop-Location; throw "wails3 CLI not found (PATH and GOPATH\bin); cannot embed exe icon" }
+$syso = "$root\mdview_windows_amd64.syso"
+& $wails3 generate syso -arch amd64 -icon build/windows/icon.ico -info build/windows/info.json -manifest build/windows/wails.exe.manifest -out $syso
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $syso)) { Pop-Location; throw "syso generation failed" }
 go build -tags "desktop,production" -trimpath -ldflags "-w -s -H windowsgui $ldflags" -o "$outDir\mdview.exe" .
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "go build failed" }
+# Without a linked syso the exe has no icon; fail instead of shipping it.
+# Go's Windows resources are invisible to .NET VersionInfo, so count icons directly.
+if (-not ('MdviewIconProbe' -as [type])) {
+    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class MdviewIconProbe { [DllImport("shell32.dll", CharSet = CharSet.Auto)] public static extern IntPtr ExtractIconEx(string file, int index, IntPtr large, IntPtr small, uint icons); }'
+}
+$iconCount = [MdviewIconProbe]::ExtractIconEx("$outDir\mdview.exe", -1, [IntPtr]::Zero, [IntPtr]::Zero, 0).ToInt64()
+if ($iconCount -lt 1) { Pop-Location; throw "exe has no icon resource (syso not linked)" }
 Remove-Item Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
 # syso 已链接进 exe，清理生成的中间文件（按通配符删，避免文件名硬编码）
 Remove-Item "$root\*.syso" -Force -ErrorAction SilentlyContinue

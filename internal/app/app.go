@@ -97,7 +97,7 @@ func (a *App) SetWindow(w *application.WebviewWindow) {
 // OnWindowClosing 关闭拦截（对应 v2 的 BeforeClose）：
 // Windows 上标题栏 ✕ / Alt+F4 触发 WM_CLOSE → Windows.WindowClosing，此时窗口
 // 尚未真正关闭，放行须显式调 win.Close()。有未保存草稿时先取消关闭并让前端
-// 弹确认；用户确认后前端清标志再调 WindowClose（走 Quit）。
+// 弹确认；用户确认后前端清标志再调 WindowClose（显式记录几何后退出）。
 // 无草稿则记录几何后放行。
 func (a *App) OnWindowClosing(win *application.WebviewWindow) {
 	if a.draftDirty.Load() {
@@ -287,9 +287,15 @@ func (a *App) ToggleFavorite(path string) bool {
 	return added
 }
 
-func (a *App) GetSettings() mdv.Settings                { return a.store.GetSettings() }
-func (a *App) SaveSettings(s mdv.Settings) mdv.Settings { return a.store.SaveSettings(s) }
-func (a *App) GetLastError() string                     { return a.store.LastError() }
+func (a *App) GetSettings() mdv.Settings { return a.store.GetSettings() }
+func (a *App) SaveSettings(s mdv.Settings) mdv.Settings {
+	// 窗口几何只由 Go 维护：前端整包回传的是打开时的旧值，
+	// 直接写回会覆盖关闭/重启时刚记录的新几何。
+	current := a.store.GetSettings()
+	s.WinX, s.WinY, s.WinW, s.WinH, s.WinMax = current.WinX, current.WinY, current.WinW, current.WinH, current.WinMax
+	return a.store.SaveSettings(s)
+}
+func (a *App) GetLastError() string { return a.store.LastError() }
 
 // SetTheme 记录主题偏好（应用内配色由前端 data-theme 控制）。
 func (a *App) SetTheme(theme string) {
@@ -305,7 +311,16 @@ func (a *App) SetTheme(theme string) {
 func (a *App) WindowPin(pin bool) { a.win.SetAlwaysOnTop(pin) }
 func (a *App) WindowMin()         { a.win.Minimise() }
 func (a *App) WindowMaxToggle()   { a.win.ToggleMaximise() }
-func (a *App) WindowClose()       { a.app.Quit() }
+
+// WindowClose 是自绘标题栏 ✕ 与草稿确认后的统一退出口。
+// 这里不走 WindowClosing 钩子（Wails 的 win.Close() 只会触发 Common.WindowClosing，
+// 而保存逻辑挂在 Windows.WindowClosing 上），必须在 Quit 前显式记录几何。
+func (a *App) WindowClose() {
+	if a.win != nil {
+		a.saveWindowState(a.win)
+	}
+	a.app.Quit()
+}
 
 // RestartApp 清除记住的窗口几何与侧栏宽度并重启进程（设置页「重启」）。
 func (a *App) RestartApp() error {

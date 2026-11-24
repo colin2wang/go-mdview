@@ -6,8 +6,8 @@
 #   build/mdview.markdown.png  512x512, source for the .md file-association icon
 #   assets/mdview.ico          kept in the repo for reference
 #
-# wails3 task windows:build auto-runs icon + syso generation from build/appicon.png;
-# this script is for manual refresh only.
+# wails3 task build / build:production runs syso generation from build/windows/icon.ico;
+# this script is for manual refresh of the icon assets only.
 #
 # Usage:
 #   .\generate-icon.ps1

@@ -22,7 +22,16 @@ describe('preprocess', () => {
   })
 
   it('本地图片映射到 /mdimg 回放路由', () => {
-    expect(resolveImgHref('cover.png', 'D:/docs')).toMatch(/^\/mdimg\/[0-9a-f]+\/cover\.png$/)
+    window._wails = {}
+    try {
+      expect(resolveImgHref('cover.png', 'D:/docs')).toMatch(/^\/mdimg\/[0-9a-f]+\/cover\.png$/)
+    } finally {
+      delete window._wails
+    }
+  })
+
+  it('浏览器模式无回放路由时回退到内置示例图', () => {
+    expect(resolveImgHref('cover.png', 'D:/docs')).toBe('/static/mock-sample.svg')
   })
 })
 
