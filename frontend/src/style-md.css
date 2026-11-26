@@ -489,6 +489,11 @@
   height: auto; /* 配合 viewBox 的固有宽高比，避免 width="100%" 时塌成 0 高 */
   display: block;
 }
+/* Mermaid.js 默认 width="100%" 宽度优先，大图会被放到很高；改为高度优先：
+   先按视口高度封顶，再由 viewBox 的固有比例回算宽度，小图不受影响。 */
+.md-article .md-diagram[data-engine='mermaid'] .md-diagram-src svg {
+  max-height: min(62vh, 680px);
+}
 /* 连 viewBox 都没有的 SVG：浏览器算不出高度，给个可见的最小高度兜底 */
 .md-article .md-diagram-src svg:not([viewBox]) {
   min-height: 200px;
