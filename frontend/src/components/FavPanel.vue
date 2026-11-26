@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { store, openEntry, toggleFavorite } from '../store'
-import { showMenu } from './ContextMenu.vue'
+import { showMenu } from '../context-menu'
 import { getApi } from '../api'
 import { t } from '../i18n'
 

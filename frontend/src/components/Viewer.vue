@@ -19,7 +19,7 @@ import {
   syncDraftDirty,
   navPushAnchor
 } from '../store'
-import { showMenu, hideMenu } from './ContextMenu.vue'
+import { showMenu, hideMenu } from '../context-menu'
 import CodeEditor from './CodeEditor.vue'
 import { getApi } from '../api'
 import { renderDiagramsIn, renderMathIn } from '../markdown'
@@ -1041,7 +1041,6 @@ async function quickSwitch() {
     toast(t('toast.noRecent'), 'info')
     return
   }
-  const { showMenu } = await import('./ContextMenu.vue')
   showMenu(120, 64, recent.map((p) => ({ label: p, action: () => void openEntry(p) })))
 }
 

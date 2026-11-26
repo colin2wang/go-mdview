@@ -6,7 +6,9 @@
 #   .\generate-icon.ps1    # regenerate icon assets only
 param(
     [switch]$Clean,
-    [switch]$Package
+    [switch]$Package,
+    # 主版本号（显示在设置页 "(1.0.0 build ...)" 中），发布时按需修改
+    [string]$Version = "1.0.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,9 +62,9 @@ Pop-Location
 # 3) Backend exe (output stays at build\bin\, same as v2).
 # Build date injected into the exe (shown at the bottom of the Settings dialog).
 # Local time (not UTC), ISO with no spaces: safe for go -ldflags -X; the frontend
-# renders it as "(build yyyy-MM-dd HH:mm:ss)".
+# renders it as "(<Version> build yyyy-MM-dd HH:mm:ss)" (version via $Version).
 $buildDate = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
-$ldflags = "-X mdview/internal/app.BuildDate=$buildDate"
+$ldflags = "-X mdview/internal/app.BuildDate=$buildDate -X mdview/internal/app.BuildVersion=$Version"
 $outDir = "$root\build\bin"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 Write-Host "==> go build (desktop,production tags, build $buildDate)"

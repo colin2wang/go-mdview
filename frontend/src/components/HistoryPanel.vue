@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { store, openEntry, clearHistory, removeHistory, toggleFavorite } from '../store'
-import { showMenu } from './ContextMenu.vue'
+import { showMenu } from '../context-menu'
 import { getApi } from '../api'
 import { t } from '../i18n'
 

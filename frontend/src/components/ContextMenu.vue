@@ -1,35 +1,8 @@
-<script lang="ts">
-import { reactive } from 'vue'
-
-/** 模块级单例状态：任意组件 import { showMenu } 即可呼出。 */
-export const menuState = reactive({
-  open: false,
-  x: 0,
-  y: 0,
-  items: [] as MenuItem[]
-})
-
-export interface MenuItem {
-  label: string
-  action: () => void
-  danger?: boolean
-}
-
-export function showMenu(x: number, y: number, items: MenuItem[]) {
-  menuState.x = Math.max(4, Math.min(x, window.innerWidth - 190))
-  menuState.y = Math.max(4, Math.min(y, window.innerHeight - 40 * items.length - 12))
-  menuState.items = items
-  menuState.open = true
-}
-export function hideMenu() {
-  menuState.open = false
-}
-</script>
-
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
+import { hideMenu, menuState, type MenuItem } from '../context-menu'
 
-// menuState/hideMenu/MenuItem 来自同文件 plain <script> 导出，同模块作用域可直接使用
+// 菜单状态来自纯 TS 模块（.vue 的命名导出无法被 vue-tsc 识别）
 function run(it: MenuItem) {
   hideMenu()
   it.action()

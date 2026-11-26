@@ -438,7 +438,7 @@ const assocTip = computed(() => {
           </div>
 
           <div class="set-about">
-            <p><b>mdview</b> · {{ t('set.about.desc') }} <span v-if="buildLabel" class="build-info">(build {{ buildLabel }})</span></p>
+            <p><b>mdview</b> · {{ t('set.about.desc') }} <span v-if="buildLabel" class="build-info">({{ buildLabel }})</span></p>
             <p class="sub">{{ t('set.about.hint') }}</p>
           </div>
         </div>

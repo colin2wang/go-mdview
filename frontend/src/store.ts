@@ -253,10 +253,6 @@ function removeToast(id: number) {
   if (i >= 0) store.toasts.splice(i, 1)
 }
 
-function favOf(path: string): boolean {
-  return store.favorites.some((f) => f.path === path)
-}
-
 // ---------- 渲染 ----------
 
 async function renderCurrent(fc: FileContent) {
@@ -561,7 +557,7 @@ export async function openWikiLink(title: string, anchor = '') {
   const hits = await api.FindByTitles(fileToDir(store.current.path), base)
   if (hits.length > 1) {
     // 同名笔记不静默取第一个：弹列表让用户选
-    const { showMenu } = await import('./components/ContextMenu.vue')
+    const { showMenu } = await import('./context-menu')
     showMenu(
       Math.round(window.innerWidth / 2),
       Math.round(window.innerHeight / 2),
@@ -796,7 +792,7 @@ export async function initApp() {
         void handleOpenEvent(files[0])
         return
       }
-      void import('./components/ContextMenu.vue').then(({ showMenu }) => {
+      void import('./context-menu').then(({ showMenu }) => {
         showMenu(Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), [
           { label: t('drop.openFirst'), action: () => void handleOpenEvent(files[0]) },
           {

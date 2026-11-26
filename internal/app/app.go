@@ -24,6 +24,9 @@ const RelaunchFlag = "--mdview-relaunch"
 // BuildDate 编译时间（UTC），由 build.ps1 经 -ldflags -X 注入；开发态为 "dev"。
 var BuildDate = "dev"
 
+// BuildVersion 主版本号，由 build.ps1 经 -ldflags -X 注入；开发态为 "dev"。
+var BuildVersion = "dev"
+
 // WaitPidFlagPrefix 旧进程 PID 参数：新进程轮询该 PID 退出后再启动，
 // 替代固定 sleep——慢机器上 1.2s 未必够，快机器上白等。
 const WaitPidFlagPrefix = "--mdview-wait-pid="
@@ -189,8 +192,14 @@ func (a *App) GetStartupFile() string {
 	return ""
 }
 
-// BuildInfo 设置页底部显示的编译信息（编译时间，build.ps1 注入）。
-func (a *App) BuildInfo() string { return BuildDate }
+// BuildInfo 设置页底部显示的编译信息（版本号 + 编译时间，build.ps1 注入），
+// 形如 "1.0.0 build 2026-11-26T23:09:26"；开发态为 "dev"。
+func (a *App) BuildInfo() string {
+	if BuildVersion == "dev" && BuildDate == "dev" {
+		return "dev"
+	}
+	return BuildVersion + " build " + BuildDate
+}
 
 // SetStartupFile 供二次实例启动时更新。
 func (a *App) SetStartupFile(p string) {
