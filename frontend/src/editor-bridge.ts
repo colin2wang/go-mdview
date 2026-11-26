@@ -33,6 +33,30 @@ export function srcHeadingLines(): number[] {
   return out
 }
 
+/** 与 .md-article 内标题的 scroll-margin-top 保持一致（style-md.css）。 */
+export const SCROLL_ALIGN = 24
+
+export function srcScroller(): HTMLElement | null {
+  return srcEditor.cm?.getScrollerElement() ?? null
+}
+
+/**
+ * 像素级源码滚动。入参为**滚动位置**（SCROLL_ALIGN 已在 sync.ts 内消化）；
+ * 返回写入的 top 与是否被钳位（钳位 = 映射目标超出源码最大滚动，调用方可据此自愈）。
+ */
+export function scrollSrcToPx(px: number): { top: number; clamped: boolean } {
+  const sc = srcScroller()
+  if (!sc) return { top: 0, clamped: false }
+  const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
+  const top = Math.max(0, Math.min(px, max))
+  if (Math.abs(sc.scrollTop - top) > 400) {
+    sc.scrollTo({ top, behavior: 'smooth' })
+  } else {
+    sc.scrollTo(0, top)
+  }
+  return { top, clamped: px > max + 1 }
+}
+
 /** 把第 line 行（0-based）滚到源码视口顶部。 */
 export function scrollSrcToLine(line: number, smooth = false): void {
   const cm = srcEditor.cm

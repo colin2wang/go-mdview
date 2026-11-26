@@ -437,6 +437,35 @@ export function diagramCard(kind: DiagramKind, label: string, code: string): str
 
 // ---------- 主渲染 ----------
 
+// ---------- 块级源码行号注入（同步滚动 data-sl） ----------
+let slMd = ''
+let slCursor = 0
+let slLineMap: number[] = []
+
+/** marked.parse 前调用：跟踪预处理文本与行映射（与现有锚点生成同源） */
+function beginSlTracking(md: string, lineMap: number[]): void {
+  slMd = md
+  slCursor = 0
+  slLineMap = lineMap
+}
+
+/** token 原文 → 原文件行号（游标法 + lineMap 回映射预处理前行号） */
+function tokenSrcLine(raw: string): number {
+  if (!raw) return -1
+  const i = slMd.indexOf(raw, slCursor)
+  if (i < 0) return -1
+  slCursor = i + raw.length
+  const pre = slMd.slice(0, i).split('\n').length - 1
+  return slLineMap[pre] ?? pre
+}
+
+/** 块级 HTML 注入 data-sl="原文件行号"；找不到原文时原样返回 */
+function withSl(html: string, raw: string): string {
+  const line = tokenSrcLine(raw)
+  if (line < 0) return html
+  return html.replace(/^<([a-zA-Z][\w-]*)/, `<$1 data-sl="${line}"`)
+}
+
 export async function renderMarkdown(
   src: string,
   baseDir: string,
@@ -446,20 +475,21 @@ export async function renderMarkdown(
   const [marked, hljs] = await Promise.all([freshMarked(), ensureHljs()])
   const slug = makeSluger()
   const { md, footnotes, lineMap } = preprocess(src)
+  beginSlTracking(md, lineMap)
 
   const renderer: any = {
     heading(token: any) {
       const text = this.parser.parseInline(token.tokens)
       const plain = plainText(token.tokens)
       const id = slug(plain)
-      return `<h${token.depth} id="${id}">${text}</h${token.depth}>\n`
+      return withSl(`<h${token.depth} id="${id}">${text}</h${token.depth}>\n`, token.raw)
     },
     code(token: any) {
       const lang = (token.lang ?? '').trim().split(/\s+/)[0] ?? ''
       const text = token.text ?? ''
       // mermaid / svg 走图形卡片（可切源码），其余走代码块卡片
       const kind = diagramKindOf(lang, text)
-      if (kind) return diagramCard(kind, lang || kind, text)
+      if (kind) return withSl(diagramCard(kind, lang || kind, text), token.raw)
 
       let body: string
       try {
@@ -473,16 +503,53 @@ export async function renderMarkdown(
       }
       const cls = lang ? ` class="hljs language-${escapeHtml(lang)}"` : ' class="hljs"'
       // 头部工具条：语言标签 + 复制按钮（复制按钮悬停才显形）
-      return (
+      return withSl(
         `<div class="code-block${lang ? ' has-lang' : ''}">` +
-        `<div class="code-head">` +
-        `<span class="code-lang">${lang ? escapeHtml(lang) : 'text'}</span>` +
-        `<span class="code-tools">` +
-        `<button type="button" class="code-copy" data-copy title="${escapeHtml(t('code.copy.tip'))}">${COPY_ICON}</button>` +
-        `</span>` +
-        `</div>` +
-        `<pre><code${cls}>${body}</code></pre></div>\n`
+          `<div class="code-head">` +
+          `<span class="code-lang">${lang ? escapeHtml(lang) : 'text'}</span>` +
+          `<span class="code-tools">` +
+          `<button type="button" class="code-copy" data-copy title="${escapeHtml(t('code.copy.tip'))}">${COPY_ICON}</button>` +
+          `</span>` +
+          `</div>` +
+          `<pre><code${cls}>${body}</code></pre></div>\n`,
+        token.raw
       )
+    },
+    paragraph(token: any) {
+      // marked v15 默认输出（defaults.renderer 在 use 前为 null，只能内联实现）
+      return withSl(`<p>${this.parser.parseInline(token.tokens)}</p>\n`, token.raw)
+    },
+    blockquote(token: any) {
+      return withSl(`<blockquote>\n${this.parser.parse(token.tokens)}</blockquote>\n`, token.raw)
+    },
+    table(token: any) {
+      // 复刻 marked v15 默认 table renderer：header/tbody + 对齐属性
+      const cell = (tokens: any[], flags: { header: boolean; align: string }): string => {
+        const tag = flags.header ? 'th' : 'td'
+        const align = flags.align ? ` align="${flags.align}"` : ''
+        return `<${tag}${align}>${this.parser.parseInline(tokens)}</${tag}>\n`
+      }
+      let header = ''
+      if (token.header.length > 0) {
+        header += '<tr>\n'
+        for (let i = 0; i < token.header.length; i++) {
+          header += cell(token.header[i].tokens, { header: true, align: token.align[i] })
+        }
+        header += '</tr>\n'
+      }
+      let body = ''
+      for (const row of token.rows) {
+        body += '<tr>\n'
+        for (let j = 0; j < row.length; j++) {
+          body += cell(row[j].tokens, { header: false, align: token.align[j] })
+        }
+        body += '</tr>\n'
+      }
+      if (body) body = `<tbody>\n${body}</tbody>\n`
+      let html = '<table>\n'
+      if (header) html += `<thead>\n${header}</thead>\n`
+      html += body + '</table>\n'
+      return withSl(html, token.raw)
     },
     image(token: any) {
       let href = resolveImgHref(token.href ?? '', baseDir)

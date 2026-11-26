@@ -3,6 +3,7 @@ import { preprocess, resolveImgHref } from '../markdown'
 import { parseMarkdown } from '../mindmap'
 import { countPreviewText, countStats } from '../stats'
 import { remoteAllowed, stripSvgExternalRefs } from '../sanitize-common.js'
+import { interpIn } from '../sync'
 
 describe('preprocess', () => {
   it('摘除脚注定义、保留围栏里的 #', () => {
@@ -67,5 +68,37 @@ describe('sanitize-common', () => {
     expect(s).not.toContain('data:')
     expect(s).not.toContain('evil.tld')
     expect(s).toContain('#local')
+  })
+})
+
+describe('sync interpIn', () => {
+  const pts = [
+    { y: 0, s: 0, line: 0 },
+    { y: 100, s: 80, line: 4 },
+    { y: 300, s: 200, line: 10 },
+    { y: 900, s: 480, line: Number.MAX_SAFE_INTEGER }
+  ]
+
+  it('段内线性插值', () => {
+    expect(interpIn(pts, 200, 'y', 's')).toBe(140)
+  })
+
+  it('端点外推', () => {
+    expect(interpIn(pts, -50, 'y', 's')).toBe(-40)
+    expect(interpIn(pts, 1200, 'y', 's')).toBe(620)
+  })
+
+  it('退化段不除零', () => {
+    const d = [
+      { y: 0, s: 0, line: 0 },
+      { y: 100, s: 100, line: 3 },
+      { y: 100, s: 140, line: 4 }
+    ]
+    expect(interpIn(d, 150, 'y', 's')).toBe(100)
+  })
+
+  it('点表不足返回 null', () => {
+    expect(interpIn([], 5, 'y', 's')).toBeNull()
+    expect(interpIn([{ y: 0, s: 0, line: 0 }], 5, 'y', 's')).toBeNull()
   })
 })

@@ -23,7 +23,19 @@ import CodeEditor from './CodeEditor.vue'
 import { getApi } from '../api'
 import { renderDiagramsIn, renderMathIn } from '../markdown'
 import { countPreviewText, countStats } from '../stats'
-import { srcEditor } from '../editor-bridge'
+import { srcEditor, scrollSrcToPx } from '../editor-bridge'
+import {
+  invalidateSync,
+  isSyncDirty,
+  hasSyncMarks,
+  resetSyncState,
+  rebuildSync,
+  renderToSource,
+  sourceToRender,
+  activeHeadingId,
+  syncDiagnostics,
+  type RebuildResult
+} from '../sync'
 import { status } from '../status'
 import { t } from '../i18n'
 import type { ViewMode } from '../types'
@@ -172,8 +184,34 @@ async function saveDraft() {
 // 这里只兜底取消尚未落地的防抖渲染，不能再拿旧草稿覆盖新文件内容。
 watch(
   () => store.current?.path,
-  () => cancelDraftTimer()
+  () => {
+    cancelDraftTimer()
+    resetSyncRuntime()
+  }
 )
+// 字号/编辑态切换会影响布局，对齐点表置脏，下次滚动前重建
+watch(() => store.settings?.fontSize, () => invalidateSync())
+watch(editing, () => invalidateSync())
+// 补全失效源（源码侧）：换行/行号切换、分栏宽度、窗口缩放都会改变源码几何，
+// 漏掉任何一个都会让源码刻度整体漂移（渲染→源码被钳位提前钉底的元凶）
+watch(() => store.settings?.codeWrap, () => invalidateSync())
+watch(() => store.settings?.lineNo, () => invalidateSync())
+const srcRo = new ResizeObserver(() => invalidateSync())
+watch(srcPaneEl, (el) => {
+  if (el) srcRo.observe(el)
+})
+const onWinResize = () => invalidateSync()
+window.addEventListener('resize', onWinResize, { passive: true })
+// 进入 split / 打开同步开关：清状态，等布局稳定两帧再允许重建
+// （避免在 flex 样式未应用的帧量到 0 高，产生全零 marks）
+watch([isSplit, syncScroll], () => {
+  resetSyncRuntime()
+  requestAnimationFrame(() => requestAnimationFrame(() => invalidateSync()))
+})
+// dev 诊断出口：console 里 __syncDiag() 一眼看清刻度是否吻合
+if (import.meta.env.DEV) {
+  ;(window as any).__syncDiag = () => syncDiagnostics(renderScrollEl.value, srcEditor.cm)
+}
 
 /** 编辑器挂载/重新可见后需要重算尺寸（v-show 隐藏期间容器无尺寸） */
 function refreshEditor() {
@@ -238,116 +276,72 @@ function justMirrored() {
   return performance.now() - mirrorAt < 80
 }
 
-// ---------- 源码 ⇄ 正文 位置映射（锚点表） ----------
-// 按比例镜像在两边高度不成比例时必然对不上（源码有底部留白、正文有图形/表格）。
-// 参考 mdeditor：以「源码标题行 ↔ 渲染标题块」为锚点建表，中间按线性插值，
-// 锚点不足时（无标题/预览隐藏）才回落到比例镜像。
-interface Anchor {
-  line: number
-  srcTop: number
-  pvTop: number
-}
-let anchors: Anchor[] = []
+// ---------- 源码 ⇄ 正文 位置映射（sync.ts 对齐点表） ----------
+// 以 data-sl 块级锚点 + 标题锚点建点表，段内线性插值、端点外推；异步布局变化后
+// 置脏，下次滚动前由 ensureMarks 重建。点表不足时回落到比例镜像。
 
 function srcLineTop(line: number): number {
   const cm = srcEditor.cm
   if (!cm) return 0
   return cm.heightAtLine(Math.max(0, Math.min(line, cm.lineCount() - 1)), 'local')
 }
-function srcLineCount(): number {
-  return srcEditor.cm?.lineCount() ?? shownText.value.split('\n').length
-}
 
-/** 重建锚点表：同源锚点（markdown.ts 一次 lexer 遍历产出）的源码行号 ↔ 渲染块在正文里的位置。 */
-function rebuildAnchors(): Anchor[] {
-  anchors = []
+/** 滚动前确保对齐点表有效：脏了就重建；源码几何可疑时 refresh 重测，下一帧再建 */
+function ensureMarks(): boolean {
+  const art = articleEl.value
   const sc = renderScrollEl.value
-  if (!sc || !showRender.value || store.currentKind !== 'markdown') return anchors
-  const pvMax = Math.max(0, sc.scrollHeight - sc.clientHeight)
-  const list: Anchor[] = [{ line: 0, srcTop: 0, pvTop: 0 }]
-  for (const a of store.srcAnchors) {
-    const el = document.getElementById(a.id)
-    if (!el || !sc.contains(el)) continue
-    const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop
-    const st = srcLineTop(a.line)
-    if (st <= list[list.length - 1]!.srcTop) continue // 保持单调
-    list.push({ line: a.line, srcTop: st, pvTop: Math.max(0, Math.min(top - 8, pvMax)) })
+  const cm = srcEditor.cm
+  if (!art || !sc || !cm || store.currentKind !== 'markdown') return hasSyncMarks()
+  if (!isSyncDirty() && hasSyncMarks()) return true
+  const res: RebuildResult = rebuildSync(art, sc, cm, store.srcAnchors)
+  if (res === 'stale') {
+    try {
+      cm.refresh()
+    } catch {
+      /* CM 会在下一帧完成重测量 */
+    }
+    requestAnimationFrame(() => invalidateSync()) // 重测后下一帧重建
   }
-  const lastLine = Math.max(0, srcLineCount() - 1)
-  // 末尾锚点用「源码可滚动到底」而不是最后一行行高：源码底部还有阅读留白
-  const srcEl = sourceScroller()
-  const lastSrc = srcEl ? Math.max(0, srcEl.scrollHeight - srcEl.clientHeight) : srcLineTop(lastLine)
-  if (lastSrc > list[list.length - 1]!.srcTop && pvMax > 0) {
-    list.push({ line: lastLine, srcTop: lastSrc, pvTop: pvMax })
-  }
-  anchors = list.length >= 2 ? list : []
-  return anchors
+  return hasSyncMarks()
 }
 
-// Mermaid/KaTeX/懒加载图片会在渲染完成后继续改变布局，锚点表里的 offsetTop 会过期；
-// 置脏后等下次滚动同步前再重建，避免持续全量重算
-let anchorsDirty = true
-function invalidateAnchors(): void {
-  anchorsDirty = true
-}
-
-function useAnchors(): Anchor[] {
-  if (anchorsDirty || anchors.length < 2) {
-    anchorsDirty = false
-    rebuildAnchors()
-  }
-  return anchors
-}
-
-/** 源码滚动位置 → 正文滚动位置（锚点间线性插值；返回 null 表示锚点不足） */
+/** 源码滚动位置 → 正文滚动位置（点表插值；返回 null 表示点表不足，回落镜像） */
 function previewTopForSrcTop(top: number): number | null {
   const sc = renderScrollEl.value
-  if (!sc) return null
-  const a = useAnchors()
-  if (a.length < 2) return null
+  if (!sc || !ensureMarks()) return null
+  const y = sourceToRender(top)
+  if (y == null) return null
   const pvMax = Math.max(0, sc.scrollHeight - sc.clientHeight)
-  if (top <= a[0]!.srcTop + 0.5) return 0
-  const last = a[a.length - 1]!
-  if (top >= last.srcTop - 0.5) return pvMax
-  let i = 0
-  for (let k = 1; k < a.length; k++) {
-    if (a[k]!.srcTop <= top) i = k
-    else break
-  }
-  const a1 = a[i]!
-  const a2 = a[i + 1]!
-  const span = a2.srcTop - a1.srcTop
-  if (span <= 0) return a1.pvTop
-  const r = (top - a1.srcTop) / span
-  return Math.max(0, Math.min(a1.pvTop + r * (a2.pvTop - a1.pvTop), pvMax))
+  return Math.max(0, Math.min(y, pvMax))
 }
 
-/** 正文滚动位置 → 源码滚动位置（反向插值；返回 null 表示锚点不足） */
+/** 正文滚动位置 → 源码滚动位置（反向插值；返回 null 表示点表不足，回落镜像） */
 function srcTopForPreviewTop(pvTop: number): number | null {
   const src = sourceScroller()
-  if (!src) return null
-  const a = useAnchors()
-  if (a.length < 2) return null
-  if (pvTop <= a[0]!.pvTop + 0.5) return 0
-  const last = a[a.length - 1]!
-  if (pvTop >= last.pvTop - 0.5) return Math.max(0, src.scrollHeight - src.clientHeight)
-  let i = 0
-  for (let k = 1; k < a.length; k++) {
-    if (a[k]!.pvTop <= pvTop) i = k
-    else break
-  }
-  const a1 = a[i]!
-  const a2 = a[i + 1]!
-  const span = a2.pvTop - a1.pvTop
-  if (span <= 0) return a1.srcTop
-  const r = (pvTop - a1.pvTop) / span
-  return Math.max(0, a1.srcTop + r * (a2.srcTop - a1.srcTop))
+  if (!src || !ensureMarks()) return null
+  const st = renderToSource(pvTop)
+  if (st == null) return null
+  const srcMax = Math.max(0, src.scrollHeight - src.clientHeight)
+  return Math.max(0, Math.min(st, srcMax))
 }
 
 function markMirrored() {
   mirrorAt = performance.now()
   syncing = true
   requestAnimationFrame(() => (syncing = false))
+}
+
+// 双向同步的运行时状态：lastSet 记录程序写入的对侧位置（阈值内视作回声），
+// lockUntil 是同步锁时间戳（80ms 内忽略对侧回声），resetSyncRuntime 在切文件时复位
+let rafRd = 0
+let rafSrc = 0
+let lockUntil = 0
+const lastSet = { src: -1, rd: -1 }
+function resetSyncRuntime(): void {
+  lastSet.src = -1
+  lastSet.rd = -1
+  lockUntil = 0
+  resetSyncState()
 }
 
 /** 源码滚动 → 正文（编辑态唯一的同步方向） */
@@ -469,16 +463,12 @@ function scrollToAnchor(anchor: string) {
   sc.scrollTo({ top: sc.scrollTop + top - 8, behavior: 'smooth' })
 }
 
-// 标题元素缓存：渲染后收集一次，滚动时只读缓存，避免每帧 querySelectorAll
-let headCache: HTMLElement[] = []
+// 标题高亮：由 sync.ts 的对齐点表在滚动时一并给出（activeHeadingId），
+// 不再逐帧 querySelectorAll
 
-function spyHeading(sc: HTMLElement) {
-  let active = ''
-  for (const h of headCache) {
-    if (h.offsetTop <= sc.scrollTop + 80) active = h.id
-    else break
-  }
-  store.activeHeading = active
+function invalidateAnchors(): void {
+  // Mermaid/KaTeX/懒加载图片异步撑高布局，对齐点表失效，下次滚动前重建
+  invalidateSync()
 }
 
 /** 正文挂载后的补充渲染：Mermaid/SVG 图 + 数学公式。force 用于主题切换后的重绘。 */
@@ -505,10 +495,8 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
     store.currentKind === 'markdown' && mode.value !== 'mindmap' && mode.value !== 'source'
       ? countPreviewText(art)
       : 0
-  // 渲染结果变了 → 标题缓存与锚点表失效，重建后再还原滚动位置
-  headCache = Array.from(art.querySelectorAll<HTMLElement>('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]'))
-  rebuildAnchors()
-  anchorsDirty = false
+  // 渲染结果变了 → 对齐点表失效，下次滚动前重建
+  invalidateSync()
 
   const sc = renderScrollEl.value
   if (!sc) return
@@ -535,29 +523,60 @@ async function afterRender(redrawDiagram: boolean, keepRatio?: number) {
 }
 
 // scroll 事件一帧可触发多次，且处理里有 DOM 读写；统一 rAF 节流，一帧最多算一次
-let renderRaf = 0
+// 饱和自愈节流：渲染远未到底、源码却被钳住 → 映射过期，强制重建
+let lastHeal = 0
+
 function onRenderScroll() {
-  if (renderRaf) return
-  renderRaf = requestAnimationFrame(() => {
-    renderRaf = 0
+  if (rafRd) return
+  rafRd = requestAnimationFrame(() => {
+    rafRd = 0
     const sc = renderScrollEl.value
     if (!sc) return
     rememberRender(sc)
     // 程序写入的位置只记账、不再往回同步，否则两边互相牵引
     if (justMirrored()) return
-    spyHeading(sc)
-    syncPreviewToSource()
+    // 标题高亮与同步滚动共用对齐点表（编辑态也照常更新）
+    if (ensureMarks()) {
+      const hid = activeHeadingId(sc)
+      if (hid && hid !== store.activeHeading) store.activeHeading = hid
+    }
+    if (!isSplit.value || !syncScroll.value || editing.value) return
+    if (Date.now() < lockUntil) return
+    if (Math.abs(sc.scrollTop - lastSet.rd) < 2) return // 程序滚动回声抑制
+    const t = renderToSource(sc.scrollTop) // v2：入参/出参均为滚动位置
+    if (t == null) return syncPreviewToSource() // 点表不足回落比例镜像
+    const res = scrollSrcToPx(t)
+    lockUntil = Date.now() + 80 // 同步锁：抑制对侧回声
+    lastSet.src = res.top // 与 scrollTop 同一坐标系
+    // 饱和自愈：渲染远未到底、源码却被钳住 → 映射过期，强制重建
+    const R = sc.scrollHeight - sc.clientHeight
+    if (res.clamped && sc.scrollTop < R * 0.85 && Date.now() - lastHeal > 800) {
+      lastHeal = Date.now()
+      invalidateSync()
+    }
   })
 }
 
-/** 源码侧滚动（CodeMirror 的 scroll 事件）：按锚点表同步到正文 */
-let srcRaf = 0
+/** 源码侧滚动（CodeMirror 的 scroll 事件）：按对齐点表同步到正文 */
 function onSrcScroll() {
-  if (srcRaf) return
-  srcRaf = requestAnimationFrame(() => {
-    srcRaf = 0
+  if (rafSrc) return
+  rafSrc = requestAnimationFrame(() => {
+    rafSrc = 0
     if (justMirrored()) return
-    syncSourceToPreview()
+    if (!isSplit.value || !syncScroll.value) return
+    if (Date.now() < lockUntil) return
+    const sc = sourceScroller()
+    const rd = renderScrollEl.value
+    if (!sc || !rd) return
+    if (Math.abs(sc.scrollTop - lastSet.src) < 2) return
+    if (!ensureMarks()) return syncSourceToPreview()
+    const y = sourceToRender(sc.scrollTop)
+    if (y == null) return syncSourceToPreview()
+    lockUntil = Date.now() + 80
+    const target = Math.max(0, Math.min(y, Math.max(0, rd.scrollHeight - rd.clientHeight)))
+    lastSet.rd = target
+    rd.scrollTop = target
+    rememberRender(rd)
   })
 }
 
@@ -773,6 +792,8 @@ onBeforeUnmount(() => {
   artResize?.disconnect()
   artResize = null
   articleEl.value?.removeEventListener('load', invalidateAnchors, true)
+  srcRo.disconnect()
+  window.removeEventListener('resize', onWinResize)
 })
 // ---------- 快捷键 ----------
 // Ctrl+A 浏览器默认全选整页：分栏时左右两个面板（连同侧栏）会一起高亮。

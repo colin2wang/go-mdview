@@ -11,10 +11,11 @@
   word-wrap: break-word;
 }
 
-/* 对照模式：分栏里不再居中留白，改为贴边紧凑排版 */
+/* 对照模式：分栏里不再居中留白，改为贴边紧凑排版。
+   底部留白收敛到 18vh：过大的死区会放大同步刻度误差（配合 sync.ts 端点 (R,S)） */
 .md-article.in-split {
   max-width: none;
-  padding: 20px 24px 55vh 24px;
+  padding: 20px 24px 18vh 24px;
 }
 
 .md-article h1,

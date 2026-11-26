@@ -75,8 +75,9 @@ onMounted(() => {
     indentUnit: 2,
     tabSize: 2,
     indentWithTabs: false,
-    // 只渲染视口附近的行，长文档同样流畅
-    viewportMargin: 30,
+    // 全量测量所有行（Infinity）：heightAtLine 精确到真实行高，
+    // 同步滚动的源码刻度才不会因未测量行的估算行高整体漂移
+    viewportMargin: Infinity,
     autocapitalize: false,
     spellcheck: false
   })
