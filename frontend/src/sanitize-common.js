@@ -133,6 +133,28 @@ export function svgConfig(parts, allowStyle = false) {
   }
 }
 
+/**
+ * Mermaid 输出专用配置：节点文字在 securityLevel:'strict' 下仍渲染于
+ * <foreignObject>（htmlLabels），SVG profile 不含它和内部的 HTML 标签，
+ * 全部放行文字才会显示。仅用于 mermaid.render 的产物（strict 已转义标签内容，
+ * 且仍过 DOMPurify + hook），用户手写的内联 SVG 保持 svgConfig 的严格口径。
+ */
+export function mermaidSvgConfig(parts) {
+  // DOMPurify 先查 FORBID_TAGS，ADD_TAGS 盖不掉禁表里的 foreignObject；
+  // 留在禁表里会连同节点文字一起删除，图上只剩空框。
+  const forbid = parts.svgForbidTags.filter((tag) => !/^(style|foreignobject)$/i.test(String(tag)))
+  return {
+    ...svgConfig(parts, true),
+    FORBID_TAGS: forbid,
+    ADD_TAGS: ['foreignObject', 'div', 'span', 'p', 'br', 'b', 'i', 'em', 'strong', 'code', 'table', 'tr', 'td', 'th'],
+    // foreignObject 内的标签是 HTML 命名空间，DOMPurify 默认只在 annotation-xml
+    // 里允许 HTML；不登记 foreignObject 会把 div 等连带文字一起删掉。
+    // 配置必须是小写键的对象（数组会变成 {'0': ...} 而失效）。
+    HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true }
+    // 不要覆盖 FORBID_CONTENTS：保留 DOMPurify 对 script 等危险内容的默认处理。
+  }
+}
+
 /** 原始 SVG 字符串里的远程 / data: 引用先清空（纵深防御，DOMPurify hook 再兜底）。 */
 export function stripSvgExternalRefs(code) {
   return String(code ?? '')

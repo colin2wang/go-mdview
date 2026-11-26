@@ -3,10 +3,10 @@ module mdview
 go 1.27
 
 require (
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/wailsapp/wails/v3 v3.1.0
-	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.42.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.44.0
 )
 
 require (

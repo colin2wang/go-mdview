@@ -6,6 +6,7 @@ import sanitizeConfig from './sanitize-config.json'
 import {
   createState,
   isRemoteSrc,
+  mermaidSvgConfig,
   remoteAllowed as remoteAllowedByPattern,
   sanitizeWith,
   splitConfig,
@@ -356,16 +357,21 @@ export function sanitizeSvg(code: string, allowStyle = false): string {
   return normalizeSvgRoot(clean)
 }
 
-/** Mermaid 输出二次净化：保留本地主题样式，剥掉任何带 url() 的 <style>（防外发）。 */
+/** Mermaid 输出二次净化：保留本地主题样式（剥掉含 url() 的 <style>），
+ * 放行 foreignObject（htmlLabels 的节点文字载体，见 mermaidSvgConfig）。 */
 export function sanitizeMermaidSvg(code: string): string {
-  const clean = sanitizeSvg(code, true)
+  const state = createState(true, '', () => '', '')
+  const clean = sanitizeWith(DOMPurify, parts, stripSvgExternalRefs(code), state, mermaidSvgConfig(parts))
   try {
-    const doc = new DOMParser().parseFromString(clean, 'image/svg+xml')
-    const root = doc.documentElement
+    // 用 HTML 解析而非 image/svg+xml：foreignObject 里保留了 div/br 等 HTML
+    // 标签，XML 严格语法会解析失败；HTML 序列化结果回灌 innerHTML 语义一致。
+    const doc = new DOMParser().parseFromString(clean, 'text/html')
+    const root = doc.querySelector('svg')
+    if (!root) return clean
     root.querySelectorAll('style').forEach((s) => {
       if (/url\s*\(/i.test(s.textContent ?? '')) s.remove()
     })
-    return normalizeSvgRoot(new XMLSerializer().serializeToString(root))
+    return normalizeSvgRoot(root.outerHTML)
   } catch {
     return clean
   }

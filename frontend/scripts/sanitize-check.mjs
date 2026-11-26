@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom'
 import { createRequire } from 'module'
 import {
   createState,
+  mermaidSvgConfig,
   remoteAllowed,
   sanitizeWith,
   splitConfig,
@@ -164,6 +165,31 @@ const svgCfg = svgConfig(parts)
 check(
   Array.isArray(svgCfg.FORBID_TAGS) && svgCfg.FORBID_TAGS.includes('script'),
   'SVG config derived from single source'
+)
+
+// 6. Mermaid 节点文字：htmlLabels 放在 foreignObject 里，必须放行
+const mmState = createState(true, '', () => '', '')
+const mmLabel =
+  '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject width="120" height="40">' +
+  '<div xmlns="http://www.w3.org/1999/xhtml" class="label">接口节点</div></foreignObject></svg>'
+const mmGot = sanitizeWith(DOMPurify, parts, mmLabel, mmState, mermaidSvgConfig(parts))
+check(
+  /<foreignObject[\s>]/i.test(mmGot) && mmGot.includes('接口节点'),
+  'Mermaid foreignObject node labels preserved',
+  `got: ${mmGot}`
+)
+const mmBad = sanitizeWith(
+  DOMPurify,
+  parts,
+  '<svg><foreignObject><div onclick="alert(1)">安全文字</div></foreignObject>' +
+    '<script>alert(1)</script><image href="https://evil.tld/x.png"/></svg>',
+  mmState,
+  mermaidSvgConfig(parts)
+)
+check(
+  mmBad.includes('安全文字') && !mmBad.includes('<script') && !mmBad.includes('alert(1)') && !mmBad.includes('onclick') && !mmBad.includes('evil.tld'),
+  'Mermaid config still blocks scripts, event handlers and remote refs',
+  `got: ${mmBad}`
 )
 
 // ---------- 汇总 ----------
