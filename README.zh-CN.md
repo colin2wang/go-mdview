@@ -83,6 +83,10 @@
 
 ![对照模式下渲染的 Mermaid 图表](docs/images/split-mermaid.png)
 
+**双 Mermaid 引擎** —— 每张图表卡片头部都有全局渲染引擎下拉框：默认使用更快、更小且能即时切换深浅主题的 Pele，也可切回经典 Mermaid.js；切换后所有图表一起重绘。
+
+![图表卡片上的全局引擎下拉框，当前为 Pele 渲染](docs/images/mermaid-engine-switch.png)
+
 **文件页签** —— 左侧笔记目录树，右侧渲染正文，此处展示一张内嵌的 SVG 图形：
 
 ![文件树与渲染的 SVG 图形](docs/images/files-tree.png)
