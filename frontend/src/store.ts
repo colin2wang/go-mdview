@@ -51,8 +51,79 @@ export const store = reactive({
   /** 未保存改动确认弹窗：非空时显示「保存/放弃/取消」询问 */
   discardReason: '' as '' | 'close' | 'restart' | 'switch' | 'reload' | 'exit',
   /** 「保存」按钮正在写盘，防止重复点击 */
-  discardSaving: false
+  discardSaving: false,
+  /** 内部导航历史：标题栏 ⟵/⟶ 按钮的回退/前进栈 */
+  navBack: [] as NavLoc[],
+  navForward: [] as NavLoc[]
 })
+
+/** 导航栈中的一个位置：文件 + 文内锚点。 */
+export interface NavLoc {
+  path: string
+  anchor: string
+}
+
+/** goBack/goForward 跳转进行中：openFile 内不再向历史栈追加记录。 */
+let navJumping = false
+/** 当前位置的文内锚点（同文件锚点跳转时随 navPush 更新）。 */
+let navCurAnchor = ''
+
+/**
+ * 记录一次用户发起的内部导航：把当前位置压入回退栈并清空前进栈。
+ * prev 必须在 store.current 被替换之前捕获（openFile 早期），否则压进去的
+ * 是刚打开的新文件，后退就失效了。程序化跳转（navJumping）不记。
+ */
+export function navPush(prev: NavLoc | null, nextAnchor: string) {
+  if (navJumping) return
+  if (prev) {
+    const top = store.navBack[store.navBack.length - 1]
+    // 连续去重：同文件同锚点不重复压栈
+    if (!top || top.path !== prev.path || top.anchor !== prev.anchor) {
+      store.navBack.push({ ...prev })
+      if (store.navBack.length > 100) store.navBack.shift()
+    }
+    store.navForward = []
+  }
+  navCurAnchor = nextAnchor
+}
+
+/** 同文件内的文内锚点跳转：当前位置（store.current 即旧文件）压栈。 */
+export function navPushAnchor(anchor: string) {
+  if (navJumping) return
+  const cur = store.current
+  if (!cur) return
+  navPush({ path: cur.path, anchor: navCurAnchor }, anchor)
+}
+
+/** 跳到 pos：锚点交给渲染完成后的 Viewer 消费；期间不记栈。 */
+async function navJump(pos: NavLoc) {
+  navJumping = true
+  try {
+    navCurAnchor = pos.anchor
+    if (pos.anchor) store.pendingAnchor = pos.anchor
+    await openFile(pos.path, { pushHistory: false, reason: 'switch' })
+  } finally {
+    navJumping = false
+  }
+}
+
+/** 标题栏 ⟵：回退到上一个内部导航位置。 */
+export function navBack() {
+  const pos = store.navBack.pop()
+  if (!pos) return
+  const cur = store.current
+  if (cur) store.navForward.push({ path: cur.path, anchor: navCurAnchor })
+  void navJump(pos)
+}
+
+/** 标题栏 ⟶：前进到下一个内部导航位置。 */
+export function navForward() {
+  const pos = store.navForward.pop()
+  if (!pos) return
+  const cur = store.current
+  if (cur) store.navBack.push({ path: cur.path, anchor: navCurAnchor })
+  void navJump(pos)
+}
 
 const DISCARD_REASON_KEYS: Record<string, string> = {
   close: 'discard.close',
@@ -343,6 +414,8 @@ export async function openFile(
 ): Promise<boolean> {
   // 五个丢弃出口之一：切换文件（外部重载传 reason='reload'）。
   if (!(await confirmDiscard(opts.reason ?? 'switch'))) return false
+  // 导航历史：此刻 store.current 还是旧文件，先记下位置，成功后再入栈
+  const prevLoc: NavLoc | null = store.current ? { path: store.current.path, anchor: navCurAnchor } : null
   const api = await getApi()
   const kind = fileKind(path)
   try {
@@ -396,6 +469,8 @@ export async function openFile(
     if (opts.pushHistory !== false) {
       api.PushHistory(path).then(() => api.GetHistory().then((h) => (store.history = h)))
     }
+    // 内部导航历史：外部静默重载不算用户导航，不记栈
+    if (opts.reason !== 'reload') navPush(prevLoc, store.pendingAnchor)
     // lastFolder 只在真正切换文件夹树根时更新，避免面板标题与实际树内容不符
     const st = { ...(store.settings ?? defaultSettings), lastFile: path }
     if (opts.reRoot && store.rootName === dir) st.lastFolder = dir

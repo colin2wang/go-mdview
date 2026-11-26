@@ -151,6 +151,9 @@ export const mockApi: Api = {
       /* 无头环境忽略 */
     }
   },
+  OpenExternalURL: async (url) => {
+    if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
+  },
   GetAssocState: async () => ({ ...mockAssoc }),
   AssociateMd: async () => {
     mockAssoc.associated = true

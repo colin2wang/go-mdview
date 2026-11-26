@@ -499,7 +499,8 @@ export async function renderMarkdown(
       const href = token.href ?? ''
       const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
       if (/^(https?:|mailto:)/i.test(href)) {
-        return `<a href="${escapeHtml(href)}"${title} target="_blank" rel="noopener noreferrer">${text}</a>`
+        // 外链：保留真实 href（可复制），点击由 Viewer 拦截后交给系统默认浏览器
+        return `<a href="${escapeHtml(href)}" data-ext="${escapeHtml(href)}"${title} rel="noopener noreferrer">${text}</a>`
       }
       if (href.startsWith('#')) {
         // 文内锚点：保留真实 href（可聚焦、可复制地址），点击统一由 Viewer 拦截后平滑滚动。

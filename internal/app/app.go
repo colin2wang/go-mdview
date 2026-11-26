@@ -366,6 +366,15 @@ func (a *App) WindowFullscreenToggle() {
 // CopyText 写入系统剪贴板（复制文件路径 / 复制代码块）。
 func (a *App) CopyText(text string) { _ = a.app.Clipboard.SetText(text) }
 
+// OpenExternalURL 用系统默认浏览器打开外部链接（Markdown 里的 http/https）。
+// 只放行 http/https/mailto，避免 file:// 等协议被不可信文档滥用。
+func (a *App) OpenExternalURL(url string) error {
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "mailto:") {
+		return fmt.Errorf("unsupported URL scheme")
+	}
+	return a.app.Browser.OpenURL(url)
+}
+
 // SetWindowTitle 同步系统任务栏标题。
 func (a *App) SetWindowTitle(title string) { a.win.SetTitle(title) }
 

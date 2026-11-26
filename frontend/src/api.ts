@@ -43,6 +43,7 @@ export interface Api {
   SaveSvgDialog(title: string, content: string, defaultName: string): Promise<string>
   SaveImageDialog(defaultName: string, dataURL: string): Promise<string>
   CopyText(text: string): Promise<void>
+  OpenExternalURL(url: string): Promise<void>
   GetAssocState(): Promise<AssocState>
   AssociateMd(): Promise<void>
   UnassociateMd(): Promise<void>

@@ -33,7 +33,7 @@
 - 页内锚点跳转：`markdown.ts` 的 `makeSluger()` 给标题的 id 是 `h-<GitHub slug>`（前缀避开页面组件 id），而 md 里的 `(#...)` 链接写的是不带前缀的标准 slug，**两者不能直接按 id 相等匹配**。`Viewer.vue` 的 `scrollToAnchor()` 依次按「标题原文 → 元素 id → `h-` 前缀 id → slug 规范化比对」解析，改 `makeSluger()` 的 slug 规则必须同步它的 `anchorSlug()`；纯 `#` 链接由 `link` renderer 输出真实 `href` + `data-anchor`（不要退回 `javascript:void(0)`，DOMPurify 会删掉 href），点击统一在 `onArtClick` 里 `preventDefault` 后平滑滚动，脚注往返链接（`href="#fn-*"`）也走这条路径。跨文件 `#anchor` 经 `pendingAnchor` 在渲染完成后再跳。
 - 底部状态栏：`StatusBar.vue` 只读 `status.ts`，数据由 `Viewer.vue` 写入（源码字符数/行数取 `stats.ts` 的 `countStats`，预览字数取渲染后 DOM 的 `countPreviewText`，光标位置来自 CodeMirror 的 `cursorActivity`）；新增统计项要同步 `stats.ts` 与四语词典的 `status.*` key。
 - 仓库用 `.gitattributes` 强制 LF（文本）/CRLF（*.ps1 等脚本）；构建工具重写文件后 git 可能出现纯换行符 diff，属正常。
-- 无 frame 布局：标题栏为自绘组件 `TitleBar.vue`，窗口操作走 App 绑定（WindowPin/WindowMaxToggle 等），不要引入系统标题栏。
+- 无 frame 布局：标题栏为自绘组件 `TitleBar.vue`，窗口操作走 App 绑定（WindowPin/WindowMaxToggle 等），不要引入系统标题栏。Markdown 外部链接（http/https/mailto）渲染为 `a[data-ext]`，点击由 Viewer 拦截后经 App 绑定 `OpenExternalURL`（Go 侧只放行 http/https/mailto）用系统默认浏览器打开，不要让 WebView 内部导航。标题栏最左有内部导航 ⟵/⟶ 按钮：历史栈在 `store.ts`（`navBack`/`navForward`/`navPush`，`navJumping` 防程序化跳转记栈），记录点在 `openFile` 成功后（`reason:'reload'` 不记）与 Viewer 文内锚点点击；跳转复用 `openFile` + `pendingAnchor`。
 - 离线渲染：KaTeX、Mermaid、highlight.js 均为本地资源，不要引入 CDN。
 - 国际化：界面文案一律走 `frontend/src/i18n.ts` 的 `t()`（四语言 zh-CN/en/ja/de），语言存于 Settings.language（`internal/mdv/settings.go` 校验），设置对话框切换后经 `applySettings → setLang` 即时生效；新增 UI 文案须同时在四份词典补 key，不要硬编码中文。
 - 不要自动编译、测试或运行验证命令（`go build`/`go test`/`pnpm build`/`wails3 build` 等），除非用户明确要求；改动完成后只报告改了什么、未验证什么。生成 bindings（`wails3 generate bindings`）属于交付产物，不算验证命令。

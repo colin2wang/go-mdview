@@ -15,7 +15,8 @@ import {
   clearDraft,
   cancelDraftRender,
   confirmDiscard,
-  syncDraftDirty
+  syncDraftDirty,
+  navPushAnchor
 } from '../store'
 import { showMenu, hideMenu } from './ContextMenu.vue'
 import CodeEditor from './CodeEditor.vue'
@@ -658,6 +659,18 @@ function onArtDblClick(e: MouseEvent) {
 
 async function onArtClick(e: MouseEvent) {
   const tgt = e.target as HTMLElement
+  // 外部链接（http/https/mailto）：交给系统默认浏览器，不在 WebView 内导航
+  const ext = tgt.closest('a[data-ext]') as HTMLElement | null
+  if (ext) {
+    e.preventDefault()
+    const api = await getApi()
+    try {
+      await api.OpenExternalURL(ext.getAttribute('data-ext') ?? '')
+    } catch (err) {
+      toast(t('toast.extLinkFailed', { e: String(err) }), 'error')
+    }
+    return
+  }
   // 图形卡片「源码」：在渲染结果与源码之间切换
   const tgl = tgt.closest('button[data-toggle-src]') as HTMLElement | null
   if (tgl) {
@@ -685,7 +698,9 @@ async function onArtClick(e: MouseEvent) {
   const al = tgt.closest('a.md-link-anchor, a[href^="#"]') as HTMLElement | null
   if (al) {
     e.preventDefault()
-    scrollToAnchor(al.getAttribute('data-anchor') ?? al.getAttribute('href') ?? '')
+    const anchor = al.getAttribute('data-anchor') ?? al.getAttribute('href') ?? ''
+    navPushAnchor(anchor.replace(/^#/, ''))
+    scrollToAnchor(anchor)
     return
   }
   // wikilink

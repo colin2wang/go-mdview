@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { store, togglePin, setViewMode, confirmDiscard } from '../store'
+import { store, togglePin, setViewMode, confirmDiscard, navBack, navForward } from '../store'
 import { getApi } from '../api'
 import { t } from '../i18n'
 import type { ViewMode } from '../types'
@@ -56,6 +56,28 @@ function dblMax(e: MouseEvent) {
       <span class="tb-title" :title="title" data-testid="win-title">{{ title }}</span>
     </div>
     <div class="tb-btns">
+      <button
+        class="tb-btn tb-nav"
+        :title="t('tip.navBack')"
+        :disabled="!store.desktop || !store.navBack.length"
+        data-testid="btn-nav-back"
+        @click="navBack()"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14">
+          <path d="M10.5 3 5.5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <button
+        class="tb-btn tb-nav"
+        :title="t('tip.navForward')"
+        :disabled="!store.desktop || !store.navForward.length"
+        data-testid="btn-nav-forward"
+        @click="navForward()"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14">
+          <path d="M5.5 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
       <span class="tb-mode" role="radiogroup" :aria-label="t('aria.viewMode')">
         <button
           v-for="m in modes"
