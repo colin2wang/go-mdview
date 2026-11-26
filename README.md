@@ -105,9 +105,9 @@ Four view modes, then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top`
 - **Code blocks** — highlight.js syntax highlighting (github / github-dark themes follow the global theme), language label, hover copy button
 - **GFM Alerts** — `> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]` callouts in five colors
 - **Math** — `$inline$` and `$$block$$` via KaTeX, rendered offline
-- **Mermaid diagrams** — ```mermaid blocks render as card-style diagrams (falls back to source on syntax errors); switch between the classic Mermaid.js engine and the faster, smaller Pele engine in Settings → Reading (Pele switches light/dark themes instantly via CSS variables)
+- **Mermaid diagrams** — ```mermaid blocks render as card-style diagrams (falls back to source on syntax errors); Pele is the default engine; switch to the classic Mermaid.js engine in Settings → Reading if needed (Pele switches light/dark themes instantly via CSS variables)
 - **SVG graphics** — ```svg (or xml/html blocks containing `<svg>`) render directly as graphic cards
-- **Diagram cards** — every graphic card has a **Source** toggle plus a copy button
+- **Diagram cards** — every graphic card has a **Source** toggle plus a copy button (copies the rendered diagram as a PNG image, or the Markdown source when the source is shown); Mermaid cards also have an engine dropdown that switches the global renderer
 - **Extras** — footnotes `[^1]`, `==highlight==`, `[[wiki links]]` (resolved by title within the current directory, navigate automatically)
 - **Mind Map** — heading levels become nodes, `>` quotes become node notes, top-level branches balanced left/right; wheel to zoom, drag to pan, click a node to collapse/expand; toolbar: fit / zoom / notes toggle / collapse / expand-all / export SVG / export PNG / copy SVG (zero extra dependencies, rendered offline)
 - **Local images** — PNG/JPG/SVG/GIF/WebP in the md file's directory and subdirectories display directly via a built-in local route; files never leave your machine

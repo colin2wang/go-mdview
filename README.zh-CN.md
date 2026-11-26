@@ -5,8 +5,8 @@
 一款面向 Windows 的轻量原生 Markdown 阅读器。双击 `.md` 文件即可「渲染态」打开，而不是丢给编辑器——图表、公式、思维导图、实时预览，一应俱全。
 
 ![Platform](https://img.shields.io/badge/platform-Windows-blue?logo=windows&logoColor=white)
-![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go&logoColor=white)
-![Wails](https://img.shields.io/badge/Wails-v2-red?logo=wails&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.27%2B-00ADD8?logo=go&logoColor=white)
+![Wails](https://img.shields.io/badge/Wails-v3.1.0-red?logo=wails&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-4-3178C6?logo=typescript&logoColor=white)
 ![Offline](https://img.shields.io/badge/network-100%25%20local-brightgreen)

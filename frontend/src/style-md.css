@@ -439,6 +439,20 @@
   background: color-mix(in srgb, var(--md-text) 8%, transparent);
   text-transform: lowercase;
 }
+.md-article .md-diagram-engine {
+  border: 1px solid var(--md-pre-border);
+  background: var(--md-bg);
+  color: var(--md-bq-text);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: var(--md-corner-sm);
+  cursor: pointer;
+}
+.md-article .md-diagram-engine:hover {
+  color: var(--md-link);
+  border-color: var(--md-link);
+}
 .md-article .md-diagram-btn {
   border: 1px solid var(--md-pre-border);
   background: var(--md-bg);

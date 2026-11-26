@@ -113,6 +113,7 @@ const BENIGN_CASES = [
   ['<button type="button" class="code-copy" data-copy title="copy">C</button>', 'data-copy', 'renderer code-copy button preserved'],
   ['<button type="button" class="md-diagram-btn" data-toggle-src>S</button>', 'data-toggle-src', 'diagram source button preserved'],
   ['<li><input type="checkbox" checked>任务</li>', 'type="checkbox"', 'GFM task-list checkbox preserved'],
+  ['<select class="md-diagram-engine" data-mm-engine><option value="pele">Pele</option></select>', 'data-mm-engine', 'diagram engine select preserved'],
   ['<pre><code class="hljs">const a = 1</code></pre>', '<code', 'code block preserved'],
   ['<h2 id="intro" data-sl="12">标题</h2>', 'data-sl="12"', 'block line anchor preserved']
 ]

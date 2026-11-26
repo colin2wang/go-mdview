@@ -341,9 +341,9 @@ const assocTip = computed(() => {
                 <button
                   type="button"
                   class="seg-btn"
-                  :class="{ on: (st?.mermaidEngine ?? 'mermaid') === 'mermaid' }"
+                  :class="{ on: (st?.mermaidEngine ?? 'pele') === 'mermaid' }"
                   role="radio"
-                  :aria-checked="(st?.mermaidEngine ?? 'mermaid') === 'mermaid'"
+                  :aria-checked="(st?.mermaidEngine ?? 'pele') === 'mermaid'"
                   data-testid="engine-mermaid"
                   @click="setMmEngine('mermaid')"
                 >
@@ -352,9 +352,9 @@ const assocTip = computed(() => {
                 <button
                   type="button"
                   class="seg-btn"
-                  :class="{ on: st?.mermaidEngine === 'pele' }"
+                  :class="{ on: (st?.mermaidEngine ?? 'pele') === 'pele' }"
                   role="radio"
-                  :aria-checked="st?.mermaidEngine === 'pele'"
+                  :aria-checked="(st?.mermaidEngine ?? 'pele') === 'pele'"
                   data-testid="engine-pele"
                   @click="setMmEngine('pele')"
                 >

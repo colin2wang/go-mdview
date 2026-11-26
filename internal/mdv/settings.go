@@ -74,7 +74,7 @@ var defaultSettings = Settings{
 	RemoteAllow:   "",
 	UseYaml:       false,
 	MmMaxLen:      DefaultMmMaxLen,
-	MermaidEngine: MermaidEngineMermaid,
+	MermaidEngine: MermaidEnginePele,
 }
 
 // validViewMode 归一化显示模式，非法值回落到 render。
@@ -87,12 +87,12 @@ func validViewMode(v string) string {
 	}
 }
 
-// validMermaidEngine 归一化图表渲染引擎，非法值回落到 mermaid。
+// validMermaidEngine 归一化图表渲染引擎，非法值回落到默认 Pele。
 func validMermaidEngine(v string) string {
-	if v == MermaidEnginePele {
-		return MermaidEnginePele
+	if v == MermaidEngineMermaid {
+		return MermaidEngineMermaid
 	}
-	return MermaidEngineMermaid
+	return MermaidEnginePele
 }
 
 // validLanguage 归一化界面语言，非法值回落到 zh-CN。

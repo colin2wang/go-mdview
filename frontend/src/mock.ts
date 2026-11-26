@@ -27,7 +27,7 @@ const state = {
     remoteAllow: '',
     useYaml: false,
     mmMaxLen: 20,
-    mermaidEngine: 'mermaid',
+    mermaidEngine: 'pele',
     winW: 0,
     winH: 0,
     winX: 0,
@@ -148,6 +148,19 @@ export const mockApi: Api = {
   CopyText: async (t) => {
     try {
       await navigator.clipboard.writeText(t)
+    } catch {
+      /* 无头环境忽略 */
+    }
+  },
+  CopyImage: async (dataURL) => {
+    try {
+      const blob = await (await fetch(dataURL)).blob()
+      const Ctor = (
+        window as unknown as { ClipboardItem?: new (items: Record<string, Blob>) => ClipboardItem }
+      ).ClipboardItem
+      if (Ctor && navigator.clipboard?.write) {
+        await navigator.clipboard.write([new Ctor({ 'image/png': blob })])
+      }
     } catch {
       /* 无头环境忽略 */
     }

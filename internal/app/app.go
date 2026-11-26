@@ -366,6 +366,9 @@ func (a *App) WindowFullscreenToggle() {
 // CopyText 写入系统剪贴板（复制文件路径 / 复制代码块）。
 func (a *App) CopyText(text string) { _ = a.app.Clipboard.SetText(text) }
 
+// CopyImage 把前端光栅化后的 PNG data URL 写成系统位图剪贴板（图形卡片「复制图片」）。
+func (a *App) CopyImage(dataURL string) error { return copyImageToClipboard(dataURL) }
+
 // OpenExternalURL 用系统默认浏览器打开外部链接（Markdown 里的 http/https）。
 // 只放行 http/https/mailto，避免 file:// 等协议被不可信文档滥用。
 func (a *App) OpenExternalURL(url string) error {

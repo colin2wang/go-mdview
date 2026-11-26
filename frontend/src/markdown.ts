@@ -432,14 +432,20 @@ function normalizeSvgRoot(svg: string): string {
  */
 export function diagramCard(kind: DiagramKind, label: string, code: string): string {
   const enc = encodeURIComponent(code)
+  const engineSelect =
+    kind === 'mermaid'
+      ? `<select class="md-diagram-engine" data-mm-engine aria-label="${escapeHtml(t('set.mmEngine'))}" title="${escapeHtml(t('set.mmEngine'))}">` +
+        `<option value="mermaid">Mermaid.js</option><option value="pele">Pele</option></select>`
+      : ''
   return (
     `<div class="md-diagram" data-diagram="${kind}" data-${kind}="${enc}" data-src="${enc}">` +
     `<div class="md-diagram-head">` +
     `<span class="md-diagram-title">${escapeHtml(diagTitle(kind))}</span>` +
     `<span class="md-diagram-tools">` +
     `<span class="md-diagram-meta">${escapeHtml(label)}</span>` +
+    engineSelect +
     `<button type="button" class="md-diagram-btn" data-toggle-src title="${escapeHtml(t('diag.viewSrc'))}">${escapeHtml(t('diag.src'))}</button>` +
-    `<button type="button" class="md-diagram-btn" data-copy title="${escapeHtml(t('diag.copySrc'))}">${COPY_ICON}</button>` +
+    `<button type="button" class="md-diagram-btn" data-copy title="${escapeHtml(t('diag.copyTip'))}">${COPY_ICON}</button>` +
     `</span>` +
     `</div>` +
     `<div class="md-diagram-body"><div class="md-diagram-src">` +
@@ -777,10 +783,14 @@ export async function renderDiagramsIn(
   el: HTMLElement,
   dark: boolean,
   force = false,
-  engine: MermaidEngine = 'mermaid'
+  engine: MermaidEngine = 'pele'
 ): Promise<void> {
   const blocks = el.querySelectorAll<HTMLElement>('[data-mermaid],[data-svg]')
   if (!blocks.length) return
+  // 卡片头部的下拉框与全局设置同值：设置页切换后随重绘同步过来
+  el.querySelectorAll<HTMLSelectElement>('select[data-mm-engine]').forEach((sel) => {
+    sel.value = engine
+  })
   if (force) {
     blocks.forEach((b) => {
       // 内联 SVG 与 Mermaid.js 要换色重绘；Pele 保留 done 标记，颜色随 CSS 变量即时切换

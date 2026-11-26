@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   store,
+  patchSettings,
   setTheme,
   setViewMode,
   renderDraft,
@@ -92,6 +93,120 @@ async function copySource() {
   // 编辑中复制当前草稿，否则复制文件内容
   await api.CopyText(shownText.value)
   toast(t('toast.copiedSource'))
+}
+
+// Pele 的配色来自外部 CSS 变量，单独光栅化 SVG 时要先把实际值内联到根节点
+const PELE_CSS_VARS = [
+  '--pele-bg', '--pele-fg', '--pele-muted', '--pele-line', '--pele-surface',
+  '--pele-surface-alt', '--pele-border', '--pele-accent', '--pele-critical',
+  '--pele-font', '--pele-font-mono', '--pele-radius'
+]
+for (let i = 1; i <= 8; i++) PELE_CSS_VARS.push(`--pele-series-${i}`)
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/**
+ * WebView2/Chromium 会把含 foreignObject 的 SVG 判为受污染，导致 toDataURL 失败；
+ * Mermaid strict 的节点文字仍在 foreignObject 里。仅在光栅化的副本上把它改写成
+ * 原生 SVG <text>，页面里显示的 SVG 不动。
+ */
+function svgForRasterize(source: SVGSVGElement, clone: SVGSVGElement): void {
+  const originals = Array.from(source.querySelectorAll('foreignObject'))
+  const copies = Array.from(clone.querySelectorAll('foreignObject'))
+  copies.forEach((fo, i) => {
+    const orig = originals[i]
+    const x = parseFloat(fo.getAttribute('x') || '0') || 0
+    const y = parseFloat(fo.getAttribute('y') || '0') || 0
+    const w = parseFloat(fo.getAttribute('width') || '0') || 0
+    const h = parseFloat(fo.getAttribute('height') || '0') || 0
+    const label = (orig?.querySelector('div, span') ?? null) as HTMLElement | null
+    const lines = String(label?.innerText || orig?.textContent || '')
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!lines.length) {
+      fo.remove()
+      return
+    }
+    const cs = label ? getComputedStyle(label) : null
+    const fontSize = parseFloat(cs?.fontSize || '14') || 14
+    const lineHeight = fontSize * 1.25
+    const text = clone.ownerDocument.createElementNS(SVG_NS, 'text')
+    const cx = x + w / 2
+    text.setAttribute('x', String(cx))
+    text.setAttribute('y', String(y + h / 2 - ((lines.length - 1) * lineHeight) / 2))
+    text.setAttribute('text-anchor', 'middle')
+    text.setAttribute('dominant-baseline', 'middle')
+    text.setAttribute('font-size', String(fontSize))
+    text.setAttribute('font-weight', cs?.fontWeight || 'normal')
+    if (cs?.fontFamily) text.setAttribute('font-family', cs.fontFamily)
+    text.setAttribute('fill', cs?.color || '#333333')
+    lines.forEach((line, idx) => {
+      const tspan = clone.ownerDocument.createElementNS(SVG_NS, 'tspan')
+      tspan.setAttribute('x', String(cx))
+      tspan.setAttribute('dy', idx === 0 ? '0' : String(lineHeight))
+      tspan.textContent = line
+      text.appendChild(tspan)
+    })
+    const parent = fo.parentNode
+    if (!parent) return
+    parent.replaceChild(text, fo)
+    // Mermaid 的 <switch> 里 foreignObject 后面还有一份纯文本兜底，去掉避免重影
+    if (parent.nodeName.toLowerCase() === 'switch') {
+      Array.from(parent.children).forEach((child) => {
+        if (child !== text && child.namespaceURI === SVG_NS && child.localName === 'text') child.remove()
+      })
+    }
+  })
+}
+
+/** 把图形卡片里已净化的 SVG 光栅化为 PNG data URL（复制图片用）。 */
+async function diagramPngDataUrl(card: HTMLElement): Promise<string> {
+  const svg = card.querySelector('.md-diagram-src svg') as SVGSVGElement | null
+  if (!svg) throw new Error('no diagram svg')
+  const clone = svg.cloneNode(true) as SVGSVGElement
+  svgForRasterize(svg, clone)
+  const rect = svg.getBoundingClientRect()
+  const w = Math.max(1, Math.round(rect.width || parseFloat(svg.getAttribute('width') || '') || 800))
+  const h = Math.max(1, Math.round(rect.height || parseFloat(svg.getAttribute('height') || '') || 600))
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('width', String(w))
+  clone.setAttribute('height', String(h))
+  // Mermaid 的主题在 SVG 自带 <style> 里；Pele 依赖 CSS 变量，必须内联
+  const cs = getComputedStyle(svg)
+  const css: string[] = []
+  for (const name of PELE_CSS_VARS) {
+    const v = cs.getPropertyValue(name).trim()
+    if (v) css.push(`${name}:${v}`)
+  }
+  const font = cs.fontFamily.trim()
+  if (font) css.push(`font-family:${font}`)
+  if (css.length) clone.setAttribute('style', `${clone.getAttribute('style') ?? ''};${css.join(';')}`)
+
+  const xml = new XMLSerializer().serializeToString(clone)
+  const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }))
+  try {
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('svg rasterize failed'))
+      img.src = url
+    })
+    const scale = Math.min(3, window.devicePixelRatio || 1)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(w * scale)
+    canvas.height = Math.round(h * scale)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas unavailable')
+    ctx.scale(scale, scale)
+    ctx.fillStyle =
+      getComputedStyle(document.documentElement).getPropertyValue('--md-bg').trim() || '#ffffff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    return canvas.toDataURL('image/png')
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 // ---------- 对照分栏 ----------
@@ -471,7 +586,7 @@ function invalidateAnchors(): void {
   invalidateSync()
 }
 
-const mmEngine = (): MermaidEngine => store.settings?.mermaidEngine ?? 'mermaid'
+const mmEngine = (): MermaidEngine => store.settings?.mermaidEngine ?? 'pele'
 
 /** 正文挂载后的补充渲染：Mermaid/SVG 图 + 数学公式。force 用于主题/引擎切换后的重绘。 */
 async function postRender(art: HTMLElement, force = false) {
@@ -747,14 +862,34 @@ async function onArtClick(e: MouseEvent) {
   // <pre> 取 textContent——避免每段代码全文在 DOM 属性里再存一份
   const btn = tgt.closest('button[data-copy]') as HTMLButtonElement | null
   if (btn) {
-    const holder = btn.closest('.code-block') ?? btn.closest('.md-diagram')
-    const code = holder?.querySelector('pre code, pre.md-diagram-code code')?.textContent ?? ''
+    const diagram = btn.closest('.md-diagram') as HTMLElement | null
     const api = await getApi()
-    await api.CopyText(code)
-    toast(t('toast.codeCopied'))
-    btn.classList.add('done')
-    setTimeout(() => btn.classList.remove('done'), 1200)
+    try {
+      if (diagram && !diagram.classList.contains('show-src')) {
+        // 渲染态：复制当前图形（PNG 位图）；源码态仍复制 Markdown 源码
+        await api.CopyImage(await diagramPngDataUrl(diagram))
+        toast(t('toast.imageCopied'))
+      } else {
+        const holder = btn.closest('.code-block') ?? diagram
+        const code = holder?.querySelector('pre code, pre.md-diagram-code code')?.textContent ?? ''
+        await api.CopyText(code)
+        toast(t('toast.codeCopied'))
+      }
+      btn.classList.add('done')
+      setTimeout(() => btn.classList.remove('done'), 1200)
+    } catch (err) {
+      toast(t('toast.opFailed', { e: String(err) }), 'error')
+    }
   }
+}
+
+/** 图表头部的引擎下拉框：切引擎是全局设置，触发所有图表按新引擎重绘。 */
+async function onArtChange(e: Event) {
+  const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-mm-engine]')
+  if (!sel) return
+  const engine: MermaidEngine = sel.value === 'pele' ? 'pele' : 'mermaid'
+  if ((store.settings?.mermaidEngine ?? 'pele') === engine) return
+  await patchSettings({ mermaidEngine: engine })
 }
 
 async function onContext(e: MouseEvent) {
@@ -1124,6 +1259,7 @@ function onKey(e: KeyboardEvent) {
             data-testid="article"
             v-html="store.html"
             @click="onArtClick"
+            @change="onArtChange"
           ></article>
         </div>
       </section>
