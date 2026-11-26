@@ -1,58 +1,31 @@
 /**
- * 静态渲染库加载器：highlight.js / marked / KaTeX / mermaid / pele 全部走
- * /static/ 下的本地文件（已随应用嵌入），动态按需注入，带缓存 Promise。
+ * 渲染库统一入口：全部改为 npm 依赖 + ESM import，由 Vite 打包进 dist/assets，
+ * 不再从 /static/ 注入手工放置的 UMD 文件。大体积库走动态 import 保持按需加载，
+ * 失败不缓存以便下次重试；highlight.js 双主题用 ?raw 读入 CSS 文本后自建 style 节点切换。
  */
+import githubLightCss from 'highlight.js/styles/github.css?raw'
+import githubDarkCss from 'highlight.js/styles/github-dark.css?raw'
 
-const loaded = new Map<string, Promise<void>>()
+const loaded = new Map<string, Promise<any>>()
 
-export function loadScript(src: string): Promise<void> {
-  let p = loaded.get(src)
-  if (p) return p
-  p = new Promise<void>((resolve, reject) => {
-    const s = document.createElement('script')
-    s.src = src
-    s.onload = () => resolve()
-    s.onerror = () => {
-      s.remove()
-      loaded.delete(src) // 失败不缓存：下次可重试，避免一次加载失败永久降级
-      reject(new Error('script load failed: ' + src))
-    }
-    document.head.appendChild(s)
-  })
-  loaded.set(src, p)
-  return p
-}
-
-export function loadCss(href: string, id?: string): Promise<void> {
-  if (id) {
-    const exists = document.getElementById(id)
-    if (exists) return Promise.resolve()
+function once<T>(key: string, factory: () => Promise<T>): Promise<T> {
+  let p = loaded.get(key) as Promise<T> | undefined
+  if (!p) {
+    p = factory().catch((e) => {
+      loaded.delete(key)
+      throw e
+    })
+    loaded.set(key, p)
   }
-  let p = loaded.get(href)
-  if (p) return p
-  p = new Promise<void>((resolve, reject) => {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = href
-    if (id) link.id = id
-    link.onload = () => resolve()
-    link.onerror = () => {
-      link.remove()
-      loaded.delete(href) // 同脚本：失败后允许重试
-      reject(new Error('css load failed: ' + href))
-    }
-    document.head.appendChild(link)
-  })
-  loaded.set(href, p)
   return p
 }
 
 // ---------- highlight.js ----------
-export async function ensureHljs(): Promise<any> {
-  const w = window as any
-  if (w.hljs) return w.hljs
-  await loadScript('/static/highlight.min.js')
-  return (window as any).hljs
+export function ensureHljs(): Promise<any> {
+  return once('hljs', async () => {
+    const mod = await import('highlight.js/lib/common')
+    return mod.default
+  })
 }
 
 /** 代码高亮（hljs 可用时高亮，否则纯转义）。 */
@@ -72,58 +45,68 @@ export async function highlightCode(code: string, lang: string): Promise<string>
 }
 
 // ---------- marked ----------
-/** 返回 UMD 命名空间（含 .Marked 类与默认实例 .marked）。 */
-export async function ensureMarkedNs(): Promise<any> {
-  const w = window as any
-  if (w.marked?.Marked || w.marked?.parse) return w.marked
-  await loadScript('/static/marked.min.js')
-  return (window as any).marked
-}
-
 /** 每次渲染取全新实例，避免 marked.use() 跨调用累积。 */
 export async function freshMarked(): Promise<any> {
-  const ns = await ensureMarkedNs()
-  if (ns?.Marked) return new ns.Marked()
-  return ns?.marked ?? ns
+  const { Marked } = await once('marked', () => import('marked'))
+  return new Marked()
 }
 
 // ---------- KaTeX ----------
-export async function ensureKatex(): Promise<any> {
-  const w = window as any
-  if (w.katex) return w.katex
-  await loadCss('/static/katex/katex.min.css', 'mdv-katex-css')
-  await loadScript('/static/katex/katex.min.js')
-  await loadScript('/static/katex/auto-render.min.js')
-  return (window as any).katex
+interface KatexBundle {
+  katex: any
+  renderMathInElement: (el: Element, options?: Record<string, any>) => void
+}
+
+export function ensureKatex(): Promise<KatexBundle> {
+  return once('katex', async () => {
+    await import('katex/dist/katex.min.css')
+    const [katexMod, autoRenderMod] = await Promise.all([
+      import('katex'),
+      import('katex/contrib/auto-render')
+    ])
+    return { katex: katexMod.default, renderMathInElement: autoRenderMod.default }
+  })
 }
 
 export function maybeMath(html: string): boolean {
   return /\$[^$\n]+\$|\\\(|\\\[|\$\$/.test(html)
 }
 
-// ---------- mermaid ----------
-let mermaidReady = false
-
-export async function ensureMermaid(): Promise<any> {
-  const w = window as any
-  if (mermaidReady && w.mermaid) return w.mermaid
-  await loadScript('/static/mermaid.min.js')
-  const m = (window as any).mermaid
-  if (m && !mermaidReady) mermaidReady = true
-  // 主题口径统一由 renderDiagramsIn 决定（dark/default），这里不再初始化成 neutral
-  return m
+// ---------- Mermaid ----------
+/** Mermaid.js v11 的 ESM 入口是 default 导出。 */
+export function ensureMermaid(): Promise<any> {
+  return once('mermaid', async () => {
+    const mod = await import('mermaid')
+    return mod.default
+  })
 }
 
-// ---------- pele ----------
-let peleReady = false
+// ---------- Pele ----------
+/** Pele 的 ESM 入口只有命名导出 render，没有 default。 */
+export function ensurePele(): Promise<any> {
+  return once('pele', async () => {
+    const mod = await import('pele')
+    if (typeof mod.render !== 'function') throw new Error('pele unavailable')
+    return mod
+  })
+}
 
-/** Pele 全局构建（window.pele），同步渲染 Mermaid 语法为 SVG。 */
-export async function ensurePele(): Promise<any> {
-  const w = window as any
-  if (peleReady && w.pele) return w.pele
-  await loadScript('/static/pele.global.js')
-  const pele = (window as any).pele
-  if (!pele || typeof pele.render !== 'function') throw new Error('pele unavailable')
-  peleReady = true
-  return pele
+// ---------- highlight.js 双主题 ----------
+/** 把两份主题 CSS 作为 style 节点装入 head，并按主题切换内容。 */
+export function setHljsTheme(theme: string): void {
+  let light = document.getElementById('mdv-hljs-light') as HTMLStyleElement | null
+  let dark = document.getElementById('mdv-hljs-dark') as HTMLStyleElement | null
+  if (!light) {
+    light = document.createElement('style')
+    light.id = 'mdv-hljs-light'
+    document.head.appendChild(light)
+  }
+  if (!dark) {
+    dark = document.createElement('style')
+    dark.id = 'mdv-hljs-dark'
+    document.head.appendChild(dark)
+  }
+  const isDark = theme === 'dark'
+  light.textContent = isDark ? '' : githubLightCss
+  dark.textContent = isDark ? githubDarkCss : ''
 }

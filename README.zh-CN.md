@@ -160,7 +160,8 @@ go-mdview/
 ├── internal/mdv/             # 领域逻辑（设置/历史/收藏/文件树/编码探测/图片服务/导出/文件关联）
 │   └── *_test.go             # Go 单元测试
 ├── frontend/src/             # Vue 3 + TS SPA（标题栏/四页签/渲染管线）
-├── frontend/public/static/   # highlight.js / KaTeX / mermaid 本地库
+├── frontend/src/assets/      # 打包进产物的示例图（Mock/浏览器模式用）
+│                             # 渲染库（highlight.js/marked/KaTeX/mermaid/pele）改由 package.json 精确版本依赖提供
 ├── build.ps1                 # Windows 一键构建（-Clean / -Package）
 └── wails.json / go.mod
 ```

@@ -1,5 +1,6 @@
 import type { MermaidEngine, TocItem } from './types'
-import { ensureHljs, ensureKatex, ensurePele, freshMarked, maybeMath, loadScript } from './vendor'
+import { ensureHljs, ensureKatex, ensureMermaid, ensurePele, freshMarked, maybeMath } from './vendor'
+import mockSampleUrl from './assets/mock-sample.svg'
 import { t } from './i18n'
 import DOMPurify from 'dompurify'
 import sanitizeConfig from './sanitize-config.json'
@@ -97,7 +98,7 @@ export function resolveImgHref(href: string, baseDir: string): string {
   // 浏览器/Mock 模式：无 /mdimg 回放路由，本地图片用内置示例图兜底。
   // v3 运行时挂载 window._wails（v2 的 window.go 已不存在），与 api.ts 的 isDesktop 保持一致。
   if (typeof window === 'undefined' || window._wails === undefined) {
-    return '/static/mock-sample.svg'
+    return mockSampleUrl
   }
   let p = href
   try {
@@ -647,22 +648,19 @@ export async function renderMarkdown(
   return { html, toc, anchors, hasMath: maybeMath(md), hasMermaid: html.includes('data-mermaid') }
 }
 
-/** 渲染数学公式（KaTeX auto-render）。 */
+/** 渲染数学公式（KaTeX auto-render，ESM 入口直接导出 renderMathInElement）。 */
 export async function renderMathIn(el: HTMLElement): Promise<void> {
   try {
-    await ensureKatex()
-    const w = window as any
-    if (w.renderMathInElement) {
-      w.renderMathInElement(el, {
-        delimiters: [
-          { left: '$$', right: '$$', display: true },
-          { left: '$', right: '$', display: false },
-          { left: '\\(', right: '\\)', display: false },
-          { left: '\\[', right: '\\]', display: true }
-        ],
-        throwOnError: false
-      })
-    }
+    const { renderMathInElement } = await ensureKatex()
+    renderMathInElement(el, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '$', right: '$', display: false },
+        { left: '\\(', right: '\\)', display: false },
+        { left: '\\[', right: '\\]', display: true }
+      ],
+      throwOnError: false
+    })
   } catch {
     /* 公式库加载失败静默降级 */
   }
@@ -692,8 +690,7 @@ function decodeDiagramSource(raw: string): string {
 /** Mermaid.js 分支：异步 render，主题切换必须重绘。 */
 async function renderMermaidBlocks(blocks: HTMLElement[], dark: boolean): Promise<void> {
   try {
-    await loadScript('/static/mermaid.min.js')
-    const mermaid = (window as any).mermaid
+    const mermaid = await ensureMermaid()
     if (!mermaid) throw new Error('mermaid unavailable')
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' })
     for (const block of blocks) {

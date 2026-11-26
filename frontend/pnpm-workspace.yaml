@@ -1,5 +1,7 @@
 overrides:
   '@types/node': ^18.19.0
+  # mermaid 11 的传递依赖；3.0.7 用了 TS 5.0 的 const 类型参数，项目锁在 TS 4.9
+  '@types/d3-dispatch': 3.0.6
 
 allowBuilds:
   esbuild: true

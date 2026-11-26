@@ -165,7 +165,8 @@ go-mdview/
 ├── internal/mdv/             # Domain logic (settings/history/favorites/file tree/encoding detection/image serving/export/association)
 │   └── *_test.go             # Go unit tests
 ├── frontend/src/             # Vue 3 + TS SPA (title bar/four tabs/render pipeline)
-├── frontend/public/static/   # highlight.js / KaTeX / mermaid / pele (pinned 1.13.0) local libraries
+├── frontend/src/assets/      # Bundled sample image for mock/browser mode
+│                             # Render libs (highlight.js/marked/KaTeX/mermaid/pele) are pinned npm deps
 ├── build.ps1                 # One-click Windows build (-Clean / -Package)
 └── wails.json / go.mod
 ```

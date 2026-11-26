@@ -4,6 +4,7 @@ import { defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
 import { fileBase, fileToDir } from './demo'
 import { renderMarkdown, resolveImgHref, sanitizeHtml, type SrcAnchor } from './markdown'
+import { setHljsTheme } from './vendor'
 import { setLang, t } from './i18n'
 
 export type TabKey = 'toc' | 'history' | 'fav' | 'files'
@@ -628,10 +629,7 @@ export async function applySettings(st: Settings | null = store.settings) {
   document.documentElement.setAttribute('data-theme', theme)
   document.documentElement.style.setProperty('--md-fs', `${st?.fontSize ?? 16}px`)
   setLang(st?.language)
-  const hljsDark = document.getElementById('mdv-hljs-dark') as HTMLLinkElement | null
-  const hljsLight = document.getElementById('mdv-hljs-light') as HTMLLinkElement | null
-  if (hljsDark) hljsDark.disabled = theme !== 'dark'
-  if (hljsLight) hljsLight.disabled = theme === 'dark'
+  setHljsTheme(theme)
 }
 
 export async function applyTheme(theme: string) {
@@ -735,14 +733,6 @@ export async function initApp() {
   store.viewMode = normalizeViewMode(store.settings?.viewMode)
   store.history = await api.GetHistory()
   store.favorites = await api.GetFavorites()
-  // highlight.js 双主题样式：applySettings 靠 link.disabled 切换
-  try {
-    const { loadCss } = await import('./vendor')
-    await loadCss('/static/github.min.css', 'mdv-hljs-light')
-    await loadCss('/static/github-dark.min.css', 'mdv-hljs-dark')
-  } catch {
-    /* 样式缺失不阻塞启动 */
-  }
   await applySettings(store.settings)
   if (store.settings.pinned) api.WindowPin(true)
 

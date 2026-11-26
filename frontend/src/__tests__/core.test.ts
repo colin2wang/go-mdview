@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import mockSampleUrl from '../assets/mock-sample.svg'
 import { preprocess, resolveImgHref } from '../markdown'
 import { parseMarkdown } from '../mindmap'
 import { countPreviewText, countStats } from '../stats'
@@ -32,7 +33,7 @@ describe('preprocess', () => {
   })
 
   it('浏览器模式无回放路由时回退到内置示例图', () => {
-    expect(resolveImgHref('cover.png', 'D:/docs')).toBe('/static/mock-sample.svg')
+    expect(resolveImgHref('cover.png', 'D:/docs')).toBe(mockSampleUrl)
   })
 })
 
