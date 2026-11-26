@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import type { Entry, FileContent, MNode, Settings, TocItem, ViewMode } from './types'
 import { defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
@@ -316,6 +316,19 @@ export async function renderDraft(md: string) {
     if (seq === draftSeq) store.rendering = false
   }
 }
+
+// 语言切换只让 Vue 模板自动更新；图表卡片标题/按钮等文案是在 renderMarkdown
+// 时拼进 store.html 的，必须重渲染当前正文（编辑中重渲染草稿）才会跟着换语言。
+watch(
+  () => store.settings?.language,
+  (lang, prev) => {
+    if (!lang || !prev || lang === prev) return
+    const cur = store.current
+    if (!cur || cur.kind !== 'markdown') return
+    if (store.editing) void renderDraft(store.draft)
+    else void renderCurrent(cur)
+  }
+)
 
 /** 保存编辑后的正文回原文件（源码/对照模式的「保存」按钮）。 */
 export async function saveSource(md: string): Promise<boolean> {
