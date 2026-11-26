@@ -1,14 +1,11 @@
-package mdv
+package fsops
 
 import (
 	"bytes"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-	"sync"
-	"time"
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/japanese"
@@ -16,6 +13,8 @@ import (
 	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
+
+	"mdview/internal/imgsrv"
 )
 
 // FileContent 读取结果。
@@ -128,8 +127,8 @@ func encodeText(content, encoding, newline string, bom bool) []byte {
 	return data
 }
 
-// ReadMarkdown 读取 .md 文本：BOM / UTF-8 / GB18030 / Big5 / Shift-JIS 自动探测。
-func (s *Store) ReadMarkdown(path string) (FileContent, error) {
+// ReadFile 读取 .md 文本：BOM / UTF-8 / GB18030 / Big5 / Shift-JIS 自动探测。
+func ReadFile(path string) (FileContent, error) {
 	path = filepath.Clean(path)
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -146,7 +145,7 @@ func (s *Store) ReadMarkdown(path string) (FileContent, error) {
 		return FileContent{}, err
 	}
 	// 打开成功即登记所在目录：/mdimg 回放仅允许已打开目录子树内的图片
-	AllowImageDir(filepath.Dir(path))
+	imgsrv.AllowImageDir(filepath.Dir(path))
 	info := detectText(raw)
 	return FileContent{
 		Path:     path,
@@ -159,11 +158,11 @@ func (s *Store) ReadMarkdown(path string) (FileContent, error) {
 	}, nil
 }
 
-// SaveMarkdown 把编辑后的正文写回文件，返回刷新后的读取结果。
+// SaveFile 把编辑后的正文写回文件，返回刷新后的读取结果。
 // encoding 为 gb18030 时按原编码回写，避免改动老笔记的编码；其余按 UTF-8。
 // 采用「临时文件 + 重命名」的原子写法，避免写一半失败损坏原文。
 // 文件已被外部删除（用户选择「保留」后）时保存会重建文件，含缺失的父目录。
-func (s *Store) SaveMarkdown(path, content, encoding string) (FileContent, error) {
+func SaveFile(path, content, encoding string) (FileContent, error) {
 	path = filepath.Clean(path)
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -216,7 +215,7 @@ func (s *Store) SaveMarkdown(path, content, encoding string) (FileContent, error
 	}
 	InvalidateTitleIndex()
 	InvalidateTreeCache()
-	return s.ReadMarkdown(path)
+	return ReadFile(path)
 }
 
 type tooLargeError struct{}
@@ -226,84 +225,8 @@ func (tooLargeError) Error() string { return "mdview: file too large (>32MB)" }
 
 var errTooLarge error = tooLargeError{}
 
-// titleIndex 是「目录根 → 文件名（小写，不带扩展名）→ 绝对路径列表」的一次性索引，
-// 避免每次点 wiki 链接都全目录递归。TTL 到期或显式失效后重建。
-type titleIndexEntry struct {
-	at  time.Time
-	idx map[string][]string
-}
-
-var (
-	titleIndexMu    sync.Mutex
-	titleIndexCache = map[string]titleIndexEntry{}
-)
-
-const titleIndexTTL = 10 * time.Second
-
-// InvalidateTitleIndex 在保存/目录树变化后调用，让下一次 wiki 查找重建索引。
-func InvalidateTitleIndex() {
-	titleIndexMu.Lock()
-	titleIndexCache = map[string]titleIndexEntry{}
-	titleIndexMu.Unlock()
-}
-
-func buildTitleIndex(root string) map[string][]string {
-	idx := map[string][]string{}
-	var walk func(dir string, depth int)
-	walk = func(dir string, depth int) {
-		if depth > 12 {
-			return
-		}
-		ents, err := os.ReadDir(dir)
-		if err != nil {
-			return
-		}
-		for _, e := range ents {
-			if strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			p := filepath.Join(dir, e.Name())
-			if e.IsDir() {
-				if !skipDirs[strings.ToLower(e.Name())] {
-					walk(p, depth+1)
-				}
-				continue
-			}
-			if mdExts[strings.ToLower(filepath.Ext(e.Name()))] {
-				base := strings.ToLower(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
-				idx[base] = append(idx[base], p)
-			}
-		}
-	}
-	walk(root, 0)
-	return idx
-}
-
-// FindByTitles 返回同名笔记的全部候选（用于同名消歧）；结果按路径排序保持稳定。
-func (s *Store) FindByTitles(root, title string) []string {
-	root = filepath.Clean(root)
-	titleIndexMu.Lock()
-	entry, ok := titleIndexCache[root]
-	if !ok || time.Since(entry.at) > titleIndexTTL {
-		entry = titleIndexEntry{at: time.Now(), idx: buildTitleIndex(root)}
-		titleIndexCache[root] = entry
-	}
-	hits := append([]string(nil), entry.idx[strings.ToLower(title)]...)
-	titleIndexMu.Unlock()
-	sort.Strings(hits)
-	return hits
-}
-
-// FindByTitle 兼容旧调用：返回第一个匹配，找不到返回空串。
-func (s *Store) FindByTitle(root, title string) string {
-	if hits := s.FindByTitles(root, title); len(hits) > 0 {
-		return hits[0]
-	}
-	return ""
-}
-
 // StatFile 给前端判断文件是否仍存在（顺手返回修改时间）。
-func (s *Store) StatFile(path string) (int64, bool) {
+func StatFile(path string) (int64, bool) {
 	fi, err := os.Stat(path)
 	if err != nil || fi.IsDir() {
 		return 0, false

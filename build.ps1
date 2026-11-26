@@ -7,8 +7,8 @@
 param(
     [switch]$Clean,
     [switch]$Package,
-    # 主版本号（显示在设置页 "(1.0.0 build ...)" 中），发布时按需修改
-    [string]$Version = "1.0.0"
+    # 主版本号（显示在设置页 "(x.x.x build ...)" 中），发布时按需修改
+    [string]$Version = "1.0.1"
 )
 
 $ErrorActionPreference = "Stop"

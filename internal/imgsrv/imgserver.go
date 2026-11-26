@@ -1,4 +1,4 @@
-package mdv
+package imgsrv
 
 import (
 	"encoding/hex"
@@ -70,10 +70,10 @@ func realPath(p string) string {
 	return filepath.Clean(p)
 }
 
-// imgPathAllowed 判断 p 是否落在任一已登记目录子树内。
+// PathAllowed 判断 p 是否落在任一已登记目录子树内。
 // 同时比较登记路径与真实路径，防止符号链接把白名单内目录指到外面去。
 // Windows 路径大小写不敏感，统一按不区分大小写比较。
-func imgPathAllowed(p string) bool {
+func PathAllowed(p string) bool {
 	p = filepath.Clean(p)
 	dir := filepath.Clean(filepath.Dir(p))
 	real := realPath(p)
@@ -124,12 +124,12 @@ var ImgHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "absolute path required", http.StatusBadRequest)
 		return
 	}
-	ct := contentTypeByExt(p)
+	ct := ContentTypeByExt(p)
 	if ct == "" {
 		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
 		return
 	}
-	if !imgPathAllowed(p) {
+	if !PathAllowed(p) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -157,7 +157,8 @@ var ImgHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, path.Base(p), fi.ModTime().Round(time.Second), f)
 })
 
-func contentTypeByExt(p string) string {
+// ContentTypeByExt 按扩展名返回图片 Content-Type，非图片扩展名返回空。
+func ContentTypeByExt(p string) string {
 	switch strings.ToLower(path.Ext(p)) {
 	case ".png":
 		return "image/png"

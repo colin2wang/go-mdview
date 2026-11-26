@@ -1,4 +1,4 @@
-package mdv
+package assoc
 
 // AssocState 文件关联状态（供设置对话框展示）。
 type AssocState struct {

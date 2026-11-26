@@ -1,6 +1,6 @@
 //go:build windows
 
-package mdv
+package assoc
 
 import (
 	"errors"

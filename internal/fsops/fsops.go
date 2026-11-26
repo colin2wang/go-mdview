@@ -1,4 +1,5 @@
-package mdv
+// Package fsops 提供目录树扫描、同名标题索引与 markdown 文件编码读写。
+package fsops
 
 import (
 	"os"
@@ -7,149 +8,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"mdview/internal/imgsrv"
 )
-
-// Entry 历史/收藏条目。
-type Entry struct {
-	Path     string `json:"path"`
-	Name     string `json:"name"`
-	Dir      string `json:"dir"`
-	Exists   bool   `json:"exists"`
-	OpenedAt int64  `json:"openedAt"` // unix 秒；收藏条目为加入时间
-}
-
-const historyLimit = 100
-
-func entryOf(path string, at int64) Entry {
-	return Entry{
-		Path:     path,
-		Name:     filepath.Base(path),
-		Dir:      filepath.Dir(path),
-		Exists:   fileExists(path),
-		OpenedAt: at,
-	}
-}
-
-func fileExists(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && !fi.IsDir()
-}
-
-// GetHistory 最近打开记录，最新在前。
-func (s *Store) GetHistory() []Entry {
-	var list []Entry
-	s.mu.Lock()
-	s.readJSON("history.json", &list)
-	s.mu.Unlock()
-	for i := range list {
-		list[i].Name = filepath.Base(list[i].Path)
-		list[i].Dir = filepath.Dir(list[i].Path)
-		list[i].Exists = fileExists(list[i].Path)
-	}
-	return list
-}
-
-// PushHistory 记录一次打开：去重置顶，超限截断。
-// 顺带登记所在目录：单独打开图片时也走这里，保证 /mdimg 能回放它。
-func (s *Store) PushHistory(path string) []Entry {
-	path = filepath.Clean(path)
-	AllowImageDir(filepath.Dir(path))
-	var list []Entry
-	s.mu.Lock()
-	s.readJSON("history.json", &list)
-	out := make([]Entry, 0, len(list)+1)
-	out = append(out, entryOf(path, time.Now().Unix()))
-	for _, e := range list {
-		if filepath.Clean(e.Path) == path {
-			continue
-		}
-		out = append(out, e)
-	}
-	if len(out) > historyLimit {
-		out = out[:historyLimit]
-	}
-	s.writeJSON("history.json", &out)
-	s.mu.Unlock()
-	return out
-}
-
-// RemoveHistory 从历史里移除单条（不删除磁盘文件）。
-func (s *Store) RemoveHistory(path string) {
-	path = filepath.Clean(path)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var list []Entry
-	s.readJSON("history.json", &list)
-	out := make([]Entry, 0, len(list))
-	for _, e := range list {
-		if filepath.Clean(e.Path) != path {
-			out = append(out, e)
-		}
-	}
-	s.writeJSON("history.json", &out)
-}
-
-// ClearHistory 清空历史。
-func (s *Store) ClearHistory() []Entry {
-	s.mu.Lock()
-	s.writeJSON("history.json", &[]Entry{})
-	s.mu.Unlock()
-	return []Entry{}
-}
-
-// GetFavorites 收藏列表，最新加入在前。
-func (s *Store) GetFavorites() []Entry {
-	var list []Entry
-	s.mu.Lock()
-	s.readJSON("favorites.json", &list)
-	s.mu.Unlock()
-	for i := range list {
-		list[i].Name = filepath.Base(list[i].Path)
-		list[i].Dir = filepath.Dir(list[i].Path)
-		list[i].Exists = fileExists(list[i].Path)
-	}
-	return list
-}
-
-// ToggleFavorite 收藏/取消收藏，返回切换后的状态。
-func (s *Store) ToggleFavorite(path string) (bool, []Entry) {
-	path = filepath.Clean(path)
-	var list []Entry
-	s.mu.Lock()
-	s.readJSON("favorites.json", &list)
-	found := -1
-	for i, e := range list {
-		if filepath.Clean(e.Path) == path {
-			found = i
-			break
-		}
-	}
-	nowFav := true
-	if found >= 0 {
-		list = append(list[:found], list[found+1:]...)
-		nowFav = false
-	} else {
-		list = append([]Entry{entryOf(path, time.Now().Unix())}, list...)
-	}
-	s.writeJSON("favorites.json", &list)
-	s.mu.Unlock()
-	return nowFav, s.GetFavorites()
-}
-
-// IsFavorite 查询某个路径是否已收藏。
-func (s *Store) IsFavorite(path string) bool {
-	path = filepath.Clean(path)
-	var list []Entry
-	s.mu.Lock()
-	s.readJSON("favorites.json", &list)
-	s.mu.Unlock()
-	for _, e := range list {
-		if filepath.Clean(e.Path) == path {
-			return true
-		}
-	}
-	return false
-}
 
 // ---------- 目录树扫描 ----------
 
@@ -171,6 +32,11 @@ var skipDirs = map[string]bool{
 
 var mdExts = map[string]bool{".md": true, ".markdown": true, ".mdown": true, ".mkd": true}
 
+// previewable 是否可预览：markdown / 图片 / 文本
+func previewable(ext string) bool {
+	return mdExts[ext] || imgExts[ext] || textExts[ext]
+}
+
 // imgExts 可直接预览的图片扩展名
 var imgExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
@@ -189,16 +55,11 @@ var textExts = map[string]bool{
 	".rb": true, ".php": true, ".sh": true, ".bat": true, ".ps1": true, ".sql": true,
 }
 
-// previewable 是否可预览：markdown / 图片 / 文本
-func previewable(ext string) bool {
-	return mdExts[ext] || imgExts[ext] || textExts[ext]
-}
-
 // naturalLess 人类直觉排序：数字段按数值比（02 < 10），字母不区分大小写。
 func naturalLess(a, b string) bool {
 	a, b = strings.ToLower(a), strings.ToLower(b)
 	i, j := 0, 0
-	for i < len(a) && j < len(b) {
+	for i < len(a) && len(b) > j {
 		ca, cb := a[i], b[j]
 		if isDigit(ca) && isDigit(cb) {
 			// 提取完整数字段比较
@@ -274,7 +135,7 @@ func InvalidateTreeCache() {
 }
 
 // ListTree 扫描 root 下的目录与 markdown 文件（跳过隐藏/垃圾目录）。
-func (s *Store) ListTree(root string) ([]Node, error) {
+func ListTree(root string) ([]Node, error) {
 	root = filepath.Clean(root)
 	treeCacheMu.Lock()
 	if c, ok := treeCache[root]; ok && time.Since(c.at) < treeCacheTTL {
@@ -291,7 +152,7 @@ func (s *Store) ListTree(root string) ([]Node, error) {
 		root = filepath.Dir(root)
 	}
 	// 打开目录树即登记根目录：/mdimg 回放允许该目录子树内的图片
-	AllowImageDir(root)
+	imgsrv.AllowImageDir(root)
 	remaining := maxTreeNodes
 	var walk func(dir string, depth int) []Node
 	walk = func(dir string, depth int) []Node {
@@ -335,4 +196,82 @@ func (s *Store) ListTree(root string) ([]Node, error) {
 	treeCache[root] = treeCacheEntry{at: time.Now(), nodes: nodes}
 	treeCacheMu.Unlock()
 	return nodes, nil
+}
+
+// ---------- 同名标题索引 ----------
+
+// titleIndex 是「目录根 → 文件名（小写，不带扩展名）→ 绝对路径列表」的一次性索引，
+// 避免每次点 wiki 链接都全目录递归。TTL 到期或显式失效后重建。
+type titleIndexEntry struct {
+	at  time.Time
+	idx map[string][]string
+}
+
+var (
+	titleIndexMu    sync.Mutex
+	titleIndexCache = map[string]titleIndexEntry{}
+)
+
+const titleIndexTTL = 10 * time.Second
+
+// InvalidateTitleIndex 在保存/目录树变化后调用，让下一次 wiki 查找重建索引。
+func InvalidateTitleIndex() {
+	titleIndexMu.Lock()
+	titleIndexCache = map[string]titleIndexEntry{}
+	titleIndexMu.Unlock()
+}
+
+func buildTitleIndex(root string) map[string][]string {
+	idx := map[string][]string{}
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		if depth > 12 {
+			return
+		}
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range ents {
+			if strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			p := filepath.Join(dir, e.Name())
+			if e.IsDir() {
+				if !skipDirs[strings.ToLower(e.Name())] {
+					walk(p, depth+1)
+				}
+				continue
+			}
+			if mdExts[strings.ToLower(filepath.Ext(e.Name()))] {
+				base := strings.ToLower(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
+				idx[base] = append(idx[base], p)
+			}
+		}
+	}
+	walk(root, 0)
+	return idx
+}
+
+// FindByTitles 返回同名笔记的全部候选（用于同名消歧）；结果按路径排序保持稳定。
+func FindByTitles(root, title string) []string {
+	root = filepath.Clean(root)
+	titleIndexMu.Lock()
+	entry, ok := titleIndexCache[root]
+	if !ok || time.Since(entry.at) > titleIndexTTL {
+		entry = titleIndexEntry{at: time.Now(), idx: buildTitleIndex(root)}
+		titleIndexCache[root] = entry
+	}
+	hits := append([]string(nil), entry.idx[strings.ToLower(title)]...)
+	titleIndexMu.Unlock()
+	sort.Strings(hits)
+	return hits
+}
+
+// FindByTitle 兼容旧调用：返回第一个匹配，找不到返回空串。
+func FindByTitle(root, title string) string {
+	if hits := FindByTitles(root, title); len(hits) > 0 {
+		return hits[0]
+	}
+	return ""
 }

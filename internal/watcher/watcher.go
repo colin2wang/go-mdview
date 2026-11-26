@@ -1,4 +1,6 @@
-package mdv
+// Package watcher 提供对外部文件修改的监视：fsnotify 目录级监视 + 防抖 +
+// mtime/size/内容哈希判定，并按「自身保存抑制窗口」区分本应用写入与真实外部修改。
+package watcher
 
 import (
 	"crypto/sha256"
@@ -26,8 +28,9 @@ const (
 	saveSuppressAfter = 2 * time.Second
 )
 
-// watcherState Store 的文件监视部分。事件经 callback 抛给上层（App 负责转成 Wails 事件）。
-type watcherState struct {
+// Watcher 单文件外部修改监视器。零值即可用（WatchFile 时初始化）。
+// 事件经 callback 抛给上层（App 负责转成 Wails 事件）。
+type Watcher struct {
 	mu        sync.Mutex
 	w         *fsnotify.Watcher
 	watched   string        // 当前监视的文件路径（Clean 后）
@@ -40,90 +43,86 @@ type watcherState struct {
 }
 
 // SetFileChangeCallback 注册事件回调，须在 WatchFile 之前调用。
-func (s *Store) SetFileChangeCallback(cb func(FileEvent)) {
-	s.watcher.mu.Lock()
-	defer s.watcher.mu.Unlock()
-	s.watcher.onChange = cb
+func (w *Watcher) SetFileChangeCallback(cb func(FileEvent)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.onChange = cb
 }
 
 // WatchFile 监视 path 的外部修改；切换文件时自动替换旧的监视目标。
 // 编辑器保存常见「临时文件→重命名」，监视目标会随 rename 失效，所以每次都重建监视。
-func (s *Store) WatchFile(path string) {
+func (w *Watcher) WatchFile(path string) {
 	path = filepath.Clean(path)
-	st := &s.watcher
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.watched == path {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.watched == path {
 		// 同一文件重复打开：刷新已知 mtime/size，避免旧值导致首次事件误报
 		if fi, err := os.Stat(path); err == nil {
-			st.knownM, st.knownS = fi.ModTime().UnixMilli(), fi.Size()
+			w.knownM, w.knownS = fi.ModTime().UnixMilli(), fi.Size()
 		}
 		return
 	}
-	s.watcherStopLocked()
+	w.stopLocked()
 
-	w, err := fsnotify.NewWatcher()
+	nw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return
 	}
 	// 目录级监视：Windows 上对文件 Add 在文件被整体替换（rename 覆盖）后会失效，
 	// 监视所在目录才能在文件被重建后继续收到事件
-	_ = w.Add(filepath.Dir(path))
-	st.w = w
-	st.watched = path
+	_ = nw.Add(filepath.Dir(path))
+	w.w = nw
+	w.watched = path
 	if fi, err := os.Stat(path); err == nil {
-		st.knownM, st.knownS = fi.ModTime().UnixMilli(), fi.Size()
+		w.knownM, w.knownS = fi.ModTime().UnixMilli(), fi.Size()
 	} else {
-		st.knownM, st.knownS = 0, 0
+		w.knownM, w.knownS = 0, 0
 	}
-	st.stop = make(chan struct{})
-	// events / 回调作为局部参数传入：StopWatch 会把 st.w 置 nil 并 Close，
-	// 旧 goroutine 不得再解引用共享字段（否则下一轮读 st.w.Events 直接 panic）。
-	events, errs, cb := w.Events, w.Errors, st.onChange
-	go s.watcherLoop(st, st.stop, events, errs, cb)
+	w.stop = make(chan struct{})
+	// events / 回调作为局部参数传入：Stop 会把 w.w 置 nil 并 Close，
+	// 旧 goroutine 不得再解引用共享字段（否则下一轮读 w.w.Events 直接 panic）。
+	events, errs, cb := nw.Events, nw.Errors, w.onChange
+	go w.loop(w, w.stop, events, errs, cb)
 }
 
-// StopWatch 停止监视当前文件（关闭文件/退出时调用）。
-func (s *Store) StopWatch() {
-	st := &s.watcher
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	s.watcherStopLocked()
+// Stop 停止监视当前文件（关闭文件/退出时调用）。
+func (w *Watcher) Stop() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.stopLocked()
 }
 
-// watcherStopLocked 停掉现有循环与 watcher，调用方须已持有 st.mu。
-func (s *Store) watcherStopLocked() {
-	st := &s.watcher
-	if st.stop != nil {
-		close(st.stop)
-		st.stop = nil
+// stopLocked 停掉现有循环与 watcher，调用方须已持有 w.mu。
+func (w *Watcher) stopLocked() {
+	if w.stop != nil {
+		close(w.stop)
+		w.stop = nil
 	}
-	if st.w != nil {
-		_ = st.w.Close()
-		st.w = nil
+	if w.w != nil {
+		_ = w.w.Close()
+		w.w = nil
 	}
-	st.watched = ""
+	w.watched = ""
 }
 
 // MarkSaved 在本应用写盘后调用，把抑制窗口设为当下。
-func (s *Store) MarkSaved() {
-	st := &s.watcher
+func (w *Watcher) MarkSaved() {
 	h := ""
-	st.mu.Lock()
-	path := st.watched
-	st.mu.Unlock()
+	w.mu.Lock()
+	path := w.watched
+	w.mu.Unlock()
 	if path != "" {
 		h, _ = fileHash(path)
 	}
-	st.mu.Lock()
-	st.savedAt = time.Now()
-	st.savedHash = h
-	if st.watched != "" {
-		if fi, err := os.Stat(st.watched); err == nil {
-			st.knownM, st.knownS = fi.ModTime().UnixMilli(), fi.Size()
+	w.mu.Lock()
+	w.savedAt = time.Now()
+	w.savedHash = h
+	if w.watched != "" {
+		if fi, err := os.Stat(w.watched); err == nil {
+			w.knownM, w.knownS = fi.ModTime().UnixMilli(), fi.Size()
 		}
 	}
-	st.mu.Unlock()
+	w.mu.Unlock()
 }
 
 // fileHash 计算文件内容哈希（用于区分自身写入与窗口内的外部修改）。
@@ -140,12 +139,12 @@ func fileHash(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// watcherLoop 事件循环：防抖合并事件，换算成 FileEvent 抛给回调。
+// loop 事件循环：防抖合并事件，换算成 FileEvent 抛给回调。
 // events / errs / cb 均由 WatchFile 在创建 watcher 时捕获为局部值。
-func (s *Store) watcherLoop(st *watcherState, stop chan struct{}, events <-chan fsnotify.Event, errs <-chan error, cb func(FileEvent)) {
+func (w *Watcher) loop(st *Watcher, stop chan struct{}, events <-chan fsnotify.Event, errs <-chan error, cb func(FileEvent)) {
 	var debounce *time.Timer
 	fire := func() {
-		ev := s.watcherCheck()
+		ev := w.check()
 		if ev != nil && cb != nil {
 			cb(*ev)
 		}
@@ -180,35 +179,34 @@ func (s *Store) watcherLoop(st *watcherState, stop chan struct{}, events <-chan 
 	}
 }
 
-// watcherCheck 防抖触发后统一判定：自身保存抑制 / mtime+size 变化 / 是否已删除。
+// check 防抖触发后统一判定：自身保存抑制 / mtime+size 变化 / 是否已删除。
 // 返回 nil 表示无需通知。
-func (s *Store) watcherCheck() *FileEvent {
-	st := &s.watcher
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.watched == "" {
+func (w *Watcher) check() *FileEvent {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.watched == "" {
 		return nil
 	}
-	fi, err := os.Stat(st.watched)
+	fi, err := os.Stat(w.watched)
 	if err != nil {
 		// 文件消失；若在自身保存抑制窗口内先不慌（原子写瞬间的 stat 空档）
-		if time.Since(st.savedAt) < saveSuppressAfter {
+		if time.Since(w.savedAt) < saveSuppressAfter {
 			return nil
 		}
-		return &FileEvent{Kind: "gone", Path: st.watched}
+		return &FileEvent{Kind: "gone", Path: w.watched}
 	}
 	m, sz := fi.ModTime().UnixMilli(), fi.Size()
-	if m == st.knownM && sz == st.knownS {
+	if m == w.knownM && sz == w.knownS {
 		return nil
 	}
 	// 本应用自己刚保存的写入：只有内容哈希与保存时一致才吸收。
 	// 纯时间窗口会吞掉这 2 秒内真正的外部修改（并把 knownM/S 更新成新值，之后永远不再报）。
-	if time.Since(st.savedAt) < saveSuppressAfter {
-		if h, err := fileHash(st.watched); err == nil && h == st.savedHash {
-			st.knownM, st.knownS = m, sz
+	if time.Since(w.savedAt) < saveSuppressAfter {
+		if h, err := fileHash(w.watched); err == nil && h == w.savedHash {
+			w.knownM, w.knownS = m, sz
 			return nil
 		}
 	}
-	st.knownM, st.knownS = m, sz
-	return &FileEvent{Kind: "changed", Path: st.watched, ModTime: m, Size: sz}
+	w.knownM, w.knownS = m, sz
+	return &FileEvent{Kind: "changed", Path: w.watched, ModTime: m, Size: sz}
 }

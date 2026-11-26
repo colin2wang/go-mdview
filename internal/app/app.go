@@ -14,7 +14,12 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"mdview/internal/mdv"
+	"mdview/internal/assoc"
+	"mdview/internal/exporter"
+	"mdview/internal/imgsrv"
+	"mdview/internal/settings"
+	"mdview/internal/storage"
+	"mdview/internal/win"
 )
 
 // RelaunchFlag 「重启」拉起新进程时附加的标记：main 见到它先等旧进程退出，
@@ -54,14 +59,14 @@ func WaitPidOf(args []string) int {
 }
 
 // ProcessAlive 判断 pid 对应的进程是否仍在运行（Windows 用 OpenProcess 探测）。
-func ProcessAlive(pid int) bool { return processAlive(pid) }
+func ProcessAlive(pid int) bool { return win.ProcessAlive(pid) }
 
 // App Wails Service：前端可调用的全部方法挂在这里。
 // v3 用 Service 模式替代 v2 的 Bind + ctx：运行期对象经 ServiceStartup 拿到。
 type App struct {
 	app        *application.App
 	win        *application.WebviewWindow
-	store      *mdv.Store
+	store      *storage.Store
 	restarting atomic.Bool // 重启中：关闭前不能再把当前几何写回设置
 	draftDirty atomic.Bool // 前端有未保存草稿：关闭拦截先让前端弹确认
 }
@@ -69,7 +74,7 @@ type App struct {
 var singleton *App
 
 func NewApp() *App {
-	a := &App{store: mdv.NewStore()}
+	a := &App{store: storage.NewStore()}
 	singleton = a
 	return a
 }
@@ -86,7 +91,7 @@ func Instance() *App {
 func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	a.app = application.Get()
 	// 外部文件修改监视：mdv 检测到变化后经 Wails 事件推给前端
-	a.store.SetFileChangeCallback(func(ev mdv.FileEvent) {
+	a.store.SetFileChangeCallback(func(ev storage.FileEvent) {
 		a.app.Event.Emit("file:watch", ev)
 	})
 	return nil
@@ -118,7 +123,7 @@ func (a *App) SetDraftDirty(dirty bool) {
 
 // AllowImageDir 登记允许通过 /mdimg 回放的目录；打开图片 / 启动恢复均需 await 后再显示。
 func (a *App) AllowImageDir(dir string) {
-	mdv.AllowImageDir(dir)
+	imgsrv.AllowImageDir(dir)
 }
 
 // saveWindowState 只记录可还原的普通窗口几何：
@@ -138,7 +143,7 @@ func (a *App) saveWindowState(win *application.WebviewWindow) {
 	}
 	x, y := win.Position()
 	w, h := win.Size()
-	if w < mdv.MinWindowWidth || h < mdv.MinWindowHeight || x < -30000 || y < -30000 {
+	if w < settings.MinWindowWidth || h < settings.MinWindowHeight || x < -30000 || y < -30000 {
 		return // 异常几何（窗口正在销毁/刚创建）不覆盖
 	}
 	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = x, y, w, h, false
@@ -242,11 +247,11 @@ func (a *App) OpenFileDialog() (string, error) {
 }
 
 // ListTree 目录树（带 2s 缓存）。
-func (a *App) ListTree(dir string) ([]mdv.Node, error) { return a.store.ListTree(dir) }
+func (a *App) ListTree(dir string) ([]storage.Node, error) { return a.store.ListTree(dir) }
 
 // RefreshTree 显式刷新：先失效缓存再扫描磁盘。
-func (a *App) RefreshTree(dir string) ([]mdv.Node, error) {
-	mdv.InvalidateTreeCache()
+func (a *App) RefreshTree(dir string) ([]storage.Node, error) {
+	storage.InvalidateTreeCache()
 	return a.store.ListTree(dir)
 }
 
@@ -258,7 +263,7 @@ func (a *App) StatFile(path string) bool {
 }
 
 // ReadMarkdown 读取文件内容，并切换外部修改监视到该文件。
-func (a *App) ReadMarkdown(path string) (mdv.FileContent, error) {
+func (a *App) ReadMarkdown(path string) (storage.FileContent, error) {
 	fc, err := a.store.ReadMarkdown(path)
 	if err == nil {
 		a.store.WatchFile(path)
@@ -267,7 +272,7 @@ func (a *App) ReadMarkdown(path string) (mdv.FileContent, error) {
 }
 
 // SaveMarkdown 把编辑后的正文写回文件（源码/对照模式的「保存」按钮）。
-func (a *App) SaveMarkdown(path, content, encoding string) (mdv.FileContent, error) {
+func (a *App) SaveMarkdown(path, content, encoding string) (storage.FileContent, error) {
 	fc, err := a.store.SaveMarkdown(path, content, encoding)
 	if err == nil {
 		// 标记自身写入，watcher 不会把这次保存当成外部修改广播；
@@ -283,12 +288,12 @@ func (a *App) FindByTitle(root, title string) string    { return a.store.FindByT
 func (a *App) FindByTitles(root, title string) []string { return a.store.FindByTitles(root, title) }
 
 // 历史 / 收藏。
-func (a *App) GetHistory() []mdv.Entry   { return a.store.GetHistory() }
-func (a *App) PushHistory(path string)   { a.store.PushHistory(path) }
-func (a *App) ClearHistory()             { a.store.ClearHistory() }
-func (a *App) RemoveHistory(path string) { a.store.RemoveHistory(path) }
+func (a *App) GetHistory() []storage.Entry { return a.store.GetHistory() }
+func (a *App) PushHistory(path string)     { a.store.PushHistory(path) }
+func (a *App) ClearHistory()               { a.store.ClearHistory() }
+func (a *App) RemoveHistory(path string)   { a.store.RemoveHistory(path) }
 
-func (a *App) GetFavorites() []mdv.Entry { return a.store.GetFavorites() }
+func (a *App) GetFavorites() []storage.Entry { return a.store.GetFavorites() }
 
 // ToggleFavorite 切换收藏。只回传切换后的状态，列表由前端经 GetFavorites 刷新。
 func (a *App) ToggleFavorite(path string) bool {
@@ -296,8 +301,8 @@ func (a *App) ToggleFavorite(path string) bool {
 	return added
 }
 
-func (a *App) GetSettings() mdv.Settings { return a.store.GetSettings() }
-func (a *App) SaveSettings(s mdv.Settings) mdv.Settings {
+func (a *App) GetSettings() settings.Settings { return a.store.GetSettings() }
+func (a *App) SaveSettings(s settings.Settings) settings.Settings {
 	// 窗口几何只由 Go 维护：前端整包回传的是打开时的旧值，
 	// 直接写回会覆盖关闭/重启时刚记录的新几何。
 	current := a.store.GetSettings()
@@ -339,7 +344,7 @@ func (a *App) RestartApp() error {
 	a.draftDirty.Store(false) // 前端已确认丢弃草稿，别让关闭拦截再弹一次
 	st := a.store.GetSettings()
 	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = 0, 0, 0, 0, false
-	st.SidebarWidth = mdv.DefaultSidebarWidth
+	st.SidebarWidth = settings.DefaultSidebarWidth
 	a.store.SaveSettings(st)
 	if err := a.launchSelf(); err != nil {
 		a.restarting.Store(false) // 拉不起来就留在当前窗口，前端会提示错误
@@ -376,7 +381,7 @@ func (a *App) WindowFullscreenToggle() {
 func (a *App) CopyText(text string) { _ = a.app.Clipboard.SetText(text) }
 
 // CopyImage 把前端光栅化后的 PNG data URL 写成系统位图剪贴板（图形卡片「复制图片」）。
-func (a *App) CopyImage(dataURL string) error { return copyImageToClipboard(dataURL) }
+func (a *App) CopyImage(dataURL string) error { return win.CopyImage(dataURL) }
 
 // OpenExternalURL 用系统默认浏览器打开外部链接（Markdown 里的 http/https）。
 // 只放行 http/https/mailto，避免 file:// 等协议被不可信文档滥用。
@@ -404,13 +409,13 @@ func (a *App) RevealInShell(path string) {
 }
 
 // GetAssocState 读取 .md 文件关联状态（设置对话框用）。
-func (a *App) GetAssocState() mdv.AssocState { return mdv.GetAssocState() }
+func (a *App) GetAssocState() assoc.AssocState { return assoc.GetAssocState() }
 
 // AssociateMd 把 .md/.markdown 关联到当前 mdview，并设置文件图标。
-func (a *App) AssociateMd() error { return mdv.AssociateMd() }
+func (a *App) AssociateMd() error { return assoc.AssociateMd() }
 
 // UnassociateMd 取消关联，还原接管前的默认打开方式。
-func (a *App) UnassociateMd() error { return mdv.UnassociateMd() }
+func (a *App) UnassociateMd() error { return assoc.UnassociateMd() }
 
 // SaveHtmlDialog 导出 HTML：弹保存框拿路径再落盘。
 func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {
@@ -433,7 +438,7 @@ func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {
 	if target == "" {
 		return "", nil // 用户取消
 	}
-	return mdv.ExportHtml(title, html, target)
+	return exporter.ExportHtml(title, html, target)
 }
 
 // SaveSvgDialog 导出思维导图 SVG：弹保存框拿路径后直接落盘（内容已是完整 SVG 文档）。

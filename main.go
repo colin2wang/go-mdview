@@ -11,7 +11,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	mdvapp "mdview/internal/app"
-	"mdview/internal/mdv"
+	"mdview/internal/imgsrv"
+	"mdview/internal/settings"
+	"mdview/internal/storage"
 )
 
 //go:embed all:frontend/dist
@@ -29,9 +31,9 @@ func main() {
 	}
 
 	// 上次关闭时的窗口几何（尺寸 + 位置 + 最大化都由 settings 记忆）
-	st := mdv.NewStore().GetSettings()
-	width, height := mdv.DefaultWindowWidth, mdv.DefaultWindowHeight
-	if st.WinW >= mdv.MinWindowWidth && st.WinH >= mdv.MinWindowHeight {
+	st := storage.NewStore().GetSettings()
+	width, height := settings.DefaultWindowWidth, settings.DefaultWindowHeight
+	if st.WinW >= settings.MinWindowWidth && st.WinH >= settings.MinWindowHeight {
 		width, height = st.WinW, st.WinH
 	}
 
@@ -70,8 +72,8 @@ func main() {
 		Y:         st.WinY,
 		Width:     width,
 		Height:    height,
-		MinWidth:  mdv.MinWindowWidth,
-		MinHeight: mdv.MinWindowHeight,
+		MinWidth:  settings.MinWindowWidth,
+		MinHeight: settings.MinWindowHeight,
 		// 自绘标题栏（需求对齐官方 32px）；v3 默认 StartState 为普通态
 		Frameless: true,
 		// 原生拖放默认关闭，必须显式开启：Go 侧接住后转发前端
@@ -107,12 +109,12 @@ func main() {
 }
 
 // assetHandler 静态资产 + 本地图片回放分流：
-// /mdimg/{hexpath} 直连 mdv.ImgHandler（目录白名单校验），其余走内嵌前端资产。
+// /mdimg/{hexpath} 直连 imgsrv.ImgHandler（目录白名单校验），其余走内嵌前端资产。
 func assetHandler() http.Handler {
 	fileServer := application.BundledAssetFileServer(assets)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/mdimg/") {
-			mdv.ImgHandler.ServeHTTP(w, r)
+			imgsrv.ImgHandler.ServeHTTP(w, r)
 			return
 		}
 		fileServer.ServeHTTP(w, r)

@@ -1,10 +1,12 @@
-package mdv
+package storage
 
 import (
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"mdview/internal/settings"
 )
 
 // YAML 配置文件：exe 同目录下的 mdview.yml。
@@ -45,7 +47,7 @@ func yamlQuote(s string) string {
 }
 
 // writeYamlSettings 整体重写 mdview.yml（注释模板 + 当前设置值）。
-func writeYamlSettings(st Settings) error {
+func writeYamlSettings(st settings.Settings) error {
 	path := YamlConfigPath()
 	if path == "" {
 		return os.ErrInvalid
@@ -102,7 +104,7 @@ func writeYamlSettings(st Settings) error {
 // loadYamlSettings 解析 mdview.yml，把出现的键覆盖到 st 上。
 // 极简 YAML 子集：`key: value` 标量 + `  - value` 列表项（仅 remoteAllow 用到），
 // `#` 注释与空行忽略；不引入 YAML 依赖。
-func loadYamlSettings(st *Settings) {
+func loadYamlSettings(st *settings.Settings) {
 	path := YamlConfigPath()
 	if path == "" {
 		return

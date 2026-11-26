@@ -1,4 +1,4 @@
-package mdv
+package exporter
 
 import (
 	"encoding/base64"
@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"mdview/internal/imgsrv"
 )
 
 const exportHead = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n" +
@@ -51,8 +53,8 @@ func embedExportImages(body string) string {
 			return m
 		}
 		p := strings.TrimSpace(string(raw))
-		ct := contentTypeByExt(p)
-		if ct == "" || !imgPathAllowed(p) {
+		ct := imgsrv.ContentTypeByExt(p)
+		if ct == "" || !imgsrv.PathAllowed(p) {
 			return m
 		}
 		f, err := os.Open(p)

@@ -1,6 +1,6 @@
 //go:build windows
 
-package app
+package win
 
 import (
 	"bytes"
@@ -36,9 +36,9 @@ const (
 	winGMEMMoveable = 0x0002
 )
 
-// copyImageToClipboard 把 PNG data URL 解码为 DIB 位图写入剪贴板。
+// CopyImage 把 PNG data URL 解码为 DIB 位图写入剪贴板。
 // Wails 自带剪贴板 API 只能写文本，图形卡片的「复制图片」需要真正的位图格式。
-func copyImageToClipboard(dataURL string) error {
+func CopyImage(dataURL string) error {
 	img, err := decodePngDataURL(dataURL)
 	if err != nil {
 		return err

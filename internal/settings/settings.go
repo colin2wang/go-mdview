@@ -1,4 +1,5 @@
-package mdv
+// Package settings 定义应用设置类型、默认值与合法性归一化（不含持久化，持久化在 internal/storage）。
+package settings
 
 // ViewMode 正文显示模式。
 const (
@@ -57,11 +58,12 @@ type Settings struct {
 	WinW          int    `json:"winW"`          // 上次关闭时窗口宽 px（0 = 未记录）
 	WinH          int    `json:"winH"`          // 上次关闭时窗口高 px
 	WinX          int    `json:"winX"`          // 上次关闭时窗口左上角 x（可为负，多显示器）
-	WinY          int    `json:"winY"`          // 上次关闭时窗口左上角 y
+	WinY          int    `json:"winY"`          // 上次关闭时窗口左上角 y（可为负，多显示器）
 	WinMax        bool   `json:"winMax"`        // 上次关闭时是否最大化
 }
 
-var defaultSettings = Settings{
+// DefaultSettings 默认值（读取时以此开局再反序列化，旧文件缺字段时保留默认值）。
+var DefaultSettings = Settings{
 	Theme:         "light",
 	FontSize:      16,
 	CodeWrap:      false,
@@ -77,8 +79,8 @@ var defaultSettings = Settings{
 	MermaidEngine: MermaidEnginePele,
 }
 
-// validViewMode 归一化显示模式，非法值回落到 render。
-func validViewMode(v string) string {
+// ValidViewMode 归一化显示模式，非法值回落到 render。
+func ValidViewMode(v string) string {
 	switch v {
 	case ViewModeSource, ViewModeSplit, ViewModeMindmap:
 		return v
@@ -87,20 +89,18 @@ func validViewMode(v string) string {
 	}
 }
 
-// validMermaidEngine 归一化图表渲染引擎，非法值回落到默认 Pele。
-func validMermaidEngine(v string) string {
+// ValidMermaidEngine 归一化图表渲染引擎，非法值回落到默认 Pele。
+func ValidMermaidEngine(v string) string {
 	if v == MermaidEngineMermaid {
 		return MermaidEngineMermaid
 	}
 	return MermaidEnginePele
 }
 
-// validLanguage 归一化界面语言，非法值回落到 zh-CN。
-func validLanguage(v string) string {
+// ValidLanguage 归一化界面语言，非法值回落到 zh-CN。
+func ValidLanguage(v string) string {
 	switch v {
-	case "en", "ja", "de":
-		return v
-	case "zh-CN":
+	case "en", "ja", "de", "zh-CN":
 		return v
 	default:
 		return "zh-CN"
@@ -125,26 +125,13 @@ func normalizeWindow(st *Settings) {
 	}
 }
 
-// GetSettings 读取设置并补齐默认值/合法区间。
-func (s *Store) GetSettings() Settings {
-	// 以默认值开局再反序列化：旧版 settings.json 缺字段（如 lineNo）时保留默认值
-	st := defaultSettings
-	s.mu.Lock()
-	s.readJSON("settings.json", &st)
-	s.mu.Unlock()
-	// yml 配置源优先：exe 同目录存在 mdview.yml 即视为开关打开（不必依赖存储的
-	// useYaml 值），yml 中出现的键覆盖 JSON
-	if yamlExists() && !yamlDisabled() {
-		st.UseYaml = true
-		loadYamlSettings(&st)
-	} else if yamlDisabled() {
-		st.UseYaml = false // 用户已关闭 yml，即使文件因权限删不掉也不让它复活
-	}
+// Normalize 就地归一化 Settings 的全部字段到合法区间（读取与保存共用同一套规则）。
+func Normalize(st *Settings) {
 	if st.Theme != "dark" && st.Theme != "light" {
-		st.Theme = defaultSettings.Theme
+		st.Theme = DefaultSettings.Theme
 	}
 	if st.FontSize < 12 || st.FontSize > 28 {
-		st.FontSize = defaultSettings.FontSize
+		st.FontSize = DefaultSettings.FontSize
 	}
 	if st.SidebarWidth < MinSidebarWidth || st.SidebarWidth > MaxSidebarWidth {
 		st.SidebarWidth = DefaultSidebarWidth
@@ -152,42 +139,22 @@ func (s *Store) GetSettings() Settings {
 	if st.MmMaxLen < MinMmMaxLen || st.MmMaxLen > MaxMmMaxLen {
 		st.MmMaxLen = DefaultMmMaxLen
 	}
-	st.ViewMode = validViewMode(st.ViewMode)
-	st.Language = validLanguage(st.Language)
-	st.MermaidEngine = validMermaidEngine(st.MermaidEngine)
-	normalizeWindow(&st)
-	return st
+	st.ViewMode = ValidViewMode(st.ViewMode)
+	st.Language = ValidLanguage(st.Language)
+	st.MermaidEngine = ValidMermaidEngine(st.MermaidEngine)
+	normalizeWindow(st)
 }
 
-// SaveSettings 校验后落盘。
-func (s *Store) SaveSettings(in Settings) Settings {
-	st := in
+// Clamp 保存前的收紧版归一化：与 Normalize 同规则，但越界值一律取边界而不是默认值。
+func Clamp(st *Settings) {
 	if st.Theme != "dark" && st.Theme != "light" {
 		st.Theme = "light"
 	}
 	st.FontSize = clampInt(st.FontSize, 12, 28)
 	st.SidebarWidth = clampInt(st.SidebarWidth, MinSidebarWidth, MaxSidebarWidth)
 	st.MmMaxLen = clampInt(st.MmMaxLen, MinMmMaxLen, MaxMmMaxLen)
-	st.ViewMode = validViewMode(st.ViewMode)
-	st.Language = validLanguage(st.Language)
-	st.MermaidEngine = validMermaidEngine(st.MermaidEngine)
-	normalizeWindow(&st)
-	s.mu.Lock()
-	if st.UseYaml {
-		// yml 模式：只要开关打开就写 mdview.yml（首次打开开关时立即创建带注释的
-		// 文件），settings.json 不再更新；写失败时回落 JSON，避免设置丢失
-		if err := writeYamlSettings(st); err != nil {
-			s.setError(err) // 写 yml 失败也要可见，不再静默回落
-			s.writeJSON("settings.json", &st)
-		}
-	} else {
-		// 关掉 yml 开关：回写 settings.json，并删除本地 yml，
-		// 避免残留旧文件让下次启动又把开关「顶」回打开状态
-		s.writeJSON("settings.json", &st)
-		if err := removeYaml(); err != nil {
-			s.setError(err)
-		}
-	}
-	s.mu.Unlock()
-	return st
+	st.ViewMode = ValidViewMode(st.ViewMode)
+	st.Language = ValidLanguage(st.Language)
+	st.MermaidEngine = ValidMermaidEngine(st.MermaidEngine)
+	normalizeWindow(st)
 }
