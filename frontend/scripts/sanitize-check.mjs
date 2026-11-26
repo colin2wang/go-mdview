@@ -7,10 +7,12 @@ import { createRequire } from 'module'
 import {
   createState,
   mermaidSvgConfig,
+  peleSvgConfig,
   remoteAllowed,
   sanitizeWith,
   splitConfig,
   stripSvgExternalRefs,
+  stripSvgStyleUrls,
   svgConfig
 } from '../src/sanitize-common.js'
 
@@ -191,6 +193,45 @@ check(
   mmBad.includes('安全文字') && !mmBad.includes('<script') && !mmBad.includes('alert(1)') && !mmBad.includes('onclick') && !mmBad.includes('evil.tld'),
   'Mermaid config still blocks scripts, event handlers and remote refs',
   `got: ${mmBad}`
+)
+
+// 7. Pele 输出：classDef 内联配色保留，但脚本/事件属性/远程引用仍被拦截
+const peleState = createState(true, '', () => '', '')
+const peleGot = sanitizeWith(
+  DOMPurify,
+  parts,
+  stripSvgExternalRefs(
+    '<svg class="pele"><g style="fill:#f00;stroke:#00f" onclick="alert(1)"><rect/></g>' +
+      '<script>alert(1)</script><image href="https://evil.tld/i.png"/></svg>'
+  ),
+  peleState,
+  peleSvgConfig(parts)
+)
+check(
+  peleGot.includes('fill:#f00') && peleGot.includes('stroke:#00f'),
+  'Pele config keeps classDef inline style',
+  `got: ${peleGot}`
+)
+check(
+  !peleGot.includes('<script') &&
+    !peleGot.includes('alert(1)') &&
+    !peleGot.includes('onclick') &&
+    !peleGot.includes('evil.tld'),
+  'Pele config still blocks scripts, handlers and remote refs',
+  `got: ${peleGot}`
+)
+// style 里的 url() 是 Pele 白名单之外的远程引用，派生配置放行 style 后仍需显式剥掉
+const peleUrl = sanitizeWith(
+  DOMPurify,
+  parts,
+  stripSvgStyleUrls('<svg class="pele"><rect style="fill:#f00;mask:url(https://evil.tld/m.png);stroke:#00f"/></svg>'),
+  peleState,
+  peleSvgConfig(parts)
+)
+check(
+  peleUrl.includes('fill:#f00') && peleUrl.includes('stroke:#00f') && !peleUrl.includes('url('),
+  'Pele inline style with url() is neutralized',
+  `got: ${peleUrl}`
 )
 
 // ---------- 汇总 ----------

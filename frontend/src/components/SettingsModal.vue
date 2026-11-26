@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { store, patchSettings, setViewMode, togglePin, toast, confirmDiscard } from '../store'
 import { getApi } from '../api'
 import { t, LANGS } from '../i18n'
-import type { AssocState, ViewMode } from '../types'
+import type { AssocState, MermaidEngine, ViewMode } from '../types'
 import { defaultAssocState } from '../types'
 
 const open = computed(() => store.settingsOpen)
@@ -102,6 +102,10 @@ function setPinned() {
 }
 function setViewModeEvt(v: ViewMode) {
   setViewMode(v)
+}
+// 切引擎：patchSettings 持久化后，Viewer 的 watch 会以 force 重绘已有图形
+function setMmEngine(v: MermaidEngine) {
+  patchSettings({ mermaidEngine: v })
 }
 // 切语言：走 patchSettings 持久化，applySettings 里的 setLang 让全界面即时生效
 function setLangEvt(v: string) {
@@ -331,6 +335,34 @@ const assocTip = computed(() => {
               </span>
             </div>
             <p class="set-hint">{{ t('set.splitHint') }}</p>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.mmEngine') }}</span>
+              <span class="set-seg" role="radiogroup">
+                <button
+                  type="button"
+                  class="seg-btn"
+                  :class="{ on: (st?.mermaidEngine ?? 'mermaid') === 'mermaid' }"
+                  role="radio"
+                  :aria-checked="(st?.mermaidEngine ?? 'mermaid') === 'mermaid'"
+                  data-testid="engine-mermaid"
+                  @click="setMmEngine('mermaid')"
+                >
+                  Mermaid.js
+                </button>
+                <button
+                  type="button"
+                  class="seg-btn"
+                  :class="{ on: st?.mermaidEngine === 'pele' }"
+                  role="radio"
+                  :aria-checked="st?.mermaidEngine === 'pele'"
+                  data-testid="engine-pele"
+                  @click="setMmEngine('pele')"
+                >
+                  Pele
+                </button>
+              </span>
+            </div>
+            <p class="set-hint">{{ t('set.mmEngineHint') }}</p>
             <div class="set-row">
               <span class="set-label">
                 {{ t('set.mmMaxLen') }}

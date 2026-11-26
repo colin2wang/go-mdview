@@ -31,6 +31,9 @@ export interface Entry {
 /** 正文显示模式：仅渲染 / 仅源码 / 左右对照 / 思维导图。 */
 export type ViewMode = 'render' | 'source' | 'split' | 'mindmap'
 
+/** Mermaid 图表渲染引擎：经典 mermaid.js 或轻量 pele。 */
+export type MermaidEngine = 'mermaid' | 'pele'
+
 export interface Settings {
   theme: string // light | dark
   fontSize: number
@@ -47,6 +50,7 @@ export interface Settings {
   remoteAllow: string // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中放行
   useYaml: boolean // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
   mmMaxLen: number // 思维导图节点/备注单行最大字符数（超出折行），默认 20
+  mermaidEngine: MermaidEngine // Mermaid 图表渲染引擎，默认 mermaid
   // 上次关闭时的普通窗口几何（0 = 未记录）与最大化标记，由 Go 端维护
   winW: number
   winH: number
@@ -71,6 +75,7 @@ export const defaultSettings: Settings = {
   remoteAllow: '',
   useYaml: false,
   mmMaxLen: 20,
+  mermaidEngine: 'mermaid',
   winW: 0,
   winH: 0,
   winX: 0,

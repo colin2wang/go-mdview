@@ -1,5 +1,5 @@
-import type { TocItem } from './types'
-import { ensureHljs, ensureKatex, freshMarked, maybeMath, loadScript } from './vendor'
+import type { MermaidEngine, TocItem } from './types'
+import { ensureHljs, ensureKatex, ensurePele, freshMarked, maybeMath, loadScript } from './vendor'
 import { t } from './i18n'
 import DOMPurify from 'dompurify'
 import sanitizeConfig from './sanitize-config.json'
@@ -7,10 +7,12 @@ import {
   createState,
   isRemoteSrc,
   mermaidSvgConfig,
+  peleSvgConfig,
   remoteAllowed as remoteAllowedByPattern,
   sanitizeWith,
   splitConfig,
   stripSvgExternalRefs,
+  stripSvgStyleUrls,
   svgConfig
 } from './sanitize-common.js'
 
@@ -377,6 +379,19 @@ export function sanitizeMermaidSvg(code: string): string {
   }
 }
 
+/** Pele 输出二次净化：Pele 已按白名单过滤内联 style，放行它以保留 classDef 配色。 */
+export function sanitizePeleSvg(code: string): string {
+  const state = createState(true, '', () => '', '')
+  const clean = sanitizeWith(
+    DOMPurify,
+    parts,
+    stripSvgExternalRefs(stripSvgStyleUrls(code)),
+    state,
+    peleSvgConfig(parts)
+  )
+  return normalizeSvgRoot(clean)
+}
+
 /** 取根节点上某属性的值（仅用于 width/height 判断）。 */
 function svgAttr(attrs: string, name: string): string {
   const m = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, 'i').exec(attrs)
@@ -648,24 +663,132 @@ export async function renderMathIn(el: HTMLElement): Promise<void> {
 }
 
 let mermaidSeq = 0
+let peleSeq = 0
 
 /** 图形卡片正文的容器选择器。 */
 function srcHolder(el: HTMLElement): HTMLElement | null {
   return el.querySelector('.md-diagram-src')
 }
 
+/** done + engine 双标记：同引擎已完成则跳过；引擎不符时自动重绘。 */
+const isDoneBy = (b: HTMLElement, e: MermaidEngine) =>
+  b.dataset.done === '1' && (b.dataset.engine ?? 'mermaid') === e
+
+/** 源码里带裸 % 时 decodeURIComponent 会抛错，保留原样即可。 */
+function decodeDiagramSource(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+/** Mermaid.js 分支：异步 render，主题切换必须重绘。 */
+async function renderMermaidBlocks(blocks: HTMLElement[], dark: boolean): Promise<void> {
+  try {
+    await loadScript('/static/mermaid.min.js')
+    const mermaid = (window as any).mermaid
+    if (!mermaid) throw new Error('mermaid unavailable')
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' })
+    for (const block of blocks) {
+      if (isDoneBy(block, 'mermaid')) continue
+      const code = decodeDiagramSource(block.dataset.mermaid ?? '')
+      const holder = srcHolder(block)
+      if (!holder) continue
+      block.dataset.engine = 'mermaid'
+      try {
+        const id = `mdv-mm-${++mermaidSeq}`
+        const res = await mermaid.render(id, code)
+        holder.innerHTML = sanitizeMermaidSvg(res.svg)
+        block.dataset.done = '1'
+        block.classList.add('ok')
+        block.classList.remove('err')
+      } catch {
+        holder.innerHTML =
+          `<div class="md-diagram-hint"><div class="md-diagram-hint-text">${escapeHtml(t('diag.mermaidErr'))}</div>` +
+          `<pre class="md-diagram-src-code">${escapeHtml(code)}</pre></div>`
+        block.dataset.done = '1'
+        block.classList.add('err')
+        block.classList.remove('ok')
+      }
+    }
+  } catch {
+    for (const b of blocks) {
+      if (isDoneBy(b, 'mermaid')) continue
+      const h = srcHolder(b)
+      if (h) h.textContent = t('diag.mermaidLoadFailed')
+      b.dataset.done = '1'
+    }
+  }
+}
+
+/** Pele 分支：同步 render、CSS 变量切主题；加载失败时回退经典引擎。 */
+async function renderPeleBlocks(blocks: HTMLElement[], el: HTMLElement, dark: boolean): Promise<void> {
+  let pele: any = null
+  try {
+    pele = await ensurePele()
+  } catch {
+    console.warn('[mdview] Pele unavailable, falling back to Mermaid.js')
+  }
+  if (!pele) {
+    await renderMermaidBlocks(blocks, dark)
+    return
+  }
+  // render() 没有容器可读，标签字体显式跟随正文
+  const fontFamily = getComputedStyle(el).fontFamily || 'sans-serif'
+  for (const block of blocks) {
+    if (isDoneBy(block, 'pele')) continue
+    const holder = srcHolder(block)
+    if (!holder) continue
+    block.dataset.engine = 'pele'
+    const code = decodeDiagramSource(block.dataset.mermaid ?? '')
+    try {
+      // 离线承诺：禁链接禁图片（Pele 默认放行 http(s)，必须显式关掉）
+      const res = pele.render(code, {
+        fontFamily,
+        idPrefix: `mdv-pele-${++peleSeq}`,
+        links: false,
+        images: false
+      })
+      if (!res || typeof res.svg !== 'string') throw new Error('pele returned no svg')
+      holder.innerHTML = sanitizePeleSvg(res.svg)
+      block.dataset.done = '1'
+      block.classList.add('ok')
+      block.classList.remove('err')
+    } catch (e) {
+      // PeleError 的 message/snippet 含图源码：走 escapeHtml，等价 textContent
+      const msg = e instanceof Error ? escapeHtml(e.message) : ''
+      holder.innerHTML =
+        `<div class="md-diagram-hint"><div class="md-diagram-hint-text">${escapeHtml(t('diag.mermaidErr'))}` +
+        (msg ? ` <code>${msg}</code>` : '') +
+        `</div><pre class="md-diagram-src-code">${escapeHtml(code)}</pre></div>`
+      block.dataset.done = '1'
+      block.classList.add('err')
+      block.classList.remove('ok')
+    }
+  }
+}
+
 /**
- * 渲染页面中的图形卡片：Mermaid 出 SVG、内联 SVG 直接落地。
- * force=true 用于主题切换后的重绘。
+ * 渲染页面中的图形卡片：Mermaid / Pele 出 SVG、内联 SVG 直接落地。
+ * force=true 用于主题或引擎切换后的重绘；Pele 块靠 CSS 变量免重绘。
  */
-export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = false): Promise<void> {
+export async function renderDiagramsIn(
+  el: HTMLElement,
+  dark: boolean,
+  force = false,
+  engine: MermaidEngine = 'mermaid'
+): Promise<void> {
   const blocks = el.querySelectorAll<HTMLElement>('[data-mermaid],[data-svg]')
   if (!blocks.length) return
   if (force) {
-    // 主题变了要换色：清掉完成标记与状态类，允许重新渲染
     blocks.forEach((b) => {
-      delete b.dataset.done
-      b.classList.remove('ok', 'err')
+      // 内联 SVG 与 Mermaid.js 要换色重绘；Pele 保留 done 标记，颜色随 CSS 变量即时切换
+      if (b.hasAttribute('data-svg') || (engine === 'mermaid' && isDoneBy(b, 'mermaid'))) {
+        delete b.dataset.done
+        delete b.dataset.engine
+        b.classList.remove('ok', 'err')
+      }
     })
   }
 
@@ -674,12 +797,7 @@ export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = f
     if (block.dataset.done === '1') continue
     const holder = srcHolder(block)
     if (!holder) continue
-    let code = block.dataset.svg ?? ''
-    try {
-      code = decodeURIComponent(code)
-    } catch {
-      /* 源码里带了裸 % 时 decode 会抛错，保留原样即可 */
-    }
+    const code = decodeDiagramSource(block.dataset.svg ?? '')
     const safe = sanitizeSvg(code)
     if (/<svg[\s>]/i.test(safe)) {
       holder.innerHTML = safe
@@ -695,36 +813,9 @@ export async function renderDiagramsIn(el: HTMLElement, dark: boolean, force = f
 
   const mmBlocks = Array.from(el.querySelectorAll<HTMLElement>('[data-mermaid]'))
   if (!mmBlocks.length) return
-  try {
-    await loadScript('/static/mermaid.min.js')
-    const mermaid = (window as any).mermaid
-    if (!mermaid) throw new Error('mermaid unavailable')
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' })
-    for (const block of mmBlocks) {
-      if (block.dataset.done === '1') continue
-      const code = decodeURIComponent(block.dataset.mermaid ?? '')
-      const holder = srcHolder(block)
-      if (!holder) continue
-      try {
-        const id = `mdv-mm-${++mermaidSeq}`
-        const res = await mermaid.render(id, code)
-        holder.innerHTML = sanitizeMermaidSvg(res.svg)
-        block.dataset.done = '1'
-        block.classList.add('ok')
-      } catch {
-        holder.innerHTML =
-          `<div class="md-diagram-hint"><div class="md-diagram-hint-text">${escapeHtml(t('diag.mermaidErr'))}</div>` +
-          `<pre class="md-diagram-src-code">${escapeHtml(code)}</pre></div>`
-        block.dataset.done = '1'
-        block.classList.add('err')
-      }
-    }
-  } catch {
-    for (const b of mmBlocks) {
-      if (b.dataset.done === '1') continue
-      const h = srcHolder(b)
-      if (h) h.textContent = t('diag.mermaidLoadFailed')
-      b.dataset.done = '1'
-    }
+  if (engine === 'pele') {
+    await renderPeleBlocks(mmBlocks, el, dark)
+    return
   }
+  await renderMermaidBlocks(mmBlocks, dark)
 }

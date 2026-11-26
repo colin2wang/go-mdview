@@ -11,4 +11,7 @@ interface Window {
   // WebView2/Chromium 私有 API，TS DOM 声明里没有
   find: (text: string, caseSensitive?: boolean, backwards?: boolean, wrapAround?: boolean, wholeWord?: boolean, searchInFrames?: boolean) => boolean
   _wails?: Record<string, any>
+  // 本地静态脚本注入的 Mermaid 渲染引擎（mermaid.min.js / pele.global.js）
+  mermaid?: Record<string, any>
+  pele?: Record<string, any>
 }

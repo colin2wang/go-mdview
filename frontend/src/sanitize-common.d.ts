@@ -34,4 +34,6 @@ export function sanitizeWith(
 ): string
 export function svgConfig(parts: SanitizeParts, allowStyle?: boolean): Record<string, any>
 export function mermaidSvgConfig(parts: SanitizeParts): Record<string, any>
+export function peleSvgConfig(parts: SanitizeParts): Record<string, any>
+export function stripSvgStyleUrls(code: string): string
 export function stripSvgExternalRefs(code: string): string

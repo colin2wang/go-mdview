@@ -38,7 +38,7 @@ import {
 } from '../sync'
 import { status } from '../status'
 import { t } from '../i18n'
-import type { ViewMode } from '../types'
+import type { MermaidEngine, ViewMode } from '../types'
 import AppIcon from './AppIcon.vue'
 import ImageLightbox from './ImageLightbox.vue'
 import MindMap from './MindMap.vue'
@@ -471,10 +471,12 @@ function invalidateAnchors(): void {
   invalidateSync()
 }
 
-/** 正文挂载后的补充渲染：Mermaid/SVG 图 + 数学公式。force 用于主题切换后的重绘。 */
+const mmEngine = (): MermaidEngine => store.settings?.mermaidEngine ?? 'mermaid'
+
+/** 正文挂载后的补充渲染：Mermaid/SVG 图 + 数学公式。force 用于主题/引擎切换后的重绘。 */
 async function postRender(art: HTMLElement, force = false) {
   if (store.hasMermaid || art.querySelector('[data-svg]')) {
-    await renderDiagramsIn(art, store.settings?.theme === 'dark', force)
+    await renderDiagramsIn(art, store.settings?.theme === 'dark', force, mmEngine())
   }
   if (store.hasMath) await renderMathIn(art)
 }
@@ -597,7 +599,14 @@ watch(
 watch(
   () => store.settings?.theme,
   async () => {
-    // 图形跟随主题重绘，滚动位置不动
+    // 图形跟随主题重绘，滚动位置不动（Pele 块由 CSS 变量换色，不会被清标记）
+    if (articleEl.value?.querySelector('[data-mermaid]')) await afterRender(true)
+  }
+)
+watch(
+  () => store.settings?.mermaidEngine,
+  async () => {
+    // 引擎切换：按新引擎强制重绘已有图形，滚动位置不动
     if (articleEl.value?.querySelector('[data-mermaid]')) await afterRender(true)
   }
 )
@@ -648,13 +657,18 @@ async function openFileByDialog() {
 }
 
 // ---------- 图片灯箱 ----------
-const lightbox = ref<{ open: boolean; src: string; svg: string }>({ open: false, src: '', svg: '' })
+const lightbox = ref<{ open: boolean; src: string; svg: string; engine: MermaidEngine }>({
+  open: false,
+  src: '',
+  svg: '',
+  engine: 'mermaid'
+})
 
 function openLightboxUrl(src: string) {
-  lightbox.value = { open: true, src, svg: '' }
+  lightbox.value = { open: true, src, svg: '', engine: 'mermaid' }
 }
-function openLightboxSvg(svg: string) {
-  lightbox.value = { open: true, src: '', svg }
+function openLightboxSvg(svg: string, engine: MermaidEngine) {
+  lightbox.value = { open: true, src: '', svg, engine }
 }
 function closeLightbox() {
   lightbox.value.open = false
@@ -663,11 +677,11 @@ function closeLightbox() {
 /** 双击正文图片 / 图形卡片（Mermaid、SVG）→ 全屏灯箱 */
 function onArtDblClick(e: MouseEvent) {
   const tgt = e.target as HTMLElement
-  const holder = tgt.closest('.md-diagram')
+  const holder = tgt.closest<HTMLElement>('.md-diagram')
   if (holder) {
     const svgEl = holder.querySelector('.md-diagram-src svg')
     if (svgEl) {
-      openLightboxSvg(svgEl.outerHTML)
+      openLightboxSvg(svgEl.outerHTML, holder.dataset.engine === 'pele' ? 'pele' : 'mermaid')
       return
     }
   }
@@ -1120,6 +1134,7 @@ function onKey(e: KeyboardEvent) {
       v-if="lightbox.open"
       :src="lightbox.src"
       :svg="lightbox.svg"
+      :engine="lightbox.engine"
       @close="closeLightbox"
     />
   </main>

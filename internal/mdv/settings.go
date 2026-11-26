@@ -8,6 +8,12 @@ const (
 	ViewModeMindmap = "mindmap" // 思维导图（渲染面板独占视图）
 )
 
+// Mermaid 图表渲染引擎。
+const (
+	MermaidEngineMermaid = "mermaid" // 经典 mermaid.js
+	MermaidEnginePele    = "pele"    // 轻量同步渲染器
+)
+
 // 窗口尺寸：main.go 创建窗口与 settings 校验共用，避免两处硬编码不一致。
 const (
 	DefaultWindowWidth  = 1200
@@ -32,41 +38,43 @@ const (
 
 // Settings 应用设置。全部有默认值，读取时零值补齐。
 type Settings struct {
-	Theme        string `json:"theme"`        // light | dark
-	FontSize     int    `json:"fontSize"`     // 正文基准字号 px，默认 16
-	CodeWrap     bool   `json:"codeWrap"`     // 代码块自动换行
-	LineNo       bool   `json:"lineNo"`       // 源码区显示行号，默认开
-	SidebarWidth int    `json:"sidebarWidth"` // 侧栏宽度 px，默认 DefaultSidebarWidth
-	LastFolder   string `json:"lastFolder"`   // 上次打开的目录
-	LastFile     string `json:"lastFile"`     // 上次打开的文件
-	Pinned       bool   `json:"pinned"`       // 窗口置顶
-	ViewMode     string `json:"viewMode"`     // render | source | split | mindmap
-	Language     string `json:"language"`     // 界面语言 zh-CN | en | ja | de
-	AutoReload   bool   `json:"autoReload"`   // 外部修改自动重载，默认开
-	BlockRemote  bool   `json:"blockRemote"`  // 拦截远程资源（http(s) 图片等），默认开，兑现「100% 离线」
-	RemoteAllow  string `json:"remoteAllow"`  // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中即放行
-	UseYaml      bool   `json:"useYaml"`      // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
-	MmMaxLen     int    `json:"mmMaxLen"`     // 思维导图节点/备注单行最大字符数，默认 DefaultMmMaxLen
-	WinW         int    `json:"winW"`         // 上次关闭时窗口宽 px（0 = 未记录）
-	WinH         int    `json:"winH"`         // 上次关闭时窗口高 px
-	WinX         int    `json:"winX"`         // 上次关闭时窗口左上角 x（可为负，多显示器）
-	WinY         int    `json:"winY"`         // 上次关闭时窗口左上角 y
-	WinMax       bool   `json:"winMax"`       // 上次关闭时是否最大化
+	Theme         string `json:"theme"`         // light | dark
+	FontSize      int    `json:"fontSize"`      // 正文基准字号 px，默认 16
+	CodeWrap      bool   `json:"codeWrap"`      // 代码块自动换行
+	LineNo        bool   `json:"lineNo"`        // 源码区显示行号，默认开
+	SidebarWidth  int    `json:"sidebarWidth"`  // 侧栏宽度 px，默认 DefaultSidebarWidth
+	LastFolder    string `json:"lastFolder"`    // 上次打开的目录
+	LastFile      string `json:"lastFile"`      // 上次打开的文件
+	Pinned        bool   `json:"pinned"`        // 窗口置顶
+	ViewMode      string `json:"viewMode"`      // render | source | split | mindmap
+	Language      string `json:"language"`      // 界面语言 zh-CN | en | ja | de
+	AutoReload    bool   `json:"autoReload"`    // 外部修改自动重载，默认开
+	BlockRemote   bool   `json:"blockRemote"`   // 拦截远程资源（http(s) 图片等），默认开，兑现「100% 离线」
+	RemoteAllow   string `json:"remoteAllow"`   // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中即放行
+	UseYaml       bool   `json:"useYaml"`       // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
+	MmMaxLen      int    `json:"mmMaxLen"`      // 思维导图节点/备注单行最大字符数，默认 DefaultMmMaxLen
+	MermaidEngine string `json:"mermaidEngine"` // Mermaid 图表渲染引擎：mermaid | pele
+	WinW          int    `json:"winW"`          // 上次关闭时窗口宽 px（0 = 未记录）
+	WinH          int    `json:"winH"`          // 上次关闭时窗口高 px
+	WinX          int    `json:"winX"`          // 上次关闭时窗口左上角 x（可为负，多显示器）
+	WinY          int    `json:"winY"`          // 上次关闭时窗口左上角 y
+	WinMax        bool   `json:"winMax"`        // 上次关闭时是否最大化
 }
 
 var defaultSettings = Settings{
-	Theme:        "light",
-	FontSize:     16,
-	CodeWrap:     false,
-	LineNo:       true,
-	SidebarWidth: DefaultSidebarWidth,
-	ViewMode:     ViewModeRender,
-	Language:     "zh-CN",
-	AutoReload:   true,
-	BlockRemote:  true,
-	RemoteAllow:  "",
-	UseYaml:      false,
-	MmMaxLen:     DefaultMmMaxLen,
+	Theme:         "light",
+	FontSize:      16,
+	CodeWrap:      false,
+	LineNo:        true,
+	SidebarWidth:  DefaultSidebarWidth,
+	ViewMode:      ViewModeRender,
+	Language:      "zh-CN",
+	AutoReload:    true,
+	BlockRemote:   true,
+	RemoteAllow:   "",
+	UseYaml:       false,
+	MmMaxLen:      DefaultMmMaxLen,
+	MermaidEngine: MermaidEngineMermaid,
 }
 
 // validViewMode 归一化显示模式，非法值回落到 render。
@@ -77,6 +85,14 @@ func validViewMode(v string) string {
 	default:
 		return ViewModeRender
 	}
+}
+
+// validMermaidEngine 归一化图表渲染引擎，非法值回落到 mermaid。
+func validMermaidEngine(v string) string {
+	if v == MermaidEnginePele {
+		return MermaidEnginePele
+	}
+	return MermaidEngineMermaid
 }
 
 // validLanguage 归一化界面语言，非法值回落到 zh-CN。
@@ -138,6 +154,7 @@ func (s *Store) GetSettings() Settings {
 	}
 	st.ViewMode = validViewMode(st.ViewMode)
 	st.Language = validLanguage(st.Language)
+	st.MermaidEngine = validMermaidEngine(st.MermaidEngine)
 	normalizeWindow(&st)
 	return st
 }
@@ -153,6 +170,7 @@ func (s *Store) SaveSettings(in Settings) Settings {
 	st.MmMaxLen = clampInt(st.MmMaxLen, MinMmMaxLen, MaxMmMaxLen)
 	st.ViewMode = validViewMode(st.ViewMode)
 	st.Language = validLanguage(st.Language)
+	st.MermaidEngine = validMermaidEngine(st.MermaidEngine)
 	normalizeWindow(&st)
 	s.mu.Lock()
 	if st.UseYaml {

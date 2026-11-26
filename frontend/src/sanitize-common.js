@@ -155,6 +155,29 @@ export function mermaidSvgConfig(parts) {
   }
 }
 
+/**
+ * Pele 输出专用配置：Pele 自身保证无 script / foreignObject / <style> / 事件属性，
+ * classDef 着色写成内联 style（已按属性白名单过滤）。在 SVG 严格口径上仅放行
+ * style 属性，hook 仍兜底远程引用；不用于用户手写的内联 SVG。
+ */
+export function peleSvgConfig(parts) {
+  return {
+    ...svgConfig(parts, true),
+    FORBID_ATTR: (parts.cfg.FORBID_ATTR ?? ['style']).filter((a) => a !== 'style')
+  }
+}
+
+/** 剥掉内联 style 中含 url() 的声明（Pele 派生配置放行 style 后的纵深防御）。 */
+export function stripSvgStyleUrls(code) {
+  return String(code ?? '').replace(/\sstyle\s*=\s*(["'])(.*?)\1/gi, (_m, quote, value) => {
+    const safe = String(value)
+      .split(';')
+      .filter((decl) => !/url\s*\(/i.test(decl))
+      .join(';')
+    return safe ? ` style=${quote}${safe}${quote}` : ''
+  })
+}
+
 /** 原始 SVG 字符串里的远程 / data: 引用先清空（纵深防御，DOMPurify hook 再兜底）。 */
 export function stripSvgExternalRefs(code) {
   return String(code ?? '')

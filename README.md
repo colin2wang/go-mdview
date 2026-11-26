@@ -105,7 +105,7 @@ Four view modes, then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top`
 - **Code blocks** — highlight.js syntax highlighting (github / github-dark themes follow the global theme), language label, hover copy button
 - **GFM Alerts** — `> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]` callouts in five colors
 - **Math** — `$inline$` and `$$block$$` via KaTeX, rendered offline
-- **Mermaid diagrams** — ```mermaid blocks render as card-style diagrams (falls back to source on syntax errors)
+- **Mermaid diagrams** — ```mermaid blocks render as card-style diagrams (falls back to source on syntax errors); switch between the classic Mermaid.js engine and the faster, smaller Pele engine in Settings → Reading (Pele switches light/dark themes instantly via CSS variables)
 - **SVG graphics** — ```svg (or xml/html blocks containing `<svg>`) render directly as graphic cards
 - **Diagram cards** — every graphic card has a **Source** toggle plus a copy button
 - **Extras** — footnotes `[^1]`, `==highlight==`, `[[wiki links]]` (resolved by title within the current directory, navigate automatically)
@@ -137,6 +137,9 @@ Yes — switch to **Split** view, click **Edit**, and the right pane previews yo
 **Q6: Clicking a wiki link `[[some note]]` does nothing?**
 Wiki links search the directory of the currently open file recursively for an md with a matching name (without extension); a message appears if not found. Make sure the target note is in the same directory tree.
 
+**Q7: A Mermaid diagram renders incorrectly?**
+Open Settings → Reading and switch the **Mermaid engine** between Mermaid.js and Pele. Mermaid.js has the broadest syntax compatibility; Pele is much faster and lighter but has its own visual style.
+
 ---
 
 ## Known Limitations
@@ -145,7 +148,7 @@ Stated honestly:
 
 - Editing is a lightweight in-place source editor (Split view → Edit/Save), not a full authoring tool; other official mdview Pro features (PDF export, archive management, etc.) are out of scope for this clone
 - HTML export is a simplified single-file layout (embedded base styles), not the official "bundle-with-images" capability
-- Large Mermaid diagrams take 1–2 seconds to parse on first render (the ~2.7MB library is bundled — no network dependency)
+- Large Mermaid diagrams take 1–2 seconds to parse on first render with Mermaid.js (the ~2.7MB library is bundled — no network dependency); the optional Pele engine renders in milliseconds but has its own visual style, and Mermaid `themeVariables` directives have no effect on it. Both engines target Mermaid 12.x syntax.
 
 ---
 
@@ -158,7 +161,7 @@ go-mdview/
 ├── internal/mdv/             # Domain logic (settings/history/favorites/file tree/encoding detection/image serving/export/association)
 │   └── *_test.go             # Go unit tests
 ├── frontend/src/             # Vue 3 + TS SPA (title bar/four tabs/render pipeline)
-├── frontend/public/static/   # highlight.js / KaTeX / mermaid local libraries
+├── frontend/public/static/   # highlight.js / KaTeX / mermaid / pele (pinned 1.13.0) local libraries
 ├── build.ps1                 # One-click Windows build (-Clean / -Package)
 └── wails.json / go.mod
 ```

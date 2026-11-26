@@ -479,6 +479,23 @@
 .md-article .md-diagram-src svg:not([viewBox]) {
   min-height: 200px;
 }
+/* ---- Pele 引擎：配色走 CSS 变量，深浅主题切换即时生效、无需重绘 ---- */
+.md-article .md-diagram-src svg.pele {
+  max-width: 100%;
+  height: auto;
+  --pele-bg: transparent;
+}
+[data-theme='dark'] .md-article .md-diagram-src svg.pele {
+  --pele-bg: transparent;
+  --pele-fg: #e5e7eb;
+  --pele-muted: #94a3b8;
+  --pele-line: #cbd5e1;
+  --pele-surface: #1e293b;
+  --pele-surface-alt: #16213a;
+  --pele-border: #475569;
+  --pele-accent: #60a5fa;
+  --pele-critical: #f87171;
+}
 /* 源码：默认隐藏，卡片加 .show-src 后与渲染结果互换 */
 .md-article .md-diagram-code {
   display: none;

@@ -1,5 +1,5 @@
 /**
- * 静态渲染库加载器：highlight.js / marked / KaTeX / mermaid 全部走
+ * 静态渲染库加载器：highlight.js / marked / KaTeX / mermaid / pele 全部走
  * /static/ 下的本地文件（已随应用嵌入），动态按需注入，带缓存 Promise。
  */
 
@@ -112,4 +112,18 @@ export async function ensureMermaid(): Promise<any> {
   if (m && !mermaidReady) mermaidReady = true
   // 主题口径统一由 renderDiagramsIn 决定（dark/default），这里不再初始化成 neutral
   return m
+}
+
+// ---------- pele ----------
+let peleReady = false
+
+/** Pele 全局构建（window.pele），同步渲染 Mermaid 语法为 SVG。 */
+export async function ensurePele(): Promise<any> {
+  const w = window as any
+  if (peleReady && w.pele) return w.pele
+  await loadScript('/static/pele.global.js')
+  const pele = (window as any).pele
+  if (!pele || typeof pele.render !== 'function') throw new Error('pele unavailable')
+  peleReady = true
+  return pele
 }
