@@ -83,6 +83,10 @@ Four view modes, then `⚙ Settings` · `⛶ Fullscreen` · `📌 Always on top`
 
 ![Mermaid diagram rendered in Split view](docs/images/split-mermaid.png)
 
+**Dual Mermaid engines** — each Mermaid card has a dropdown for the global renderer: the default Pele engine (fast, lightweight, instant light/dark switching) or the classic Mermaid.js engine. Changing it redraws every Mermaid diagram.
+
+![Mermaid cards with the global engine dropdown, showing Pele rendering](docs/images/mermaid-engine-switch.png)
+
 **Files panel** — a directory tree of your notes folder (left) alongside the rendered document (right), here showing an inline SVG graphic:
 
 ![Files tree panel with rendered SVG graphic](docs/images/files-tree.png)
