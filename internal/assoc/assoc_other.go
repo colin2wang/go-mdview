@@ -4,19 +4,19 @@ package assoc
 
 import "errors"
 
-// errAssocUnsupported 非 Windows 平台不支持写注册表关联。
-var errAssocUnsupported = errors.New("文件关联仅支持 Windows")
+// errAssocUnsupported marks platforms without registry-based association.
+var errAssocUnsupported = errors.New("file association is only supported on Windows")
 
-// ExePath 当前可执行文件路径。
+// ExePath returns the current executable path.
 func ExePath() string { return "" }
 
-// GetAssocState 非 Windows：明确告知不支持，避免前端给出可点击的无效按钮。
+// GetAssocState reports that association is unsupported on this platform.
 func GetAssocState() AssocState {
 	return AssocState{Supported: false, Owner: "", Message: errAssocUnsupported.Error()}
 }
 
-// AssociateMd 非 Windows：不支持。
+// AssociateMd is unsupported on non-Windows platforms.
 func AssociateMd() error { return errAssocUnsupported }
 
-// UnassociateMd 非 Windows：不支持。
+// UnassociateMd is unsupported on non-Windows platforms.
 func UnassociateMd() error { return errAssocUnsupported }

@@ -28,12 +28,13 @@ const exportMid = "</title>\n" +
 	"a{color:#2563eb;text-decoration:none}img{max-width:100%}h1,h2{color:#333}hr{border:0;border-top:1px solid #c9ced4;margin:24px 0}" +
 	"mark{background:#fde68a;padding:0 1px;border-radius:2px}</style>\n</head>\n<body>\n"
 
-// mdimgSrcRe 匹配带引号的 src/href；Go regexp 不支持反向引用，
-// 因此分别捕获双引号/单引号形式，值本身在回调里校验是否为 /mdimg/ 路由。
+// mdimgSrcRe matches quoted src/href attributes; Go regexp has no
+// backreferences, so double- and single-quoted forms are captured separately.
 var mdimgSrcRe = regexp.MustCompile(`(?i)\b(src|href)=(?:"([^"]*)"|'([^']*)')`)
 
-// embedExportImages 把正文里的 /mdimg 引用换成 data URI，使导出文件脱离应用也能看图。
-// 目标仍须落在已登记目录子树内（与 ImgHandler 同一防线）；读不到就原样保留。
+// embedExportImages replaces /mdimg references with data URIs so the exported
+// file shows images without the app. Targets must still be inside a
+// registered directory subtree; unreadable images are left untouched.
 func embedExportImages(body string) string {
 	return mdimgSrcRe.ReplaceAllStringFunc(body, func(m string) string {
 		g := mdimgSrcRe.FindStringSubmatch(m)
@@ -70,8 +71,8 @@ func embedExportImages(body string) string {
 	})
 }
 
-// ExportHtml 将前端渲染好的 HTML 片段包装为独立单文件写到 target。
-// 参数名叫 bodyHtml 而不是 html：局部变量/参数会遮蔽 html 标准库包名。
+// ExportHtml wraps the rendered HTML fragment into a standalone single file.
+// The parameter is named bodyHtml so it does not shadow the html package.
 func ExportHtml(title, bodyHtml, target string) (string, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {

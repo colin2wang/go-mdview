@@ -6,7 +6,8 @@ import (
 	"syscall"
 )
 
-// ProcessAlive 探测 pid 是否仍在运行：kill 信号 0 不投递、只探测。
+// ProcessAlive reports whether the pid is still running (signal 0 probes
+// without delivering a signal).
 func ProcessAlive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil
 }

@@ -36,15 +36,15 @@ const (
 	winGMEMMoveable = 0x0002
 )
 
-// CopyImage 把 PNG data URL 解码为 DIB 位图写入剪贴板。
-// Wails 自带剪贴板 API 只能写文本，图形卡片的「复制图片」需要真正的位图格式。
+// CopyImage decodes a PNG data URL and writes it to the clipboard as a DIB
+// bitmap, a format the built-in text-only clipboard API does not cover.
 func CopyImage(dataURL string) error {
 	img, err := decodePngDataURL(dataURL)
 	if err != nil {
 		return err
 	}
 
-	// OpenClipboard/SetClipboardData 必须在同一线程上完成，否则会偶发失败或死锁
+	// Open/empty/set/close must run on the same locked OS thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -79,7 +79,7 @@ func CopyImage(dataURL string) error {
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(ptr)), len(dib)), dib)
 	procGlobalUnlock.Call(h)
 
-	// SetClipboardData 成功后系统接管 h，不能再 GlobalFree
+	// On success the system owns h; GlobalFree must not be called.
 	if r, _, err := procSetClipboardData.Call(winCFDIB, h); r == 0 {
 		procGlobalFree.Call(h)
 		if err != nil {
@@ -102,7 +102,8 @@ func decodePngDataURL(dataURL string) (image.Image, error) {
 	return png.Decode(bytes.NewReader(raw))
 }
 
-// bitmapToDIB 生成 BITMAPINFOHEADER + 自下而上的 BGRA 像素（32 位 CF_DIB）。
+// bitmapToDIB builds a BITMAPINFOHEADER followed by bottom-up BGRA pixels
+// (32-bit CF_DIB).
 func bitmapToDIB(src image.Image) ([]byte, error) {
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
@@ -123,21 +124,21 @@ func bitmapToDIB(src image.Image) ([]byte, error) {
 	}
 	le(0, headerSize)        // biSize
 	le(4, uint32(w))         // biWidth
-	le(8, uint32(h))         // biHeight：正数为 bottom-up
+	le(8, uint32(h))         // biHeight: positive means bottom-up
 	out[12], out[13] = 1, 0  // biPlanes
 	out[14], out[15] = 32, 0 // biBitCount
 	le(16, 0)                // biCompression = BI_RGB
 	le(20, uint32(stride*h)) // biSizeImage
 
 	for y := 0; y < h; y++ {
-		srcY := h - 1 - y // DIB 像素自下而上
+		srcY := h - 1 - y
 		for x := 0; x < w; x++ {
 			i := rgba.PixOffset(x, srcY)
 			o := headerSize + y*stride + x*4
 			out[o] = rgba.Pix[i+2]   // B
 			out[o+1] = rgba.Pix[i+1] // G
 			out[o+2] = rgba.Pix[i]   // R
-			out[o+3] = rgba.Pix[i+3] // A（32 位 BI_RGB 通常忽略，保留原值）
+			out[o+3] = rgba.Pix[i+3] // A (ignored by 32-bit BI_RGB)
 		}
 	}
 	return out, nil

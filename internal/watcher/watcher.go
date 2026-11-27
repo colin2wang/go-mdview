@@ -1,5 +1,6 @@
-// Package watcher 提供对外部文件修改的监视：fsnotify 目录级监视 + 防抖 +
-// mtime/size/内容哈希判定，并按「自身保存抑制窗口」区分本应用写入与真实外部修改。
+// Package watcher watches files for external modification: fsnotify
+// directory-level watching with debouncing, mtime/size/hash checks, and a
+// save-suppression window that distinguishes app writes from real external edits.
 package watcher
 
 import (
@@ -14,49 +15,50 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// FileEvent 外部文件事件：changed = 内容可能变化，gone = 文件被删除/改名。
+// FileEvent is an external file event: changed = content may have changed,
+// gone = the file was deleted or renamed.
 type FileEvent struct {
 	Kind    string `json:"kind"` // changed | gone
 	Path    string `json:"path"`
-	ModTime int64  `json:"modTime"` // changed 事件时为最新 mtime（UnixMilli）
+	ModTime int64  `json:"modTime"` // latest mtime for changed events (UnixMilli)
 	Size    int64  `json:"size"`
 }
 
-// 事件防抖与自身写入抑制窗口。
+// Debounce window and save-suppression window.
 const (
 	watchDebounce     = 400 * time.Millisecond
 	saveSuppressAfter = 2 * time.Second
 )
 
-// Watcher 单文件外部修改监视器。零值即可用（WatchFile 时初始化）。
-// 事件经 callback 抛给上层（App 负责转成 Wails 事件）。
+// Watcher is a single-file external-modify watcher, usable at zero value.
+// Events are delivered to the callback set before WatchFile.
 type Watcher struct {
 	mu        sync.Mutex
 	w         *fsnotify.Watcher
-	watched   string        // 当前监视的文件路径（Clean 后）
-	knownM    int64         // 打开/上次刷新时的 mtime
-	knownS    int64         // 打开/上次刷新时的 size
-	savedAt   time.Time     // 本应用最后一次保存时间
-	savedHash string        // 本应用最后一次保存的内容哈希：只有内容相同才抑制自身写入
-	stop      chan struct{} // 事件循环退出信号
+	watched   string        // current watched path (Clean'ed)
+	knownM    int64         // known mtime at open/last refresh
+	knownS    int64         // known size at open/last refresh
+	savedAt   time.Time     // last save by this app
+	savedHash string        // content hash at save time, for suppression matching
+	stop      chan struct{} // event loop exit signal
 	onChange  func(FileEvent)
 }
 
-// SetFileChangeCallback 注册事件回调，须在 WatchFile 之前调用。
+// SetFileChangeCallback registers the event callback; call before WatchFile.
 func (w *Watcher) SetFileChangeCallback(cb func(FileEvent)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.onChange = cb
 }
 
-// WatchFile 监视 path 的外部修改；切换文件时自动替换旧的监视目标。
-// 编辑器保存常见「临时文件→重命名」，监视目标会随 rename 失效，所以每次都重建监视。
+// WatchFile watches path for external modification; switching files replaces
+// the watch target. The watch is rebuilt every time because editors commonly
+// save via temp-file-plus-rename, which invalidates the target.
 func (w *Watcher) WatchFile(path string) {
 	path = filepath.Clean(path)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.watched == path {
-		// 同一文件重复打开：刷新已知 mtime/size，避免旧值导致首次事件误报
 		if fi, err := os.Stat(path); err == nil {
 			w.knownM, w.knownS = fi.ModTime().UnixMilli(), fi.Size()
 		}
@@ -68,8 +70,8 @@ func (w *Watcher) WatchFile(path string) {
 	if err != nil {
 		return
 	}
-	// 目录级监视：Windows 上对文件 Add 在文件被整体替换（rename 覆盖）后会失效，
-	// 监视所在目录才能在文件被重建后继续收到事件
+	// The parent directory is watched: a file handle goes stale once the file
+	// is replaced wholesale, but the directory keeps reporting events.
 	_ = nw.Add(filepath.Dir(path))
 	w.w = nw
 	w.watched = path
@@ -79,20 +81,20 @@ func (w *Watcher) WatchFile(path string) {
 		w.knownM, w.knownS = 0, 0
 	}
 	w.stop = make(chan struct{})
-	// events / 回调作为局部参数传入：Stop 会把 w.w 置 nil 并 Close，
-	// 旧 goroutine 不得再解引用共享字段（否则下一轮读 w.w.Events 直接 panic）。
+	// The channels and callback are captured as locals: Stop nils w.w and the
+	// old goroutine must not dereference the shared fields.
 	events, errs, cb := nw.Events, nw.Errors, w.onChange
 	go w.loop(w, w.stop, events, errs, cb)
 }
 
-// Stop 停止监视当前文件（关闭文件/退出时调用）。
+// Stop stops watching the current file.
 func (w *Watcher) Stop() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.stopLocked()
 }
 
-// stopLocked 停掉现有循环与 watcher，调用方须已持有 w.mu。
+// stopLocked stops the loop and watcher; the caller must hold w.mu.
 func (w *Watcher) stopLocked() {
 	if w.stop != nil {
 		close(w.stop)
@@ -105,7 +107,7 @@ func (w *Watcher) stopLocked() {
 	w.watched = ""
 }
 
-// MarkSaved 在本应用写盘后调用，把抑制窗口设为当下。
+// MarkSaved opens the save-suppression window; call after the app writes.
 func (w *Watcher) MarkSaved() {
 	h := ""
 	w.mu.Lock()
@@ -125,7 +127,7 @@ func (w *Watcher) MarkSaved() {
 	w.mu.Unlock()
 }
 
-// fileHash 计算文件内容哈希（用于区分自身写入与窗口内的外部修改）。
+// fileHash computes the file's SHA-256 hash.
 func fileHash(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -139,8 +141,8 @@ func fileHash(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// loop 事件循环：防抖合并事件，换算成 FileEvent 抛给回调。
-// events / errs / cb 均由 WatchFile 在创建 watcher 时捕获为局部值。
+// loop debounces events and dispatches FileEvents to the callback. The
+// channels and callback are locals captured when the watcher was created.
 func (w *Watcher) loop(st *Watcher, stop chan struct{}, events <-chan fsnotify.Event, errs <-chan error, cb func(FileEvent)) {
 	var debounce *time.Timer
 	fire := func() {
@@ -157,17 +159,17 @@ func (w *Watcher) loop(st *Watcher, stop chan struct{}, events <-chan fsnotify.E
 		select {
 		case <-stop:
 			return
-		case <-errs: // 必须排空 fsnotify 错误通道，否则内部可能阻塞
+		case <-errs: // drain the error channel so fsnotify cannot block
 		case ev, ok := <-events:
 			if !ok {
 				return
 			}
-			// 仅关心目标文件；写临时文件（.mdview-*.tmp）等目录噪音全部忽略
+			// Ignore directory noise such as temp-file writes.
 			if filepath.Clean(ev.Name) != st.watched && filepath.Base(ev.Name) != filepath.Base(st.watched) {
 				continue
 			}
 			if ev.Has(fsnotify.Remove) || ev.Has(fsnotify.Rename) {
-				// 临时文件替换写法：rename 后立刻重建同路径文件，稍等一次再判定去留
+				// A rename is often followed by the file being recreated; wait once.
 				debounce.Reset(watchDebounce)
 				continue
 			}
@@ -179,8 +181,8 @@ func (w *Watcher) loop(st *Watcher, stop chan struct{}, events <-chan fsnotify.E
 	}
 }
 
-// check 防抖触发后统一判定：自身保存抑制 / mtime+size 变化 / 是否已删除。
-// 返回 nil 表示无需通知。
+// check classifies the debounced event: save suppression, mtime+size change,
+// or deletion. It returns nil when nothing should be reported.
 func (w *Watcher) check() *FileEvent {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -189,7 +191,7 @@ func (w *Watcher) check() *FileEvent {
 	}
 	fi, err := os.Stat(w.watched)
 	if err != nil {
-		// 文件消失；若在自身保存抑制窗口内先不慌（原子写瞬间的 stat 空档）
+		// The file is gone; tolerate the stat gap right after an atomic save.
 		if time.Since(w.savedAt) < saveSuppressAfter {
 			return nil
 		}
@@ -199,8 +201,9 @@ func (w *Watcher) check() *FileEvent {
 	if m == w.knownM && sz == w.knownS {
 		return nil
 	}
-	// 本应用自己刚保存的写入：只有内容哈希与保存时一致才吸收。
-	// 纯时间窗口会吞掉这 2 秒内真正的外部修改（并把 knownM/S 更新成新值，之后永远不再报）。
+	// A write by this app is absorbed only when the content hash matches the
+	// saved one; a pure time window would swallow real external edits made
+	// within it.
 	if time.Since(w.savedAt) < saveSuppressAfter {
 		if h, err := fileHash(w.watched); err == nil && h == w.savedHash {
 			w.knownM, w.knownS = m, sz

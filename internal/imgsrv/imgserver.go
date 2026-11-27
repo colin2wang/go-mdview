@@ -11,14 +11,14 @@ import (
 	"time"
 )
 
-// 允许通过 /mdimg 回放的目录白名单。
-// hex 编码只规避路径穿越，不限制范围——恶意 md 里的 <img> 可以指向任意
-// 本地文件（如 ~/.ssh、settings.json）把内容当图片读出来。打开文件/目录
-// 时登记目录，回放时校验目标必须落在某个已登记目录的子树内，越界 403。
+// imgRoot is one whitelisted directory whose images may be replayed via
+// /mdimg. Hex encoding prevents path traversal but does not restrict scope:
+// untrusted documents could otherwise point <img> at any local file. Targets
+// must fall inside a registered directory subtree, else they are rejected.
 type imgRoot struct {
-	dir  string // Clean 后的登记路径
-	real string // EvalSymlinks 后的真实路径（失败时等于 dir）
-	used int64  // 最近一次命中时间，用于 LRU 淘汰
+	dir  string // registered path (Clean'ed)
+	real string // EvalSymlinks'ed real path (equal to dir on failure)
+	used int64  // last hit time, for LRU eviction
 }
 
 var (
@@ -26,10 +26,11 @@ var (
 	imgRoots   []imgRoot
 )
 
-// maxImgRoots 白名单上限：LRU 淘汰（不是 FIFO），避免早先打开的目录突然整片 403。
+// maxImgRoots caps the whitelist, evicted by LRU so old directories do not
+// suddenly start failing.
 const maxImgRoots = 128
 
-// AllowImageDir 登记一个允许回放图片的目录（含其子树）。
+// AllowImageDir registers a directory (and its subtree) for image replay.
 func AllowImageDir(dir string) {
 	if dir == "" {
 		return
@@ -50,7 +51,6 @@ func AllowImageDir(dir string) {
 		}
 	}
 	if len(imgRoots) >= maxImgRoots {
-		// 淘汰最久未使用的目录；刚加入的目录不参与本轮淘汰
 		oldest := 0
 		for i := 1; i < len(imgRoots); i++ {
 			if imgRoots[i].used < imgRoots[oldest].used {
@@ -62,7 +62,8 @@ func AllowImageDir(dir string) {
 	imgRoots = append(imgRoots, imgRoot{dir: dir, real: real, used: now})
 }
 
-// realPath 尽量解析符号链接/联结点，拿不到就退回原路径（文件可能刚被删除）。
+// realPath resolves symlinks/junctions when possible, falling back to the
+// given path (the file may have just been deleted).
 func realPath(p string) string {
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return filepath.Clean(r)
@@ -70,9 +71,9 @@ func realPath(p string) string {
 	return filepath.Clean(p)
 }
 
-// PathAllowed 判断 p 是否落在任一已登记目录子树内。
-// 同时比较登记路径与真实路径，防止符号链接把白名单内目录指到外面去。
-// Windows 路径大小写不敏感，统一按不区分大小写比较。
+// PathAllowed reports whether p falls inside any registered directory subtree.
+// Both the registered and the real path are compared to stop symlinks from
+// pointing outside the whitelist; comparisons are case-insensitive on Windows.
 func PathAllowed(p string) bool {
 	p = filepath.Clean(p)
 	dir := filepath.Clean(filepath.Dir(p))
@@ -97,11 +98,10 @@ func PathAllowed(p string) bool {
 	return false
 }
 
-// ImgHandler 本地图片回放路由：/mdimg/{hex(绝对路径)}/{文件名}
-// 整段路径 hex 编码后作为单一 segment，天然规避路径穿越；
-// 目标路径必须在已登记目录子树内（见 AllowImageDir），否则 403。
-// 由 main.go 的 assetHandler 挂到 Wails 资产服务；本包不自行监听 TCP 端口，
-// 对外暴露面由 Wails 的资产服务决定，前端伪造的 hex 路径一律以白名单为准。
+// ImgHandler is the local image replay route: /mdimg/{hex(abs path)}/{name}.
+// The whole path is hex-encoded as a single segment, preventing traversal;
+// the target must be inside a registered directory subtree (see AllowImageDir).
+// It is mounted on the Wails asset server by main.go and listens on no port.
 var ImgHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -150,16 +150,16 @@ var ImgHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// ServeContent 自带 Range / 条件请求 / Last-Modified / Content-Length
+	// ServeContent provides Range / conditional requests / Last-Modified.
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// 本地图片改动后应尽快反映出来；短缓存 + 条件请求（ServeContent 自带 ETag/Last-Modified）
+	// Short cache plus revalidation so local edits show up quickly.
 	w.Header().Set("Cache-Control", "max-age=5, must-revalidate")
-	// SVG 以图片上下文提供（<img> 内脚本不执行）；显式声明类型防嗅探
+	// SVG is served in image context (<img> never runs scripts).
 	http.ServeContent(w, r, path.Base(p), fi.ModTime().Round(time.Second), f)
 })
 
-// ContentTypeByExt 按扩展名返回图片 Content-Type，非图片扩展名返回空。
+// ContentTypeByExt returns the image Content-Type for an extension, or "".
 func ContentTypeByExt(p string) string {
 	switch strings.ToLower(path.Ext(p)) {
 	case ".png":

@@ -8,13 +8,13 @@ import (
 	"mdview/internal/imgsrv"
 )
 
-// Entry 历史/收藏条目。
+// Entry is a history/favorites record.
 type Entry struct {
 	Path     string `json:"path"`
 	Name     string `json:"name"`
 	Dir      string `json:"dir"`
 	Exists   bool   `json:"exists"`
-	OpenedAt int64  `json:"openedAt"` // unix 秒；收藏条目为加入时间
+	OpenedAt int64  `json:"openedAt"` // unix seconds; for favorites the added time
 }
 
 const historyLimit = 100
@@ -34,7 +34,7 @@ func fileExists(p string) bool {
 	return err == nil && !fi.IsDir()
 }
 
-// GetHistory 最近打开记录，最新在前。
+// GetHistory returns the recent-open list, newest first.
 func (s *Store) GetHistory() []Entry {
 	var list []Entry
 	s.mu.Lock()
@@ -48,8 +48,8 @@ func (s *Store) GetHistory() []Entry {
 	return list
 }
 
-// PushHistory 记录一次打开：去重置顶，超限截断。
-// 顺带登记所在目录：单独打开图片时也走这里，保证 /mdimg 能回放它。
+// PushHistory records an open: deduplicated to the top, truncated at the limit.
+// The file's directory is also registered for /mdimg replay.
 func (s *Store) PushHistory(path string) []Entry {
 	path = filepath.Clean(path)
 	imgsrv.AllowImageDir(filepath.Dir(path))
@@ -72,7 +72,7 @@ func (s *Store) PushHistory(path string) []Entry {
 	return out
 }
 
-// RemoveHistory 从历史里移除单条（不删除磁盘文件）。
+// RemoveHistory removes a single entry from the history (the file stays).
 func (s *Store) RemoveHistory(path string) {
 	path = filepath.Clean(path)
 	s.mu.Lock()
@@ -88,7 +88,7 @@ func (s *Store) RemoveHistory(path string) {
 	s.writeJSON("history.json", &out)
 }
 
-// ClearHistory 清空历史。
+// ClearHistory empties the history.
 func (s *Store) ClearHistory() []Entry {
 	s.mu.Lock()
 	s.writeJSON("history.json", &[]Entry{})
@@ -96,7 +96,7 @@ func (s *Store) ClearHistory() []Entry {
 	return []Entry{}
 }
 
-// GetFavorites 收藏列表，最新加入在前。
+// GetFavorites returns the favorites list, newest added first.
 func (s *Store) GetFavorites() []Entry {
 	var list []Entry
 	s.mu.Lock()
@@ -110,7 +110,7 @@ func (s *Store) GetFavorites() []Entry {
 	return list
 }
 
-// ToggleFavorite 收藏/取消收藏，返回切换后的状态。
+// ToggleFavorite adds or removes a favorite and returns the new state.
 func (s *Store) ToggleFavorite(path string) (bool, []Entry) {
 	path = filepath.Clean(path)
 	var list []Entry
@@ -135,7 +135,7 @@ func (s *Store) ToggleFavorite(path string) (bool, []Entry) {
 	return nowFav, s.GetFavorites()
 }
 
-// IsFavorite 查询某个路径是否已收藏。
+// IsFavorite reports whether a path is currently a favorite.
 func (s *Store) IsFavorite(path string) bool {
 	path = filepath.Clean(path)
 	var list []Entry

@@ -1,4 +1,5 @@
-// Package fsops 提供目录树扫描、同名标题索引与 markdown 文件编码读写。
+// Package fsops provides directory tree scanning, same-name title indexing,
+// and encoding-aware reading/writing of markdown files.
 package fsops
 
 import (
@@ -12,9 +13,7 @@ import (
 	"mdview/internal/imgsrv"
 )
 
-// ---------- 目录树扫描 ----------
-
-// Node 文件树节点：目录或文件（仅 Supported 的文件可预览打开）。
+// Node is a file tree entry: a directory or a file (only previewable files can be opened).
 type Node struct {
 	Name      string `json:"name"`
 	Path      string `json:"path"`
@@ -32,18 +31,13 @@ var skipDirs = map[string]bool{
 
 var mdExts = map[string]bool{".md": true, ".markdown": true, ".mdown": true, ".mkd": true}
 
-// previewable 是否可预览：markdown / 图片 / 文本
-func previewable(ext string) bool {
-	return mdExts[ext] || imgExts[ext] || textExts[ext]
-}
-
-// imgExts 可直接预览的图片扩展名
+// imgExts lists image extensions that can be previewed directly.
 var imgExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
 	".svg": true, ".bmp": true, ".avif": true,
 }
 
-// textExts 可按纯文本预览的扩展名（代码/配置/日志等）
+// textExts lists extensions previewable as plain text (code/config/logs).
 var textExts = map[string]bool{
 	".txt": true, ".log": true, ".csv": true, ".tsv": true,
 	".json": true, ".xml": true, ".yaml": true, ".yml": true,
@@ -55,20 +49,24 @@ var textExts = map[string]bool{
 	".rb": true, ".php": true, ".sh": true, ".bat": true, ".ps1": true, ".sql": true,
 }
 
-// naturalLess 人类直觉排序：数字段按数值比（02 < 10），字母不区分大小写。
+// previewable reports whether the extension can be previewed.
+func previewable(ext string) bool {
+	return mdExts[ext] || imgExts[ext] || textExts[ext]
+}
+
+// naturalLess compares strings the way humans sort them: digit runs by value
+// (02 < 10), letters case-insensitively.
 func naturalLess(a, b string) bool {
 	a, b = strings.ToLower(a), strings.ToLower(b)
 	i, j := 0, 0
 	for i < len(a) && len(b) > j {
 		ca, cb := a[i], b[j]
 		if isDigit(ca) && isDigit(cb) {
-			// 提取完整数字段比较
 			ia, sa := scanNum(a, i)
 			ib, sb := scanNum(b, j)
 			if ia != ib {
 				return ia < ib
 			}
-			// 数值相同（前导零差异），短的算小
 			if sa != sb {
 				return sa < sb
 			}
@@ -86,7 +84,8 @@ func naturalLess(a, b string) bool {
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
-// scanNum 从 s[start] 起扫描数字段，返回数值（饱和防溢出）与结束下标。
+// scanNum scans the digit run starting at s[start] and returns its value
+// (saturated to avoid overflow) and the end index.
 func scanNum(s string, start int) (int64, int) {
 	v := int64(0)
 	i := start
@@ -99,10 +98,11 @@ func scanNum(s string, start int) (int64, int) {
 	return v, i
 }
 
+// sortNodes sorts directories first, then names naturally, recursively.
 func sortNodes(nodes []Node) {
 	sort.Slice(nodes, func(x, y int) bool {
 		if nodes[x].IsDir != nodes[y].IsDir {
-			return nodes[x].IsDir // 目录优先
+			return nodes[x].IsDir
 		}
 		return naturalLess(nodes[x].Name, nodes[y].Name)
 	})
@@ -113,7 +113,7 @@ func sortNodes(nodes []Node) {
 	}
 }
 
-// maxTreeNodes 单棵目录树的最大节点数，防止超大 vault 一次性递归把 UI 卡死。
+// maxTreeNodes caps a single tree scan so a huge vault cannot stall the UI.
 const maxTreeNodes = 5000
 
 type treeCacheEntry struct {
@@ -127,14 +127,15 @@ var (
 	treeCacheTTL = 2 * time.Second
 )
 
-// InvalidateTreeCache 在显式刷新/保存后调用，让下一次 ListTree 重新扫描磁盘。
+// InvalidateTreeCache forces the next ListTree to rescan the disk.
 func InvalidateTreeCache() {
 	treeCacheMu.Lock()
 	treeCache = map[string]treeCacheEntry{}
 	treeCacheMu.Unlock()
 }
 
-// ListTree 扫描 root 下的目录与 markdown 文件（跳过隐藏/垃圾目录）。
+// ListTree scans directories and markdown files under root, skipping
+// hidden and junk directories.
 func ListTree(root string) ([]Node, error) {
 	root = filepath.Clean(root)
 	treeCacheMu.Lock()
@@ -151,7 +152,6 @@ func ListTree(root string) ([]Node, error) {
 	if !fi.IsDir() {
 		root = filepath.Dir(root)
 	}
-	// 打开目录树即登记根目录：/mdimg 回放允许该目录子树内的图片
 	imgsrv.AllowImageDir(root)
 	remaining := maxTreeNodes
 	var walk func(dir string, depth int) []Node
@@ -176,7 +176,7 @@ func ListTree(root string) ([]Node, error) {
 				}
 				children := walk(p, depth+1)
 				if children == nil {
-					continue // 空目录不进树
+					continue
 				}
 				nodes = append(nodes, Node{Name: name, Path: p, IsDir: true, Supported: true, Children: children})
 				remaining--
@@ -198,10 +198,8 @@ func ListTree(root string) ([]Node, error) {
 	return nodes, nil
 }
 
-// ---------- 同名标题索引 ----------
-
-// titleIndex 是「目录根 → 文件名（小写，不带扩展名）→ 绝对路径列表」的一次性索引，
-// 避免每次点 wiki 链接都全目录递归。TTL 到期或显式失效后重建。
+// titleIndexEntry caches "root → file name (lowercase, no extension) → paths"
+// so wiki-link clicks do not rescan the whole tree.
 type titleIndexEntry struct {
 	at  time.Time
 	idx map[string][]string
@@ -214,13 +212,14 @@ var (
 
 const titleIndexTTL = 10 * time.Second
 
-// InvalidateTitleIndex 在保存/目录树变化后调用，让下一次 wiki 查找重建索引。
+// InvalidateTitleIndex forces the next wiki lookup to rebuild the index.
 func InvalidateTitleIndex() {
 	titleIndexMu.Lock()
 	titleIndexCache = map[string]titleIndexEntry{}
 	titleIndexMu.Unlock()
 }
 
+// buildTitleIndex walks the tree and collects lowercase markdown file names.
 func buildTitleIndex(root string) map[string][]string {
 	idx := map[string][]string{}
 	var walk func(dir string, depth int)
@@ -253,7 +252,8 @@ func buildTitleIndex(root string) map[string][]string {
 	return idx
 }
 
-// FindByTitles 返回同名笔记的全部候选（用于同名消歧）；结果按路径排序保持稳定。
+// FindByTitles returns all candidates for a same-name note, sorted by path
+// for stable results.
 func FindByTitles(root, title string) []string {
 	root = filepath.Clean(root)
 	titleIndexMu.Lock()
@@ -268,7 +268,7 @@ func FindByTitles(root, title string) []string {
 	return hits
 }
 
-// FindByTitle 兼容旧调用：返回第一个匹配，找不到返回空串。
+// FindByTitle returns the first match or an empty string.
 func FindByTitle(root, title string) string {
 	if hits := FindByTitles(root, title); len(hits) > 0 {
 		return hits[0]

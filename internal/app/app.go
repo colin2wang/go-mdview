@@ -22,21 +22,21 @@ import (
 	"mdview/internal/win"
 )
 
-// RelaunchFlag 「重启」拉起新进程时附加的标记：main 见到它先等旧进程退出，
-// 否则新进程会撞上单实例锁，被当成二次启动转交后直接退出。
+// RelaunchFlag marks a process started from the settings-page restart action;
+// main waits for the old process to exit before continuing startup.
 const RelaunchFlag = "--mdview-relaunch"
 
-// BuildDate 编译时间（UTC），由 build.ps1 经 -ldflags -X 注入；开发态为 "dev"。
+// BuildDate is the build time (UTC), injected by build.ps1 via -ldflags -X; "dev" when unstripped.
 var BuildDate = "dev"
 
-// BuildVersion 主版本号，由 build.ps1 经 -ldflags -X 注入；开发态为 "dev"。
+// BuildVersion is the main version, injected by build.ps1 via -ldflags -X; "dev" when unstripped.
 var BuildVersion = "dev"
 
-// WaitPidFlagPrefix 旧进程 PID 参数：新进程轮询该 PID 退出后再启动，
-// 替代固定 sleep——慢机器上 1.2s 未必够，快机器上白等。
+// WaitPidFlagPrefix carries the old process PID; the new process polls it
+// until exit before continuing, instead of sleeping a fixed duration.
 const WaitPidFlagPrefix = "--mdview-wait-pid="
 
-// IsRelaunch 判断本进程是否由设置页「重启」拉起。
+// IsRelaunch reports whether this process was started by the restart action.
 func IsRelaunch(args []string) bool {
 	for _, arg := range args {
 		if arg == RelaunchFlag {
@@ -46,7 +46,7 @@ func IsRelaunch(args []string) bool {
 	return false
 }
 
-// WaitPidOf 从命令行参数解析要等待退出的旧进程 PID；没有则返回 0。
+// WaitPidOf parses the old process PID to wait for from the command line; returns 0 if absent.
 func WaitPidOf(args []string) int {
 	for _, arg := range args {
 		if p, ok := strings.CutPrefix(arg, WaitPidFlagPrefix); ok {
@@ -58,17 +58,16 @@ func WaitPidOf(args []string) int {
 	return 0
 }
 
-// ProcessAlive 判断 pid 对应的进程是否仍在运行（Windows 用 OpenProcess 探测）。
+// ProcessAlive reports whether the process with the given pid is still running.
 func ProcessAlive(pid int) bool { return win.ProcessAlive(pid) }
 
-// App Wails Service：前端可调用的全部方法挂在这里。
-// v3 用 Service 模式替代 v2 的 Bind + ctx：运行期对象经 ServiceStartup 拿到。
+// App is the Wails Service exposing every method callable from the frontend.
 type App struct {
 	app        *application.App
 	win        *application.WebviewWindow
 	store      *storage.Store
-	restarting atomic.Bool // 重启中：关闭前不能再把当前几何写回设置
-	draftDirty atomic.Bool // 前端有未保存草稿：关闭拦截先让前端弹确认
+	restarting atomic.Bool // restart in progress; window geometry must not be written back
+	draftDirty atomic.Bool // frontend has an unsaved draft; close interception asks it first
 }
 
 var singleton *App
@@ -79,7 +78,7 @@ func NewApp() *App {
 	return a
 }
 
-// Instance 返回唯一的 App Service 实例（main.go 的 SingleInstance 回调使用）。
+// Instance returns the single App Service instance (used by the single-instance callback).
 func Instance() *App {
 	if singleton == nil {
 		return NewApp()
@@ -87,56 +86,52 @@ func Instance() *App {
 	return singleton
 }
 
-// ServiceStartup Wails 生命周期回调（v2 的 Startup）。
+// ServiceStartup is the Wails lifecycle callback.
 func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	a.app = application.Get()
-	// 外部文件修改监视：mdv 检测到变化后经 Wails 事件推给前端
 	a.store.SetFileChangeCallback(func(ev storage.FileEvent) {
 		a.app.Event.Emit("file:watch", ev)
 	})
 	return nil
 }
 
-// ServiceShutdown 应用退出时统一停止文件监视：不需要前端调用 StopWatch，
-// 也避免把清理职责暴露成可被前端误用的绑定方法（Wails v3 生命周期回调）。
+// ServiceShutdown stops file watching on exit (Wails lifecycle callback).
 func (a *App) ServiceShutdown() error {
 	a.store.StopWatch()
 	return nil
 }
 
-// SetWindow 由 main 在创建窗口后注入；Service 启动早于 Run，无法在回调里创建。
+// SetWindow injects the main window after it has been created by main.
 func (a *App) SetWindow(w *application.WebviewWindow) {
 	a.win = w
 }
 
-// OnWindowClosing 关闭拦截（对应 v2 的 BeforeClose）：
-// Windows 上标题栏 ✕ / Alt+F4 触发 WM_CLOSE → Windows.WindowClosing，此时窗口
-// 尚未真正关闭，放行须显式调 win.Close()。有未保存草稿时先取消关闭并让前端
-// 弹确认；用户确认后前端清标志再调 WindowClose（显式记录几何后退出）。
-// 无草稿则记录几何后放行。
+// OnWindowClosing intercepts window close: with an unsaved draft it cancels the
+// close and asks the frontend to confirm; otherwise the window geometry is saved
+// and the close allowed.
 func (a *App) OnWindowClosing(win *application.WebviewWindow) {
 	if a.draftDirty.Load() {
 		a.app.Event.Emit("draft:close-request")
-		return // 本次 WM_CLOSE 被否决，等待前端决定
+		return
 	}
 	a.saveWindowState(win)
 	win.Close()
 }
 
-// SetDraftDirty 由前端同步「是否有未保存草稿」；关闭确认桥使用。
+// SetDraftDirty receives the "has unsaved draft" flag from the frontend.
 func (a *App) SetDraftDirty(dirty bool) {
 	a.draftDirty.Store(dirty)
 }
 
-// AllowImageDir 登记允许通过 /mdimg 回放的目录；打开图片 / 启动恢复均需 await 后再显示。
+// AllowImageDir registers a directory whose images may be replayed via /mdimg.
 func (a *App) AllowImageDir(dir string) {
 	imgsrv.AllowImageDir(dir)
 }
 
-// saveWindowState 只记录可还原的普通窗口几何：
-// 最大化时保留上次普通尺寸只置标记，最小化/全屏时坐标不可靠则原样保留。
+// saveWindowState records restorable normal window geometry only: when
+// maximized only the flag is set, minimized/fullscreen states are skipped.
 func (a *App) saveWindowState(win *application.WebviewWindow) {
-	if a.restarting.Load() { // 重启已主动清空几何，不能再写回去
+	if a.restarting.Load() {
 		return
 	}
 	st := a.store.GetSettings()
@@ -151,14 +146,15 @@ func (a *App) saveWindowState(win *application.WebviewWindow) {
 	x, y := win.Position()
 	w, h := win.Size()
 	if w < settings.MinWindowWidth || h < settings.MinWindowHeight || x < -30000 || y < -30000 {
-		return // 异常几何（窗口正在销毁/刚创建）不覆盖
+		return
 	}
 	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = x, y, w, h, false
 	a.store.SaveSettings(st)
 }
 
-// startupFile "发送到"/双击打开传入的命令行 md 路径。
-// 二次实例 goroutine 写、前端绑定 goroutine 读，用 atomic.Pointer 同步。
+// startupFile holds the .md path passed via command line / second instance.
+// Written by the second-instance goroutine and read by frontend bindings,
+// so it is synchronized with atomic.Pointer.
 var startupFile atomic.Pointer[string]
 
 func init() {
@@ -177,7 +173,7 @@ func init() {
 	}())
 }
 
-// EmitOpenFile 通知前端打开一个文件（拖拽/二次实例共用）。
+// EmitOpenFile tells the frontend to open a file (drag & drop / second instance).
 func (a *App) EmitOpenFile(path string) {
 	if a.app == nil {
 		return
@@ -185,10 +181,7 @@ func (a *App) EmitOpenFile(path string) {
 	a.app.Event.Emit("mdv:openfile", path)
 }
 
-// BringToFront 把已有窗口带到前台：二次启动（双击关联 .md 文件）时已有实例在后台
-// 运行，只把文件转给它的话，用户看到的是「什么都没发生」。最小化则还原，后台则置前。
-// 走 Wails 的 WindowShow——它内部派发到创建窗口的主线程
-// （窗口 API 跨线程调用会直接崩溃），并自带 SetForegroundWindow + SetFocus。
+// BringToFront raises the existing window after a second launch.
 func (a *App) BringToFront() {
 	if a.win == nil {
 		return
@@ -196,7 +189,7 @@ func (a *App) BringToFront() {
 	a.win.Show()
 }
 
-// GetStartupFile 前端 mount 后拉取启动文件。
+// GetStartupFile returns the file the frontend should open on mount.
 func (a *App) GetStartupFile() string {
 	if p := startupFile.Load(); p != nil {
 		return *p
@@ -204,8 +197,7 @@ func (a *App) GetStartupFile() string {
 	return ""
 }
 
-// BuildInfo 设置页底部显示的编译信息（版本号 + 编译时间，build.ps1 注入），
-// 形如 "1.0.0 build 2026-11-26T23:09:26"；开发态为 "dev"。
+// BuildInfo returns the version + build time shown on the settings page.
 func (a *App) BuildInfo() string {
 	if BuildVersion == "dev" && BuildDate == "dev" {
 		return "dev"
@@ -213,12 +205,12 @@ func (a *App) BuildInfo() string {
 	return BuildVersion + " build " + BuildDate
 }
 
-// SetStartupFile 供二次实例启动时更新。
+// SetStartupFile updates the startup file when a second instance hands over.
 func (a *App) SetStartupFile(p string) {
 	startupFile.Store(&p)
 }
 
-// dialogTitle 原生对话框标题跟随设置语言，避免切到英/日/德仍显示中文。
+// dialogTitle picks a native dialog title according to the configured language.
 func (a *App) dialogTitle(zh, en, ja, de string) string {
 	switch a.store.GetSettings().Language {
 	case "en":
@@ -232,7 +224,7 @@ func (a *App) dialogTitle(zh, en, ja, de string) string {
 	}
 }
 
-// OpenFolderDialog 选择目录（v3 目录选择走 OpenFile 对话框的 CanChooseDirectories）。
+// OpenFolderDialog selects a Markdown directory.
 func (a *App) OpenFolderDialog() (string, error) {
 	return a.app.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
 		CanChooseDirectories: true,
@@ -241,7 +233,7 @@ func (a *App) OpenFolderDialog() (string, error) {
 	}).PromptForSingleSelection()
 }
 
-// OpenFileDialog 选择 .md 文件。
+// OpenFileDialog selects a .md file.
 func (a *App) OpenFileDialog() (string, error) {
 	return a.app.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
 		CanChooseFiles: true,
@@ -253,23 +245,22 @@ func (a *App) OpenFileDialog() (string, error) {
 	}).PromptForSingleSelection()
 }
 
-// ListTree 目录树（带 2s 缓存）。
+// ListTree scans the directory tree (cached for 2s).
 func (a *App) ListTree(dir string) ([]storage.Node, error) { return a.store.ListTree(dir) }
 
-// RefreshTree 显式刷新：先失效缓存再扫描磁盘。
+// RefreshTree invalidates the cache and rescans the disk.
 func (a *App) RefreshTree(dir string) ([]storage.Node, error) {
 	storage.InvalidateTreeCache()
 	return a.store.ListTree(dir)
 }
 
-// StatFile 判断文件是否仍存在（前端打开前的预检）。
-// Wails 绑定只会把第一个返回值透传给 JS，因此这里只返回 bool。
+// StatFile checks whether a file still exists (pre-open check by the frontend).
 func (a *App) StatFile(path string) bool {
 	_, ok := a.store.StatFile(path)
 	return ok
 }
 
-// ReadMarkdown 读取文件内容，并切换外部修改监视到该文件。
+// ReadMarkdown reads a file and moves external-modify watching to it.
 func (a *App) ReadMarkdown(path string) (storage.FileContent, error) {
 	fc, err := a.store.ReadMarkdown(path)
 	if err == nil {
@@ -278,47 +269,45 @@ func (a *App) ReadMarkdown(path string) (storage.FileContent, error) {
 	return fc, err
 }
 
-// SaveMarkdown 把编辑后的正文写回文件（源码/对照模式的「保存」按钮）。
+// SaveMarkdown writes edited content back to the file.
 func (a *App) SaveMarkdown(path, content, encoding string) (storage.FileContent, error) {
 	fc, err := a.store.SaveMarkdown(path, content, encoding)
 	if err == nil {
-		// 标记自身写入，watcher 不会把这次保存当成外部修改广播；
-		// 已删除文件被重建后也重新挂接监视（resolveGoneFile 曾 StopWatch）
 		a.store.MarkSaved()
 		a.store.WatchFile(path)
 	}
 	return fc, err
 }
 
-// FindByTitle / FindByTitles 同名标题索引（目录树跳转用）。
+// FindByTitle / FindByTitles resolve same-name titles (used by the tree).
 func (a *App) FindByTitle(root, title string) string    { return a.store.FindByTitle(root, title) }
 func (a *App) FindByTitles(root, title string) []string { return a.store.FindByTitles(root, title) }
 
-// 历史 / 收藏。
+// History endpoints.
 func (a *App) GetHistory() []storage.Entry { return a.store.GetHistory() }
 func (a *App) PushHistory(path string)     { a.store.PushHistory(path) }
 func (a *App) ClearHistory()               { a.store.ClearHistory() }
 func (a *App) RemoveHistory(path string)   { a.store.RemoveHistory(path) }
 
+// Favorites endpoints.
 func (a *App) GetFavorites() []storage.Entry { return a.store.GetFavorites() }
 
-// ToggleFavorite 切换收藏。只回传切换后的状态，列表由前端经 GetFavorites 刷新。
+// ToggleFavorite toggles a favorite; the list is refreshed via GetFavorites.
 func (a *App) ToggleFavorite(path string) bool {
 	added, _ := a.store.ToggleFavorite(path)
 	return added
 }
 
+// Settings endpoints.
 func (a *App) GetSettings() settings.Settings { return a.store.GetSettings() }
 func (a *App) SaveSettings(s settings.Settings) settings.Settings {
-	// 窗口几何只由 Go 维护：前端整包回传的是打开时的旧值，
-	// 直接写回会覆盖关闭/重启时刚记录的新几何。
 	current := a.store.GetSettings()
 	s.WinX, s.WinY, s.WinW, s.WinH, s.WinMax = current.WinX, current.WinY, current.WinW, current.WinH, current.WinMax
 	return a.store.SaveSettings(s)
 }
 func (a *App) GetLastError() string { return a.store.LastError() }
 
-// SetTheme 记录主题偏好（应用内配色由前端 data-theme 控制）。
+// SetTheme persists the theme preference (colors are applied by the frontend).
 func (a *App) SetTheme(theme string) {
 	if theme != "dark" && theme != "light" {
 		theme = "light"
@@ -328,14 +317,13 @@ func (a *App) SetTheme(theme string) {
 	a.store.SaveSettings(st)
 }
 
-// WindowPin / WindowMin / WindowMaxToggle 无边框窗口控制。
+// Frameless window controls.
 func (a *App) WindowPin(pin bool) { a.win.SetAlwaysOnTop(pin) }
 func (a *App) WindowMin()         { a.win.Minimise() }
 func (a *App) WindowMaxToggle()   { a.win.ToggleMaximise() }
 
-// WindowClose 是自绘标题栏 ✕ 与草稿确认后的统一退出口。
-// 这里不走 WindowClosing 钩子（Wails 的 win.Close() 只会触发 Common.WindowClosing，
-// 而保存逻辑挂在 Windows.WindowClosing 上），必须在 Quit 前显式记录几何。
+// WindowClose is the unified exit used by the custom title bar and the draft
+// confirmation; window geometry is saved explicitly before quitting.
 func (a *App) WindowClose() {
 	if a.win != nil {
 		a.saveWindowState(a.win)
@@ -343,26 +331,26 @@ func (a *App) WindowClose() {
 	a.app.Quit()
 }
 
-// RestartApp 清除记住的窗口几何与侧栏宽度并重启进程（设置页「重启」）。
+// RestartApp resets remembered window geometry and sidebar width, then restarts.
 func (a *App) RestartApp() error {
-	if a.restarting.Swap(true) { // 防重复点击拉起多个实例
+	if a.restarting.Swap(true) {
 		return nil
 	}
-	a.draftDirty.Store(false) // 前端已确认丢弃草稿，别让关闭拦截再弹一次
+	a.draftDirty.Store(false)
 	st := a.store.GetSettings()
 	st.WinX, st.WinY, st.WinW, st.WinH, st.WinMax = 0, 0, 0, 0, false
 	st.SidebarWidth = settings.DefaultSidebarWidth
 	a.store.SaveSettings(st)
 	if err := a.launchSelf(); err != nil {
-		a.restarting.Store(false) // 拉不起来就留在当前窗口，前端会提示错误
+		a.restarting.Store(false)
 		return err
 	}
 	a.app.Quit()
 	return nil
 }
 
-// launchSelf 拉起新进程。新进程带 RelaunchFlag 与旧进程 PID，
-// 由 main 轮询等旧进程退出（释放单实例锁）后再启动。
+// launchSelf starts a new process with RelaunchFlag and this process's PID;
+// main polls the old process until it exits (releasing the single-instance lock).
 func (a *App) launchSelf() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -370,7 +358,7 @@ func (a *App) launchSelf() error {
 	}
 	args := []string{RelaunchFlag, fmt.Sprintf("%s%d", WaitPidFlagPrefix, os.Getpid())}
 	for _, arg := range os.Args[1:] {
-		if arg != RelaunchFlag && !strings.HasPrefix(arg, WaitPidFlagPrefix) { // 连续重启时不要把标记越叠越多
+		if arg != RelaunchFlag && !strings.HasPrefix(arg, WaitPidFlagPrefix) {
 			args = append(args, arg)
 		}
 	}
@@ -379,19 +367,19 @@ func (a *App) launchSelf() error {
 	return cmd.Start()
 }
 
-// WindowFullscreenToggle 全屏/退出全屏切换（标题栏 ⛶ 按钮）。
+// WindowFullscreenToggle switches fullscreen on or off.
 func (a *App) WindowFullscreenToggle() {
 	a.win.ToggleFullscreen()
 }
 
-// CopyText 写入系统剪贴板（复制文件路径 / 复制代码块）。
+// CopyText writes text to the system clipboard.
 func (a *App) CopyText(text string) { _ = a.app.Clipboard.SetText(text) }
 
-// CopyImage 把前端光栅化后的 PNG data URL 写成系统位图剪贴板（图形卡片「复制图片」）。
+// CopyImage writes a rasterized PNG data URL to the clipboard as a bitmap.
 func (a *App) CopyImage(dataURL string) error { return win.CopyImage(dataURL) }
 
-// OpenExternalURL 用系统默认浏览器打开外部链接（Markdown 里的 http/https）。
-// 只放行 http/https/mailto，避免 file:// 等协议被不可信文档滥用。
+// OpenExternalURL opens a link in the system browser; only http/https/mailto
+// are allowed so untrusted documents cannot abuse other schemes.
 func (a *App) OpenExternalURL(url string) error {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "mailto:") {
 		return fmt.Errorf("unsupported URL scheme")
@@ -399,10 +387,10 @@ func (a *App) OpenExternalURL(url string) error {
 	return a.app.Browser.OpenURL(url)
 }
 
-// SetWindowTitle 同步系统任务栏标题。
+// SetWindowTitle syncs the taskbar title.
 func (a *App) SetWindowTitle(title string) { a.win.SetTitle(title) }
 
-// RevealInShell 在资源管理器中显示文件所在目录。
+// RevealInShell shows the file's directory in the system file manager.
 func (a *App) RevealInShell(path string) {
 	dir := filepath.Dir(path)
 	switch runtime.GOOS {
@@ -415,16 +403,16 @@ func (a *App) RevealInShell(path string) {
 	}
 }
 
-// GetAssocState 读取 .md 文件关联状态（设置对话框用）。
+// GetAssocState reads the .md file association state (settings dialog).
 func (a *App) GetAssocState() assoc.AssocState { return assoc.GetAssocState() }
 
-// AssociateMd 把 .md/.markdown 关联到当前 mdview，并设置文件图标。
+// AssociateMd associates .md/.markdown with this mdview and sets the file icon.
 func (a *App) AssociateMd() error { return assoc.AssociateMd() }
 
-// UnassociateMd 取消关联，还原接管前的默认打开方式。
+// UnassociateMd removes the association and restores the previous handler.
 func (a *App) UnassociateMd() error { return assoc.UnassociateMd() }
 
-// SaveHtmlDialog 导出 HTML：弹保存框拿路径再落盘。
+// SaveHtmlDialog asks for a target path and writes the exported HTML.
 func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {
 	if defaultName == "" {
 		defaultName = "export.html"
@@ -443,12 +431,12 @@ func (a *App) SaveHtmlDialog(title, html, defaultName string) (string, error) {
 		return "", err
 	}
 	if target == "" {
-		return "", nil // 用户取消
+		return "", nil
 	}
 	return exporter.ExportHtml(title, html, target)
 }
 
-// SaveSvgDialog 导出思维导图 SVG：弹保存框拿路径后直接落盘（内容已是完整 SVG 文档）。
+// SaveSvgDialog asks for a target path and writes an SVG document.
 func (a *App) SaveSvgDialog(title, content, defaultName string) (string, error) {
 	if defaultName == "" {
 		defaultName = "mindmap.svg"
@@ -467,7 +455,7 @@ func (a *App) SaveSvgDialog(title, content, defaultName string) (string, error) 
 		return "", err
 	}
 	if target == "" {
-		return "", nil // 用户取消
+		return "", nil
 	}
 	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
 		return "", err
@@ -475,7 +463,7 @@ func (a *App) SaveSvgDialog(title, content, defaultName string) (string, error) 
 	return target, nil
 }
 
-// SaveImageDialog 导出 PNG：前端把 SVG 光栅化为 data URL 后传回，解码并落盘。
+// SaveImageDialog decodes a rasterized PNG data URL and writes it to disk.
 func (a *App) SaveImageDialog(defaultName string, dataURL string) (string, error) {
 	if defaultName == "" {
 		defaultName = "mindmap.png"
@@ -494,7 +482,7 @@ func (a *App) SaveImageDialog(defaultName string, dataURL string) (string, error
 		return "", err
 	}
 	if target == "" {
-		return "", nil // 用户取消
+		return "", nil
 	}
 	comma := strings.Index(dataURL, ",")
 	if comma < 0 {

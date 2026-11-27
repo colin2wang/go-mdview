@@ -14,18 +14,18 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// 文件关联全部写在 HKEY_CURRENT_USER\Software\Classes 下：
-// 不需要管理员权限，卸载（取消关联）时也能干净回滚。
+// File association keys live under HKEY_CURRENT_USER\Software\Classes:
+// no administrator rights are needed and unassociating rolls back cleanly.
 const (
-	assocProgID = "mdview.markdown" // .md 指向的 ProgID
+	assocProgID = "mdview.markdown" // ProgID the extensions point to
 	assocAppKey = `Software\Classes\Applications\mdview.exe`
-	assocCfgKey = `Software\mdview\FileAssoc` // 备份原关联，供取消时还原
+	assocCfgKey = `Software\mdview\FileAssoc` // backup of previous handlers
 )
 
-// AssocExts 支持关联的扩展名。
+// AssocExts lists the extensions this app can associate.
 var AssocExts = []string{".md", ".markdown", ".mdown", ".mkd"}
 
-// ExePath 当前可执行文件的绝对路径（解析符号链接后）。
+// ExePath returns the absolute path of the current executable.
 func ExePath() string {
 	p, err := os.Executable()
 	if err != nil {
@@ -40,13 +40,14 @@ func ExePath() string {
 func assocIconValue() string    { return `"` + ExePath() + `",0` }
 func assocCommandValue() string { return `"` + ExePath() + `" "%1"` }
 
-// userChoiceProgID 读取 Windows UserChoice（优先级高于 Software\Classes 默认值）。
+// userChoiceProgID reads the Windows UserChoice for an extension, which takes
+// priority over the Software\Classes default.
 func userChoiceProgID(ext string) string {
 	return readValue(registry.CURRENT_USER,
 		`Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\`+ext+`\UserChoice`, "ProgId")
 }
 
-// effectiveProgID 返回真正生效的 ProgID：UserChoice 存在时以它为准。
+// effectiveProgID returns the ProgID actually in effect for an extension.
 func effectiveProgID(ext string) string {
 	if v := userChoiceProgID(ext); v != "" {
 		return v
@@ -54,7 +55,7 @@ func effectiveProgID(ext string) string {
 	return readDefault(registry.CURRENT_USER, `Software\Classes\`+ext)
 }
 
-// GetAssocState 读取当前受管扩展名的关联情况。
+// GetAssocState reports the association state of the managed extensions.
 func GetAssocState() AssocState {
 	st := AssocState{Supported: true, ExePath: ExePath(), Owner: ""}
 	if st.ExePath == "" {
@@ -77,7 +78,7 @@ func GetAssocState() AssocState {
 	return st
 }
 
-// IsAssociated 所有受管扩展名的生效 ProgID 是否都指向 mdview。
+// IsAssociated reports whether every managed extension points to mdview.
 func IsAssociated() bool {
 	for _, ext := range AssocExts {
 		if !strings.EqualFold(effectiveProgID(ext), assocProgID) {
@@ -87,14 +88,15 @@ func IsAssociated() bool {
 	return true
 }
 
-// AssociateMd 把 .md/.markdown 的默认打开方式设为当前 mdview 并设置文件图标。
+// AssociateMd makes mdview the default handler for the managed extensions
+// and registers the file icon.
 func AssociateMd() error {
 	exe := ExePath()
 	if exe == "" {
 		return errors.New("无法定位可执行文件路径")
 	}
 
-	// 1) 写 ProgID：显示名、图标、打开命令
+	// 1) Write the ProgID: display name, icon, open command.
 	if err := createKey(`Software\Classes\`+assocProgID, func(k registry.Key) error {
 		if err := k.SetStringValue("", "Markdown 文档"); err != nil {
 			return err
@@ -112,7 +114,7 @@ func AssociateMd() error {
 		return err
 	}
 
-	// 2) 注册应用本体：让“打开方式”列表里出现 mdview
+	// 2) Register the application itself so it shows up in "Open with".
 	if err := createKey(assocAppKey, func(k registry.Key) error {
 		if err := k.SetStringValue("FriendlyAppName", "mdview"); err != nil {
 			return err
@@ -127,14 +129,14 @@ func AssociateMd() error {
 		return err
 	}
 
-	// 3) 先把接管前的默认值备份到 Software\mdview\FileAssoc，取消关联时还原
+	// 3) Back up the previous default values, restored on unassociate.
 	for _, ext := range AssocExts {
 		prev := readDefault(registry.CURRENT_USER, `Software\Classes\`+ext)
 		if prev == "" || strings.EqualFold(prev, assocProgID) {
 			continue
 		}
 		if readValue(registry.CURRENT_USER, assocCfgKey, ext) != "" {
-			continue // 先前已备份过，别把后来接管的程序记成原始值
+			continue
 		}
 		if err := createKey(assocCfgKey, func(k registry.Key) error {
 			return k.SetStringValue(ext, prev)
@@ -148,7 +150,7 @@ func AssociateMd() error {
 		}); err != nil {
 			return err
 		}
-		// 同时挂进 OpenWithProgids，"打开方式"里始终能看到 mdview
+		// Also list under OpenWithProgids so mdview always appears in "Open with".
 		if err := createKey(`Software\Classes\`+ext+`\OpenWithProgids`, func(k registry.Key) error {
 			return k.SetStringValue(assocProgID, "")
 		}); err != nil {
@@ -157,7 +159,8 @@ func AssociateMd() error {
 	}
 
 	notifyShell()
-	// UserChoice 受 Windows 保护，程序无法可靠改写：注册表已就绪，仍需用户在「打开方式」里选一次。
+	// UserChoice is protected by Windows and cannot be rewritten reliably;
+	// the registry is ready but the user must pick mdview once in "Open with".
 	for _, ext := range AssocExts {
 		if v := userChoiceProgID(ext); v != "" && !strings.EqualFold(v, assocProgID) {
 			return errors.New("已在注册表登记 mdview，但 Windows 记住了其他程序，请在文件「打开方式」中选择 mdview")
@@ -166,12 +169,13 @@ func AssociateMd() error {
 	return nil
 }
 
-// UnassociateMd 取消关联：还原接管前的默认打开方式（没有备份就清空默认值）。
+// UnassociateMd removes the association and restores the backed-up handler,
+// or clears the default when there is no backup.
 func UnassociateMd() error {
 	for _, ext := range AssocExts {
 		cur := readDefault(registry.CURRENT_USER, `Software\Classes\`+ext)
 		if !strings.EqualFold(cur, assocProgID) {
-			continue // 已被其它程序接管，不要动它
+			continue
 		}
 		backup := readValue(registry.CURRENT_USER, assocCfgKey, ext)
 		if err := createKey(`Software\Classes\`+ext, func(k registry.Key) error {
@@ -182,14 +186,14 @@ func UnassociateMd() error {
 		}); err != nil {
 			return err
 		}
-		// 移除我们加的 OpenWithProgids 条目
 		deleteValueByPath(`Software\Classes\`+ext+`\OpenWithProgids`, assocProgID)
 	}
 
 	_ = deleteTree(`Software\Classes\` + assocProgID)
 	_ = deleteTree(assocAppKey)
 	_ = deleteTree(assocCfgKey)
-	// UserChoice 若仍指向 mdview，尝试清掉；Windows 保护该键时提示用户手动改回。
+	// Clear a UserChoice still pointing at mdview; when Windows protects the
+	// key the user is asked to change it manually.
 	for _, ext := range AssocExts {
 		p := `Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\` + ext + `\UserChoice`
 		if strings.EqualFold(userChoiceProgID(ext), assocProgID) {
@@ -205,7 +209,7 @@ func UnassociateMd() error {
 	return nil
 }
 
-// ---------- 注册表小工具 ----------
+// Registry helpers.
 
 func createKey(path string, fn func(k registry.Key) error) error {
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, path,
@@ -221,7 +225,7 @@ func openKey(path string) (registry.Key, error) {
 	return registry.OpenKey(registry.CURRENT_USER, path, registry.QUERY_VALUE|registry.SET_VALUE)
 }
 
-// readDefault 读取键的默认值（不存在返回空串）。
+// readDefault reads a key's default value, or "" when absent.
 func readDefault(root registry.Key, path string) string {
 	k, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
 	if err != nil {
@@ -235,7 +239,7 @@ func readDefault(root registry.Key, path string) string {
 	return strings.TrimSpace(v)
 }
 
-// readValue 读取指定键下的字符串值。
+// readValue reads a string value under the given key.
 func readValue(root registry.Key, path, name string) string {
 	k, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
 	if err != nil {
@@ -265,7 +269,7 @@ func deleteValueByPath(path, name string) {
 	_ = k.DeleteValue(name)
 }
 
-// deleteTree 递归删除键及其子键（键不存在视为成功）。
+// deleteTree deletes a key and all its subkeys (missing keys count as success).
 func deleteTree(path string) error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, path, registry.ENUMERATE_SUB_KEYS|registry.QUERY_VALUE)
 	if err != nil {
@@ -287,7 +291,7 @@ func deleteTree(path string) error {
 	return nil
 }
 
-// friendlyName 把 ProgID 尽量翻译成用户可读的程序名。
+// friendlyName translates a ProgID into a user-readable program name.
 func friendlyName(progID string) string {
 	for _, p := range []string{`Software\Classes\` + progID, `Software\Classes\Applications\` + progID} {
 		if v := readDefault(registry.CURRENT_USER, p); v != "" && !strings.HasPrefix(v, "@") {
@@ -300,7 +304,7 @@ func friendlyName(progID string) string {
 	return progID
 }
 
-// ---------- 通知资源管理器刷新图标 ----------
+// Shell change notification.
 
 const (
 	shcneAssocChanged = 0x08000000
@@ -308,8 +312,8 @@ const (
 	shcnfFlush        = 0x00001000
 )
 
-// notifyShell 广播“关联已变更”，让资源管理器立即换图标。
-// 失败不影响关联结果（用户重启资源管理器/注销后也会生效）。
+// notifyShell broadcasts the association change so Explorer refreshes its
+// icons right away; failure is harmless (a reboot has the same effect).
 func notifyShell() {
 	dll := syscall.NewLazyDLL("shell32.dll")
 	proc := dll.NewProc("SHChangeNotify")
@@ -321,11 +325,10 @@ func notifyShell() {
 		uintptr(shcnfIDList|shcnfFlush),
 		0,
 		0)
-	// Windows 10/11 上再刷一次图标缓存，避免资源管理器仍显示旧图标
 	refreshIconCache()
 }
 
-// refreshIconCache 调用系统自带的 ie4uinit（失败完全忽略）。
+// refreshIconCache invokes the bundled ie4uinit tool; failures are ignored.
 func refreshIconCache() {
 	cmd := exec.Command("ie4uinit.exe", "-show")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}

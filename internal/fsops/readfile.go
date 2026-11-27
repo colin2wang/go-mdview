@@ -17,7 +17,7 @@ import (
 	"mdview/internal/imgsrv"
 )
 
-// FileContent 读取结果。
+// FileContent is the result of reading a file.
 type FileContent struct {
 	Path     string `json:"path"`
 	Name     string `json:"name"`
@@ -28,9 +28,9 @@ type FileContent struct {
 	ModTime  int64  `json:"modTime"`
 }
 
-const maxReadSize = 32 << 20 // 32MB 上限，防呆
+const maxReadSize = 32 << 20 // 32MB
 
-// textInfo 是检测出的文本编码/换行风格信息，保存时据此原样回写。
+// textInfo holds the detected encoding/newline facts, reused verbatim on save.
 type textInfo struct {
 	content  string
 	encoding string
@@ -38,7 +38,8 @@ type textInfo struct {
 	bom      bool
 }
 
-// detectText 依次尝试 BOM、UTF-8、GB18030、Big5、Shift-JIS；同时记录换行风格与 BOM。
+// detectText detects the encoding by trying BOM, UTF-8, GB18030, Big5 and
+// Shift-JIS in order; it also records the newline style and BOM presence.
 func detectText(raw []byte) textInfo {
 	info := textInfo{newline: "\n"}
 	if bytes.Contains(raw, []byte("\r\n")) {
@@ -87,7 +88,7 @@ func detectText(raw []byte) textInfo {
 	}
 }
 
-// encodeText 按检测的编码/BOM/换行风格把正文编码回字节。
+// encodeText encodes content back to bytes using the detected encoding/BOM/newline.
 func encodeText(content, encoding, newline string, bom bool) []byte {
 	if newline == "\r\n" {
 		content = strings.ReplaceAll(content, "\r\n", "\n")
@@ -127,7 +128,7 @@ func encodeText(content, encoding, newline string, bom bool) []byte {
 	return data
 }
 
-// ReadFile 读取 .md 文本：BOM / UTF-8 / GB18030 / Big5 / Shift-JIS 自动探测。
+// ReadFile reads a .md file with automatic encoding detection.
 func ReadFile(path string) (FileContent, error) {
 	path = filepath.Clean(path)
 	fi, err := os.Stat(path)
@@ -144,7 +145,6 @@ func ReadFile(path string) (FileContent, error) {
 	if err != nil {
 		return FileContent{}, err
 	}
-	// 打开成功即登记所在目录：/mdimg 回放仅允许已打开目录子树内的图片
 	imgsrv.AllowImageDir(filepath.Dir(path))
 	info := detectText(raw)
 	return FileContent{
@@ -158,10 +158,10 @@ func ReadFile(path string) (FileContent, error) {
 	}, nil
 }
 
-// SaveFile 把编辑后的正文写回文件，返回刷新后的读取结果。
-// encoding 为 gb18030 时按原编码回写，避免改动老笔记的编码；其余按 UTF-8。
-// 采用「临时文件 + 重命名」的原子写法，避免写一半失败损坏原文。
-// 文件已被外部删除（用户选择「保留」后）时保存会重建文件，含缺失的父目录。
+// SaveFile writes edited content back atomically (temp file + rename) and
+// returns a fresh read of the file. The on-disk encoding/BOM/newline of the
+// original file are preserved; a file deleted externally is recreated,
+// including missing parent directories.
 func SaveFile(path, content, encoding string) (FileContent, error) {
 	path = filepath.Clean(path)
 	fi, err := os.Stat(path)
@@ -182,7 +182,6 @@ func SaveFile(path, content, encoding string) (FileContent, error) {
 		perm = fi.Mode().Perm()
 	}
 
-	// 以磁盘原文件的编码 / BOM / 换行风格为准（文件被外部删除时退回前端传来的 encoding）。
 	enc, newline, bom := encoding, "\n", false
 	if fi != nil {
 		if raw, err := os.ReadFile(path); err == nil {
@@ -197,7 +196,7 @@ func SaveFile(path, content, encoding string) (FileContent, error) {
 		return FileContent{}, err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // 成功后已被 rename 移走，这里删除失败也无妨
+	defer os.Remove(tmpName)
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return FileContent{}, err
@@ -207,8 +206,6 @@ func SaveFile(path, content, encoding string) (FileContent, error) {
 		return FileContent{}, err
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		// 极少数文件系统/权限下 rename 会失败，退化为直接覆盖写；
-		// 回退也失败时返回真正的写入错误 werr（而不是掩盖它的 rename 错误）
 		if werr := os.WriteFile(path, data, perm); werr != nil {
 			return FileContent{}, werr
 		}
@@ -220,12 +217,12 @@ func SaveFile(path, content, encoding string) (FileContent, error) {
 
 type tooLargeError struct{}
 
-// 错误文案用稳定的英文标识，前端按它映射到当前语言（避免 Go 侧硬编码中文）。
+// tooLargeError keeps a stable English message the frontend maps to localized text.
 func (tooLargeError) Error() string { return "mdview: file too large (>32MB)" }
 
 var errTooLarge error = tooLargeError{}
 
-// StatFile 给前端判断文件是否仍存在（顺手返回修改时间）。
+// StatFile reports whether a file exists along with its modification time.
 func StatFile(path string) (int64, bool) {
 	fi, err := os.Stat(path)
 	if err != nil || fi.IsDir() {

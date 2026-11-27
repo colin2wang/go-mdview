@@ -1,10 +1,10 @@
 package assoc
 
-// AssocState 文件关联状态（供设置对话框展示）。
+// AssocState is the file association state shown in the settings dialog.
 type AssocState struct {
-	Supported  bool   `json:"supported"`  // 当前平台是否支持关联（目前仅 Windows）
-	ExePath    string `json:"exePath"`    // 当前可执行文件路径
-	Associated bool   `json:"associated"` // .md 是否已指向 mdview
-	Owner      string `json:"owner"`      // 未关联时的当前默认打开方式；空串表示未设置（文案由前端 i18n 的 assoc.ownerNone 提供）
-	Message    string `json:"message"`    // 最近一次操作的说明/错误
+	Supported  bool   `json:"supported"`  // whether the platform supports association (Windows only)
+	ExePath    string `json:"exePath"`    // current executable path
+	Associated bool   `json:"associated"` // whether .md points to mdview
+	Owner      string `json:"owner"`      // current default handler when unassociated; empty means unset
+	Message    string `json:"message"`    // description or error of the last operation
 }

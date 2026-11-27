@@ -9,11 +9,11 @@ import (
 	"mdview/internal/settings"
 )
 
-// YAML 配置文件：exe 同目录下的 mdview.yml。
-// Settings.useYaml 激活且文件存在时，它优先于 %AppData%\mdview\settings.json。
-// 文件为生成格式：每个键上方带英文注释，保存时整体重写（保留注释模板）。
+// mdview.yml lives next to the exe. When present it takes priority over
+// settings.json; the file is regenerated in whole on save, keeping the
+// commented template.
 
-// YamlConfigPath 返回 mdview.yml 的完整路径（exe 同目录）。
+// YamlConfigPath returns the full path of mdview.yml (next to the exe).
 func YamlConfigPath() string {
 	if override := os.Getenv("MDVIEW_YAML"); override != "" {
 		return override
@@ -25,7 +25,7 @@ func YamlConfigPath() string {
 	return filepath.Join(filepath.Dir(exe), "mdview.yml")
 }
 
-// yamlWriteLine 写一个带注释的标量键。
+// yamlWriteLine writes one commented scalar key.
 func yamlWriteLine(b *strings.Builder, comment, key, value string) {
 	if comment != "" {
 		for _, c := range strings.Split(comment, "\n") {
@@ -35,7 +35,7 @@ func yamlWriteLine(b *strings.Builder, comment, key, value string) {
 	b.WriteString(key + ": " + value + "\n")
 }
 
-// yamlQuote 把字符串按 YAML 单行标量输出；含特殊字符时加双引号。
+// yamlQuote formats a string as a single-line YAML scalar, quoting when needed.
 func yamlQuote(s string) string {
 	if s == "" {
 		return `""`
@@ -46,7 +46,7 @@ func yamlQuote(s string) string {
 	return s
 }
 
-// writeYamlSettings 整体重写 mdview.yml（注释模板 + 当前设置值）。
+// writeYamlSettings rewrites mdview.yml (comment template + current values).
 func writeYamlSettings(st settings.Settings) error {
 	path := YamlConfigPath()
 	if path == "" {
@@ -88,7 +88,6 @@ func writeYamlSettings(st settings.Settings) error {
 	yamlWriteLine(&b, "Window position (may be negative on multi-monitor)", "winX", strconv.Itoa(st.WinX))
 	yamlWriteLine(&b, "", "winY", strconv.Itoa(st.WinY))
 	yamlWriteLine(&b, "Window was maximized on close", "winMax", strconv.FormatBool(st.WinMax))
-	// 原子写：避免写一半被中断导致下次启动解析到半截配置
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
 		return err
@@ -97,14 +96,14 @@ func writeYamlSettings(st settings.Settings) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	// 重新启用 yml 时清掉「已禁用」标记
 	_ = os.Remove(yamlDisabledPath())
 	return nil
 }
 
-// loadYamlSettings 解析 mdview.yml，把出现的键覆盖到 st 上。
-// 极简 YAML 子集：`key: value` 标量 + `  - value` 列表项（仅 remoteAllow 用到），
-// `#` 注释与空行忽略；不引入 YAML 依赖。
+// loadYamlSettings parses mdview.yml and overlays the present keys onto st.
+// It understands a minimal YAML subset: `key: value` scalars plus
+// `  - value` list items (remoteAllow only); comments and blank lines
+// are ignored.
 func loadYamlSettings(st *settings.Settings) {
 	path := YamlConfigPath()
 	if path == "" {
@@ -160,7 +159,7 @@ func loadYamlSettings(st *settings.Settings) {
 		case "blockRemote":
 			st.BlockRemote = value == "true"
 		case "remoteAllow":
-			// 列表项在上方分支收集；内联写法 `remoteAllow: a` 也支持（逗号分隔）
+			// Inline form `remoteAllow: a` is also accepted (comma-separated).
 			if value != "" {
 				allow = append(allow, strings.Split(value, ",")...)
 			}
@@ -205,7 +204,7 @@ func loadYamlSettings(st *settings.Settings) {
 	}
 }
 
-// yamlUnquote 去掉成对的双引号（生成端只可能写一层）。
+// yamlUnquote strips a matched pair of double quotes.
 func yamlUnquote(s string) string {
 	if len(s) >= 2 && strings.HasPrefix(s, `"`) && strings.HasSuffix(s, `"`) {
 		if u, err := strconv.Unquote(s); err == nil {
@@ -215,14 +214,15 @@ func yamlUnquote(s string) string {
 	return s
 }
 
-// yamlExists 判断 exe 同目录是否存在 mdview.yml。文件存在即视为 yml 配置源生效
-// （并把 useYaml 视为开），不依赖存储的开关值。
+// yamlExists reports whether mdview.yml exists next to the exe; its presence
+// activates the YAML config source regardless of the stored switch.
 func yamlExists() bool {
 	fi, err := os.Stat(YamlConfigPath())
 	return err == nil && !fi.IsDir()
 }
 
-// yamlDisabledPath 标记文件：exe 目录只读、yml 删不掉时，用它阻止 yml 下次启动复活。
+// yamlDisabledPath returns the marker file that keeps yml from being
+// re-enabled when it cannot be deleted from a read-only exe directory.
 func yamlDisabledPath() string {
 	cfg, err := os.UserConfigDir()
 	if err != nil {
@@ -236,14 +236,13 @@ func yamlDisabled() bool {
 	return p != "" && fileExists(p)
 }
 
-// removeYaml 删除本地 mdview.yml（用户关掉 yml 开关时调用，避免再次打开时旧文件复活）。
+// removeYaml deletes the local mdview.yml when the user turns YAML mode off.
 func removeYaml() error {
 	p := YamlConfigPath()
 	if p == "" || !yamlExists() {
 		return nil
 	}
 	if err := os.Remove(p); err != nil {
-		// 删不掉时留下标记：GetSettings 见到标记就忽略仍存在的 yml
 		if marker := yamlDisabledPath(); marker != "" {
 			_ = os.WriteFile(marker, []byte("yaml disabled by user\n"), 0o644)
 		}
