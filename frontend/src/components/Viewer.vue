@@ -795,6 +795,8 @@ function onArtDblClick(e: MouseEvent) {
   const tgt = e.target as HTMLElement
   const holder = tgt.closest<HTMLElement>('.md-diagram')
   if (holder) {
+    // 源码态下图仍留在 DOM 里（只是 display:none），双击不能从隐藏的图中开灯箱
+    if (holder.classList.contains('show-src')) return
     const svgEl = holder.querySelector('.md-diagram-src svg')
     if (svgEl) {
       // 内联 SVG 卡片没有 data-engine，必须走通用 SVG 出口；否则 Mermaid 配置

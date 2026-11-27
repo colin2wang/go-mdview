@@ -332,8 +332,51 @@ const COPY_ICON =
   `<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>` +
   `</svg>`
 
-function diagTitle(kind: string): string {
-  return kind === 'mermaid' ? t('diag.mermaid') : t('diag.svg')
+/**
+ * 把代码 HTML 包成逐行 span：换行符留在 span 之外，pre.textContent 与原文逐字一致
+ * （复制按钮直接取 textContent）。highlight.js 的多行 token 在换行处闭合、下一行
+ * 重开 span，避免跨行注释/模板字符串丢样式；行号本身交给 CSS counter 生成。
+ */
+function wrapCodeLines(html: string): string {
+  if (!html) return ''
+  const lines: string[] = []
+  let cur = ''
+  const stack: string[] = []
+  const flush = () => {
+    let closed = cur
+    for (let i = stack.length - 1; i >= 0; i--) closed += '</span>'
+    lines.push(`<span class="code-line"><span class="code-line-num" aria-hidden="true"></span>${closed}</span>`)
+    cur = stack.join('')
+  }
+  const tokens = html.match(/<[^>]*>|[^<]+/g) ?? []
+  for (const tok of tokens) {
+    if (tok.startsWith('<')) {
+      if (tok.startsWith('</')) {
+        const name = tok.slice(2, -1).trim()
+        for (let i = stack.length - 1; i >= 0; i--) {
+          if (stack[i].startsWith(`<${name}`)) {
+            stack.splice(i, 1)
+            break
+          }
+        }
+      } else if (!/\/>$/.test(tok) && !/^<(?:br|hr|img|input)\b/i.test(tok)) {
+        stack.push(tok)
+      }
+      cur += tok
+      continue
+    }
+    let start = 0
+    for (let i = 0; i < tok.length; i++) {
+      if (tok[i] === '\n') {
+        cur += tok.slice(start, i)
+        flush()
+        start = i + 1
+      }
+    }
+    cur += tok.slice(start)
+  }
+  flush()
+  return lines.join('\n')
 }
 
 /** 代码块是否应渲染成图形卡片：mermaid / svg（含未标注语言但内容是 SVG 的情况）。 */
@@ -437,18 +480,17 @@ export function diagramCard(kind: DiagramKind, label: string, code: string): str
   return (
     `<div class="md-diagram" data-diagram="${kind}" data-${kind}="${enc}" data-src="${enc}">` +
     `<div class="md-diagram-head">` +
-    `<span class="md-diagram-title">${escapeHtml(diagTitle(kind))}</span>` +
+    `<span class="code-lang md-diagram-lang">${escapeHtml(label)}</span>` +
     `<span class="md-diagram-tools">` +
-    `<span class="md-diagram-meta">${escapeHtml(label)}</span>` +
     engineSelect +
     `<button type="button" class="md-diagram-btn" data-toggle-src title="${escapeHtml(t('diag.viewSrc'))}">${escapeHtml(t('diag.src'))}</button>` +
-    `<button type="button" class="md-diagram-btn" data-copy title="${escapeHtml(t('diag.copyTip'))}">${COPY_ICON}</button>` +
     `</span>` +
+    `<button type="button" class="code-copy" data-copy title="${escapeHtml(t('diag.copyTip'))}">${COPY_ICON}</button>` +
     `</div>` +
     `<div class="md-diagram-body"><div class="md-diagram-src">` +
     (kind === 'svg' ? sanitizeSvg(code) : escapeHtml(t('diag.rendering'))) +
     `</div></div>` +
-    `<pre class="md-diagram-code"><code>${escapeHtml(code)}</code></pre>` +
+    `<pre class="md-diagram-code"><code>${wrapCodeLines(escapeHtml(code))}</code></pre>` +
     `</div>\n`
   )
 }
@@ -530,7 +572,7 @@ export async function renderMarkdown(
           `<button type="button" class="code-copy" data-copy title="${escapeHtml(t('code.copy.tip'))}">${COPY_ICON}</button>` +
           `</span>` +
           `</div>` +
-          `<pre><code${cls}>${body}</code></pre></div>\n`,
+          `<pre><code${cls}>${wrapCodeLines(body)}</code></pre></div>\n`,
         token.raw
       )
     },

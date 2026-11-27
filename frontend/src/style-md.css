@@ -166,8 +166,12 @@
   pointer-events: none;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
+/* 图形卡片不能用 :focus-within：点「源码」/引擎下拉后焦点留在卡片内，
+   复制按钮会常显；只让复制按钮自身的键盘焦点显形。 */
 .code-block:hover .code-copy,
-.code-block:focus-within .code-copy {
+.code-block:focus-within .code-copy,
+.md-article .md-diagram:hover .code-copy,
+.md-article .md-diagram .code-copy:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
@@ -178,6 +182,31 @@
 .code-copy.done {
   color: #1a7f37;
   opacity: 1;
+}
+/* 行号：渲染期已生成逐行 span，根类切换即时显隐，不触发正文重渲染。
+   换行符留在 span 之外，因此 pre.textContent 仍是原始代码。 */
+.code-block pre code,
+.md-article .md-diagram-code code {
+  counter-reset: code-line;
+}
+.code-line {
+  counter-increment: code-line;
+}
+.code-line-num {
+  display: none;
+}
+html.__code_lineno .code-line-num {
+  display: inline-block;
+  width: 2.2em;
+  margin-right: 1.4em;
+  text-align: right;
+  color: var(--md-bq-text);
+  opacity: 0.55;
+  user-select: none;
+  pointer-events: none;
+}
+html.__code_lineno .code-line-num::before {
+  content: counter(code-line);
 }
 
 /* 引用 */
@@ -415,17 +444,12 @@
 .md-article .md-diagram-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 8px 6px 12px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 5px 8px 5px 12px; /* 与 .code-head 一致，语言标签左顶格 */
   background: var(--md-surface-2);
   border-bottom: 1px solid var(--md-pre-border);
   user-select: none;
-}
-.md-article .md-diagram-title {
-  font-size: 12.5px;
-  font-weight: 600;
-  white-space: nowrap;
 }
 .md-article .md-diagram-tools {
   display: flex;
@@ -433,13 +457,8 @@
   gap: 6px;
   flex: none;
 }
-.md-article .md-diagram-meta {
-  font-size: 10.5px;
-  color: var(--md-bq-text);
-  padding: 1px 7px;
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--md-text) 8%, transparent);
-  text-transform: lowercase;
+.md-article .md-diagram-head .code-copy {
+  margin-left: auto; /* 复制按钮与代码块一样靠右，悬停才显形 */
 }
 .md-article .md-diagram-engine {
   border: 1px solid var(--md-pre-border);

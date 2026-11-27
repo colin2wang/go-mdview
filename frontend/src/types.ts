@@ -42,6 +42,7 @@ export interface Settings {
   fontSize: number
   codeWrap: boolean
   lineNo: boolean // 源码区显示行号（编辑/只读共用）
+  codeBlockLineNo: boolean // 渲染区代码块与图形源码显示行号，默认开
   sidebarWidth: number
   lastFolder: string
   lastFile: string
@@ -68,6 +69,7 @@ export const defaultSettings: Settings = {
   fontSize: 16,
   codeWrap: false,
   lineNo: true,
+  codeBlockLineNo: true,
   sidebarWidth: 280,
   lastFolder: '',
   lastFile: '',

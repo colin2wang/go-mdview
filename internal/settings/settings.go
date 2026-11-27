@@ -47,47 +47,49 @@ const (
 
 // Settings holds the application settings; every field has a default.
 type Settings struct {
-	Theme         string `json:"theme"`         // light | dark
-	FontSize      int    `json:"fontSize"`      // base body font size in px, default 16
-	CodeWrap      bool   `json:"codeWrap"`      // wrap long lines in code blocks
-	LineNo        bool   `json:"lineNo"`        // show line numbers in the source pane
-	SidebarWidth  int    `json:"sidebarWidth"`  // sidebar width in px
-	LastFolder    string `json:"lastFolder"`    // last opened folder
-	LastFile      string `json:"lastFile"`      // last opened file
-	Pinned        bool   `json:"pinned"`        // always-on-top window
-	ViewMode      string `json:"viewMode"`      // render | source | split | mindmap
-	Language      string `json:"language"`      // UI language: zh-CN | en | ja | de
-	AutoReload    bool   `json:"autoReload"`    // reload automatically on external change
-	BlockRemote   bool   `json:"blockRemote"`   // block remote http(s) resources
-	RemoteAllow   string `json:"remoteAllow"`   // remote whitelist: URL wildcards, one per line
-	UseYaml       bool   `json:"useYaml"`       // use exe-adjacent mdview.yml as config source
-	MmMaxLen      int    `json:"mmMaxLen"`      // mind map wrap length
-	CodeMaxLines  int    `json:"codeMaxLines"`  // code block max visible lines, 0 = unlimited
-	MermaidEngine string `json:"mermaidEngine"` // mermaid | pele
-	WinW          int    `json:"winW"`          // window width on last close (0 = not recorded)
-	WinH          int    `json:"winH"`          // window height on last close
-	WinX          int    `json:"winX"`          // window x on last close (may be negative)
-	WinY          int    `json:"winY"`          // window y on last close
-	WinMax        bool   `json:"winMax"`        // window was maximized on close
+	Theme           string `json:"theme"`           // light | dark
+	FontSize        int    `json:"fontSize"`        // base body font size in px, default 16
+	CodeWrap        bool   `json:"codeWrap"`        // wrap long lines in code blocks
+	LineNo          bool   `json:"lineNo"`          // show line numbers in the source pane
+	CodeBlockLineNo bool   `json:"codeBlockLineNo"` // show line numbers in rendered code blocks and diagram source
+	SidebarWidth    int    `json:"sidebarWidth"`    // sidebar width in px
+	LastFolder      string `json:"lastFolder"`      // last opened folder
+	LastFile        string `json:"lastFile"`        // last opened file
+	Pinned          bool   `json:"pinned"`          // always-on-top window
+	ViewMode        string `json:"viewMode"`        // render | source | split | mindmap
+	Language        string `json:"language"`        // UI language: zh-CN | en | ja | de
+	AutoReload      bool   `json:"autoReload"`      // reload automatically on external change
+	BlockRemote     bool   `json:"blockRemote"`     // block remote http(s) resources
+	RemoteAllow     string `json:"remoteAllow"`     // remote whitelist: URL wildcards, one per line
+	UseYaml         bool   `json:"useYaml"`         // use exe-adjacent mdview.yml as config source
+	MmMaxLen        int    `json:"mmMaxLen"`        // mind map wrap length
+	CodeMaxLines    int    `json:"codeMaxLines"`    // code block max visible lines, 0 = unlimited
+	MermaidEngine   string `json:"mermaidEngine"`   // mermaid | pele
+	WinW            int    `json:"winW"`            // window width on last close (0 = not recorded)
+	WinH            int    `json:"winH"`            // window height on last close
+	WinX            int    `json:"winX"`            // window x on last close (may be negative)
+	WinY            int    `json:"winY"`            // window y on last close
+	WinMax          bool   `json:"winMax"`          // window was maximized on close
 }
 
 // DefaultSettings holds the default values; reads start from it so missing
 // fields in old files keep their defaults.
 var DefaultSettings = Settings{
-	Theme:         "light",
-	FontSize:      16,
-	CodeWrap:      false,
-	LineNo:        true,
-	SidebarWidth:  DefaultSidebarWidth,
-	ViewMode:      ViewModeRender,
-	Language:      "zh-CN",
-	AutoReload:    true,
-	BlockRemote:   true,
-	RemoteAllow:   "",
-	UseYaml:       false,
-	MmMaxLen:      DefaultMmMaxLen,
-	CodeMaxLines:  DefaultCodeMaxLines,
-	MermaidEngine: MermaidEnginePele,
+	Theme:           "light",
+	FontSize:        16,
+	CodeWrap:        false,
+	LineNo:          true,
+	CodeBlockLineNo: true,
+	SidebarWidth:    DefaultSidebarWidth,
+	ViewMode:        ViewModeRender,
+	Language:        "zh-CN",
+	AutoReload:      true,
+	BlockRemote:     true,
+	RemoteAllow:     "",
+	UseYaml:         false,
+	MmMaxLen:        DefaultMmMaxLen,
+	CodeMaxLines:    DefaultCodeMaxLines,
+	MermaidEngine:   MermaidEnginePele,
 }
 
 // ValidViewMode normalizes a view mode, falling back to render.

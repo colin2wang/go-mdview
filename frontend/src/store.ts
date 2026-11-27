@@ -639,6 +639,9 @@ export async function applySettings(st: Settings | null = store.settings) {
   const theme: string = st?.theme === 'dark' ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
   document.documentElement.style.setProperty('--md-fs', `${st?.fontSize ?? 16}px`)
+  // 渲染区代码块/图形源码的行号：渲染期已生成逐行包装，这里只切根类即时显隐，
+  // 不触发整篇重渲染，避免同步锚点重建。
+  document.documentElement.classList.toggle('__code_lineno', st?.codeBlockLineNo ?? true)
   // 代码块最大行数：0 = 不限制（max-height: none）。三个变量分别对应
   // .code-block pre（行盒 = 0.875em × 1.6 行高，上下 padding 28px）、
   // 图形卡片「源码」视图 .md-diagram-code（12.5px × 1.6 + 28px）与

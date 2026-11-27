@@ -61,6 +61,7 @@ func writeYamlSettings(st settings.Settings) error {
 	yamlWriteLine(&b, "Body font size in px (12-28)", "fontSize", strconv.Itoa(st.FontSize))
 	yamlWriteLine(&b, "Wrap long lines inside code blocks", "codeWrap", strconv.FormatBool(st.CodeWrap))
 	yamlWriteLine(&b, "Show line numbers in the source pane", "lineNo", strconv.FormatBool(st.LineNo))
+	yamlWriteLine(&b, "Show line numbers in rendered code blocks and diagram source views", "codeBlockLineNo", strconv.FormatBool(st.CodeBlockLineNo))
 	yamlWriteLine(&b, "Sidebar width in px (200-520)", "sidebarWidth", strconv.Itoa(st.SidebarWidth))
 	yamlWriteLine(&b, "Remembered view mode: render | source | split | mindmap", "viewMode", yamlQuote(st.ViewMode))
 	yamlWriteLine(&b, "UI language: zh-CN | en | ja | de", "language", yamlQuote(st.Language))
@@ -144,6 +145,8 @@ func loadYamlSettings(st *settings.Settings) {
 			st.CodeWrap = value == "true"
 		case "lineNo":
 			st.LineNo = value == "true"
+		case "codeBlockLineNo":
+			st.CodeBlockLineNo = value == "true"
 		case "sidebarWidth":
 			if n, e := strconv.Atoi(value); e == nil {
 				st.SidebarWidth = n

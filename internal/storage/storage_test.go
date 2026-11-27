@@ -26,7 +26,7 @@ func TestSettingsDefaultsAndClamp(t *testing.T) {
 	if st.ViewMode != settings.ViewModeRender {
 		t.Fatalf("默认视图模式不符: %q", st.ViewMode)
 	}
-	if !st.LineNo {
+	if !st.LineNo || !st.CodeBlockLineNo {
 		t.Fatalf("行号默认应开启: %+v", st)
 	}
 	st.Theme = "night"
@@ -34,6 +34,7 @@ func TestSettingsDefaultsAndClamp(t *testing.T) {
 	st.SidebarWidth = 10
 	st.ViewMode = "bogus"
 	st.LineNo = false
+	st.CodeBlockLineNo = false
 	got := s.SaveSettings(st)
 	if got.Theme != "light" || got.FontSize != 28 || got.SidebarWidth != 200 {
 		t.Fatalf("clamp 失败: %+v", got)
@@ -50,14 +51,17 @@ func TestSettingsDefaultsAndClamp(t *testing.T) {
 	if s.GetSettings().LineNo {
 		t.Fatal("行号开关未落盘")
 	}
+	if s.GetSettings().CodeBlockLineNo {
+		t.Fatal("代码块行号开关未落盘")
+	}
 }
 
 func TestSettingsLineNoLegacyFile(t *testing.T) {
 	s := newTestStore(t)
-	// 旧版 settings.json 没有 lineNo 字段：应按默认值显示行号
+	// 旧版 settings.json 没有 lineNo / codeBlockLineNo 字段：应按默认值显示行号
 	_ = os.WriteFile(filepath.Join(s.base(), "settings.json"), []byte(`{"theme":"dark"}`), 0o644)
 	st := s.GetSettings()
-	if !st.LineNo || st.Theme != "dark" {
+	if !st.LineNo || !st.CodeBlockLineNo || st.Theme != "dark" {
 		t.Fatalf("旧版设置补齐失败: %+v", st)
 	}
 }
@@ -151,6 +155,7 @@ func TestYamlRoundTripAndMindmap(t *testing.T) {
 	in.ViewMode = settings.ViewModeMindmap
 	in.Language = "de"
 	in.UseYaml = true
+	in.CodeBlockLineNo = false
 	in.RemoteAllow = "https://a.b/*\nhttps://c.d"
 	got := s.SaveSettings(in)
 	if got.ViewMode != settings.ViewModeMindmap || got.Language != "de" {
@@ -160,11 +165,11 @@ func TestYamlRoundTripAndMindmap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "viewMode: mindmap") {
-		t.Fatalf("yml 未含 mindmap: %s", raw)
+	if !strings.Contains(string(raw), "viewMode: mindmap") || !strings.Contains(string(raw), "codeBlockLineNo: false") {
+		t.Fatalf("yml 未含新设置: %s", raw)
 	}
 	reread := s.GetSettings()
-	if reread.ViewMode != settings.ViewModeMindmap || reread.Language != "de" {
+	if reread.ViewMode != settings.ViewModeMindmap || reread.Language != "de" || reread.CodeBlockLineNo {
 		t.Fatalf("yml 往返失败: %+v", reread)
 	}
 }

@@ -16,6 +16,7 @@ const state = {
     fontSize: 16,
     codeWrap: false,
     lineNo: true,
+    codeBlockLineNo: true,
     sidebarWidth: 280,
     lastFolder: DEMO_DIR,
     lastFile: '',

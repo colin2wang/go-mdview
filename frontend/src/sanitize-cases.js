@@ -49,6 +49,7 @@ export const BENIGN_CASES = [
   ['<li><input type="checkbox" checked>任务</li>', 'type="checkbox"', 'GFM task-list checkbox preserved'],
   ['<select class="md-diagram-engine" data-mm-engine><option value="pele">Pele</option></select>', 'data-mm-engine', 'diagram engine select preserved'],
   ['<pre><code class="hljs">const a = 1</code></pre>', '<code', 'code block preserved'],
+  ['<span class="code-line"><span class="code-line-num" aria-hidden="true"></span>x</span>', 'code-line-num', 'code line number span preserved'],
   ['<h2 id="intro" data-sl="12">标题</h2>', 'data-sl="12"', 'block line anchor preserved'],
   ['<svg><rect width="10" height="10"><animate attributeName="opacity" values="0.3;1;0.3" from="0" to="1" dur="1.5s" begin="0.5s" repeatCount="indefinite" keyTimes="0;0.5;1"/></rect><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s" repeatCount="indefinite"/><set attributeName="opacity" to="1" begin="1s"/></svg>', '<animate', 'SMIL animation preserved'],
   ['<svg><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s"/></svg>', 'type="rotate"', 'SMIL animateTransform attrs preserved']

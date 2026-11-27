@@ -106,6 +106,9 @@ function setWrap(e: Event) {
 function setLineNo(e: Event) {
   patchSettings({ lineNo: (e.target as HTMLInputElement).checked })
 }
+function setCodeBlockLineNo(e: Event) {
+  patchSettings({ codeBlockLineNo: (e.target as HTMLInputElement).checked })
+}
 function setAutoReload(e: Event) {
   patchSettings({ autoReload: (e.target as HTMLInputElement).checked })
 }
@@ -288,6 +291,16 @@ const assocTip = computed(() => {
                 :checked="st?.lineNo ?? true"
                 data-testid="lineNo-check"
                 @change="setLineNo"
+              />
+            </div>
+            <div class="set-row">
+              <span class="set-label">{{ t('set.codeBlockLineNo') }}</span>
+              <input
+                type="checkbox"
+                class="set-switch"
+                :checked="st?.codeBlockLineNo ?? true"
+                data-testid="codeBlockLineNo-check"
+                @change="setCodeBlockLineNo"
               />
             </div>
           </section>
