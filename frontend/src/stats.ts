@@ -12,7 +12,7 @@ export interface CountStats {
 
 export function countStats(content: string | null | undefined): CountStats {
   const text = (content || '')
-    .replace(/[#*`~\[\]()>_|\\-]/g, '')
+    .replace(/[#*`~[\]()>_|\\-]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
   // 中文无空格：按字计词，拉丁文仍按空格分词（对纯中文不再恒等于 1）

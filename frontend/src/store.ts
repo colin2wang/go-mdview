@@ -1,6 +1,6 @@
 import { reactive, watch } from 'vue'
 import type { Entry, FileContent, MNode, Settings, TocItem, ViewMode } from './types'
-import { defaultSettings } from './types'
+import { CODE_MAX_CSS_VARS, defaultSettings } from './types'
 import { getApi, isDesktop } from './api'
 import { fileBase, fileToDir } from './demo'
 import { renderMarkdown, resolveImgHref, sanitizeHtml, type SrcAnchor } from './markdown'
@@ -327,6 +327,19 @@ watch(
   }
 )
 
+// 远程资源拦截开关/白名单变化后，正文里已生成的 <img src> 不会自动跟着变，
+// 必须重渲染当前文档；编辑中则重渲染草稿，避免设置页改完仍显示旧占位图。
+watch(
+  () => [store.settings?.blockRemote, store.settings?.remoteAllow] as const,
+  ([block, allow], [prevBlock, prevAllow]) => {
+    if (block === prevBlock && allow === prevAllow) return
+    const cur = store.current
+    if (!cur || cur.kind !== 'markdown') return
+    if (store.editing) void renderDraft(store.draft)
+    else void renderCurrent(cur)
+  }
+)
+
 /** 保存编辑后的正文回原文件（源码/对照模式的「保存」按钮）。 */
 export async function saveSource(md: string): Promise<boolean> {
   const cur = store.current
@@ -388,9 +401,7 @@ export async function resolveGoneFile(keep: boolean) {
   const p = store.goneFile
   store.goneFile = null
   if (!p) return
-  const api = await getApi()
   if (!keep && !(await confirmDiscard('switch'))) return
-  await api.StopWatch()
   if (keep && store.current?.path === p) {
     store.currentMissing = true
     toast(t('toast.keptMissing'), 'error')
@@ -635,9 +646,10 @@ export async function applySettings(st: Settings | null = store.settings) {
   const codeLines = st?.codeMaxLines ?? 20
   const codeMax = (lineBox: string, padding: number) =>
     codeLines > 0 ? `calc(${codeLines} * ${lineBox} + ${padding}px)` : 'none'
-  document.documentElement.style.setProperty('--code-max-h', codeMax('1.4em', 28))
-  document.documentElement.style.setProperty('--code-max-h-dia', codeMax('18px', 20))
-  document.documentElement.style.setProperty('--code-max-h-diagram', codeMax('20px', 28))
+  const [codeVar, diaVar, diagramVar] = CODE_MAX_CSS_VARS
+  document.documentElement.style.setProperty(codeVar, codeMax('1.4em', 28))
+  document.documentElement.style.setProperty(diaVar, codeMax('18px', 20))
+  document.documentElement.style.setProperty(diagramVar, codeMax('20px', 28))
   setLang(st?.language)
   setHljsTheme(theme)
 }

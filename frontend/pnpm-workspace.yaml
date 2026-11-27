@@ -1,7 +1,7 @@
 overrides:
+  # CI/本地仍以 Node 18/20 为基线，固定 @types/node 18.x 避免新 API 类型误入。
   '@types/node': ^18.19.0
-  # mermaid 11 的传递依赖；3.0.7 用了 TS 5.0 的 const 类型参数，项目锁在 TS 4.9
-  '@types/d3-dispatch': 3.0.6
+  # TS 5 支持 const 类型参数，不再需要把 mermaid 的 @types/d3-dispatch 锁到 3.0.6。
 
 allowBuilds:
   esbuild: true

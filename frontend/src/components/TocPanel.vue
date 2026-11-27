@@ -44,13 +44,6 @@ function scrollHeadingInto(sc: HTMLElement | null, el: HTMLElement | null) {
   sc.scrollTo({ top: sc.scrollTop + top - 8, behavior: 'smooth' })
 }
 
-/** 同上的瞬时版本：对照模式下避免源码侧平滑滚动与同步镜像互相拉扯。 */
-function scrollHeadingInstant(sc: HTMLElement | null, el: HTMLElement | null) {
-  if (!sc || !el) return
-  const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top
-  sc.scrollTop = sc.scrollTop + top - 8
-}
-
 /** 源码里的标题行行号（CodeMirror 按行扫描），顺序与目录一致。 */
 function srcHeadingEls(): number[] {
   return srcHeadingLines()

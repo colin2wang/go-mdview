@@ -1,5 +1,8 @@
 // ---------- 与 Go 绑定对齐的数据类型 ----------
 
+/** 代码行数限制写入的三个 CSS 变量（顺序：代码块 / 错误源码 / 图形源码）。 */
+export const CODE_MAX_CSS_VARS = ['--code-max-h', '--code-max-h-dia', '--code-max-h-diagram'] as const
+
 export interface MNode {
   name: string
   path: string

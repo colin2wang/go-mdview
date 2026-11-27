@@ -3,7 +3,6 @@ import { onMounted, ref, watch } from 'vue'
 import {
   store,
   initApp,
-  toggleFavorite,
   applySettings,
   resolveGoneFile,
   resolveDiscardSave,
@@ -12,7 +11,7 @@ import {
   discardMessage,
   toast
 } from './store'
-import { getApi, isDesktop } from './api'
+import { isDesktop } from './api'
 import { t } from './i18n'
 import TitleBar from './components/TitleBar.vue'
 import SideBar from './components/SideBar.vue'

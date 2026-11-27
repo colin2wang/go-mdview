@@ -10,7 +10,7 @@ export interface SanitizeParts {
 export interface SanitizeState {
   blockRemote: boolean
   remoteAllow: string
-  placeholder: string | (() => string)
+  placeholder: () => string
   blockedLabel: string
 }
 
@@ -20,7 +20,7 @@ export function remoteAllowed(href: string, allow: string): boolean
 export function createState(
   blockRemote: boolean,
   remoteAllow: string,
-  placeholder: string | (() => string),
+  placeholder: () => string,
   blockedLabel?: string
 ): SanitizeState
 export function withState<T>(state: SanitizeState, fn: () => T): T

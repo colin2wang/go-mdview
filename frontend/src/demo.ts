@@ -1,3 +1,5 @@
+import type { MNode } from './types'
+
 // 内置示例文档：首启欢迎页 + Mock 实测共用。
 // 覆盖渲染器全部能力：标题/表格/代码高亮/列表/任务/GFM Alert/脚注/高亮标记/
 // 行内代码/kbd/引用/分隔线/链接/图片/公式/Mermaid 图/本地图片。
@@ -129,7 +131,7 @@ Markdown 同目录下的图片自动加载（PNG/JPG/SVG/GIF），相对路径�
 export const DEMO_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="200" viewBox="0 0 640 200"><rect width="640" height="200" rx="12" fill="#f0f6ff"/><rect x="24" y="24" width="120" height="152" rx="8" fill="#dbeafe"/><rect x="40" y="40" width="88" height="10" rx="5" fill="#60a5fa"/><rect x="40" y="60" width="72" height="10" rx="5" fill="#93c5fd"/><rect x="40" y="80" width="80" height="10" rx="5" fill="#93c5fd"/><rect x="184" y="24" width="432" height="152" rx="8" fill="#ffffff" stroke="#bfdbfe"/><polyline points="210,150 260,120 310,132 360,84 410,96 460,60 510,72 560,44" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round"/><circle cx="260" cy="120" r="4" fill="#2563eb"/><circle cx="360" cy="84" r="4" fill="#2563eb"/><circle cx="460" cy="60" r="4" fill="#2563eb"/><circle cx="560" cy="44" r="4" fill="#2563eb"/><text x="210" y="42" font-family="sans-serif" font-size="14" fill="#1d4ed8">GC 停顿趋势（示意）</text></svg>`
 
 // Mock 文件树：镜像截图里的 Obsidian 知识库形态。
-export function mockTree(): { name: string; path: string; isDir: boolean; children?: any[] }[] {
+export function mockTree(): MNode[] {
   const java = (n: number, title: string) => ({
     name: `${String(n).padStart(2, '0')}-${title}.md`,
     path: `C:\\demo\\vault\\01-计算机技术\\编程语言\\Java\\${String(n).padStart(2, '0')}-${title}.md`,

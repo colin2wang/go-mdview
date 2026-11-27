@@ -83,7 +83,6 @@ export const mockApi: Api = {
     state.saved[path] = content
     return { ...fc, content, size: content.length, modTime: Date.now() }
   },
-  StopWatch: async () => {},
   AllowImageDir: async () => {},
   SetDraftDirty: async () => {},
   FindByTitle: async (_root, title) => mdPath(title.endsWith('.md') ? title : title + '.md'),

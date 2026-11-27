@@ -1,7 +1,8 @@
+import type { RendererObject } from 'marked'
 import type { MermaidEngine, TocItem } from './types'
 import { ensureHljs, ensureKatex, ensureMermaid, ensurePele, freshMarked, maybeMath } from './vendor'
 import mockSampleUrl from './assets/mock-sample.svg'
-import { t } from './i18n'
+import { getLang, t, type Lang } from './i18n'
 import DOMPurify from 'dompurify'
 import sanitizeConfig from './sanitize-config.json'
 import {
@@ -46,19 +47,19 @@ const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 /** 远程资源被拦截时显示的占位图（data URI，本地生成不外发请求）。
- *  每次渲染时生成，保证语言切换后拦截文案即时跟随当前语言。 */
+ *  按语言缓存：语言切换后 key 变化，文案即时跟随，避免每次渲染重复 encode。 */
+const blockedImgCache = new Map<Lang, string>()
 function blockedImgUri(): string {
-  return (
+  const lang = getLang()
+  const cached = blockedImgCache.get(lang)
+  if (cached) return cached
+  const uri =
     'data:image/svg+xml,' +
     encodeURIComponent(
       `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="28"><rect width="120" height="28" rx="4" fill="#f0f0f0"/><text x="60" y="18" font-size="11" text-anchor="middle" fill="#999">🚫 ${t('img.blocked')}</text></svg>`
     )
-  )
-}
-
-/** 当前拦截判断是否放行该地址：开关未开、不是远程、或命中白名单。 */
-function remotePasses(href: string, blockRemote: boolean, remoteAllow: string): boolean {
-  return !blockRemote || !isRemoteSrc(href) || remoteAllowedByPattern(href, remoteAllow)
+  blockedImgCache.set(lang, uri)
+  return uri
 }
 
 // ---------- 原始 HTML 清洗（防 XSS）----------
@@ -76,10 +77,7 @@ export function sanitizeHtml(html: string, blockRemote = true, remoteAllow = '')
 }
 
 function hexEncode(s: string): string {
-  const bytes = new TextEncoder().encode(s)
-  let out = ''
-  for (const b of bytes) out += b.toString(16).padStart(2, '0')
-  return out
+  return Array.from(new TextEncoder().encode(s), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 function isWinAbs(p: string): boolean {
@@ -129,7 +127,7 @@ export function resolveMdHref(href: string, baseDir: string): string {
 function makeSluger() {
   const seen = new Map<string, number>()
   return (text: string): string => {
-    let slug =
+    const slug =
       text
         .trim()
         .toLowerCase()
@@ -272,10 +270,8 @@ export function preprocess(src: string): PreprocessResult {
   }
 
   const footnotes: Footnote[] = []
-  let num = 0
   for (const id of order) {
     if (!used.has(id)) continue // 未被引用的定义不进文末
-    num++
     footnotes.push({ id, num: used.get(id)!, content: defs.get(id) ?? '' })
   }
   return { md: out.join('\n'), footnotes, usedFns: used, lineMap }
@@ -460,32 +456,33 @@ export function diagramCard(kind: DiagramKind, label: string, code: string): str
 // ---------- 主渲染 ----------
 
 // ---------- 块级源码行号注入（同步滚动 data-sl） ----------
-let slMd = ''
-let slCursor = 0
-let slLineMap: number[] = []
 
-/** marked.parse 前调用：跟踪预处理文本与行映射（与现有锚点生成同源） */
-function beginSlTracking(md: string, lineMap: number[]): void {
-  slMd = md
-  slCursor = 0
-  slLineMap = lineMap
+/** 单次渲染独立的行号游标；禁止模块级共享，否则交错渲染会互相推进游标。 */
+export interface SlContext {
+  tokenSrcLine(raw: string): number
+  withSl(html: string, raw: string): string
 }
 
-/** token 原文 → 原文件行号（游标法 + lineMap 回映射预处理前行号） */
-function tokenSrcLine(raw: string): number {
-  if (!raw) return -1
-  const i = slMd.indexOf(raw, slCursor)
-  if (i < 0) return -1
-  slCursor = i + raw.length
-  const pre = slMd.slice(0, i).split('\n').length - 1
-  return slLineMap[pre] ?? pre
-}
-
-/** 块级 HTML 注入 data-sl="原文件行号"；找不到原文时原样返回 */
-function withSl(html: string, raw: string): string {
-  const line = tokenSrcLine(raw)
-  if (line < 0) return html
-  return html.replace(/^<([a-zA-Z][\w-]*)/, `<$1 data-sl="${line}"`)
+export function createSlContext(md: string, lineMap: number[]): SlContext {
+  let cursor = 0
+  /** token 原文 → 原文件行号（游标法 + lineMap 回映射预处理前行号） */
+  const tokenSrcLine = (raw: string): number => {
+    if (!raw) return -1
+    const i = md.indexOf(raw, cursor)
+    if (i < 0) return -1
+    cursor = i + raw.length
+    const pre = md.slice(0, i).split('\n').length - 1
+    return lineMap[pre] ?? pre
+  }
+  return {
+    tokenSrcLine,
+    /** 块级 HTML 注入 data-sl="原文件行号"；找不到原文时原样返回 */
+    withSl(html: string, raw: string): string {
+      const line = tokenSrcLine(raw)
+      if (line < 0) return html
+      return html.replace(/^<([a-zA-Z][\w-]*)/, `<$1 data-sl="${line}"`)
+    }
+  }
 }
 
 export async function renderMarkdown(
@@ -497,21 +494,21 @@ export async function renderMarkdown(
   const [marked, hljs] = await Promise.all([freshMarked(), ensureHljs()])
   const slug = makeSluger()
   const { md, footnotes, lineMap } = preprocess(src)
-  beginSlTracking(md, lineMap)
+  const sl = createSlContext(md, lineMap)
 
-  const renderer: any = {
+  const renderer: RendererObject = {
     heading(token: any) {
       const text = this.parser.parseInline(token.tokens)
       const plain = plainText(token.tokens)
       const id = slug(plain)
-      return withSl(`<h${token.depth} id="${id}">${text}</h${token.depth}>\n`, token.raw)
+      return sl.withSl(`<h${token.depth} id="${id}">${text}</h${token.depth}>\n`, token.raw)
     },
     code(token: any) {
       const lang = (token.lang ?? '').trim().split(/\s+/)[0] ?? ''
       const text = token.text ?? ''
       // mermaid / svg 走图形卡片（可切源码），其余走代码块卡片
       const kind = diagramKindOf(lang, text)
-      if (kind) return withSl(diagramCard(kind, lang || kind, text), token.raw)
+      if (kind) return sl.withSl(diagramCard(kind, lang || kind, text), token.raw)
 
       let body: string
       try {
@@ -525,7 +522,7 @@ export async function renderMarkdown(
       }
       const cls = lang ? ` class="hljs language-${escapeHtml(lang)}"` : ' class="hljs"'
       // 头部工具条：语言标签 + 复制按钮（复制按钮悬停才显形）
-      return withSl(
+      return sl.withSl(
         `<div class="code-block${lang ? ' has-lang' : ''}">` +
           `<div class="code-head">` +
           `<span class="code-lang">${lang ? escapeHtml(lang) : 'text'}</span>` +
@@ -539,10 +536,10 @@ export async function renderMarkdown(
     },
     paragraph(token: any) {
       // marked v15 默认输出（defaults.renderer 在 use 前为 null，只能内联实现）
-      return withSl(`<p>${this.parser.parseInline(token.tokens)}</p>\n`, token.raw)
+      return sl.withSl(`<p>${this.parser.parseInline(token.tokens)}</p>\n`, token.raw)
     },
     blockquote(token: any) {
-      return withSl(`<blockquote>\n${this.parser.parse(token.tokens)}</blockquote>\n`, token.raw)
+      return sl.withSl(`<blockquote>\n${this.parser.parse(token.tokens)}</blockquote>\n`, token.raw)
     },
     table(token: any) {
       // 复刻 marked v15 默认 table renderer：header/tbody + 对齐属性
@@ -571,7 +568,7 @@ export async function renderMarkdown(
       let html = '<table>\n'
       if (header) html += `<thead>\n${header}</thead>\n`
       html += body + '</table>\n'
-      return withSl(html, token.raw)
+      return sl.withSl(html, token.raw)
     },
     image(token: any) {
       let href = resolveImgHref(token.href ?? '', baseDir)
@@ -659,6 +656,9 @@ export async function renderMathIn(el: HTMLElement): Promise<void> {
         { left: '\\(', right: '\\)', display: false },
         { left: '\\[', right: '\\]', display: true }
       ],
+      // KaTeX 默认 trust:false：\href / \includegraphics 等不支持的 URL 命令不会渲染成可点击链接。
+      // 显式固化，避免后续配置复用时误开导致 XSS / 远程探测。
+      trust: false,
       throwOnError: false
     })
   } catch {

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/encoding/transform"
+	"golang.org/x/text/transform"
 )
 
 func writeTree(t *testing.T) string {

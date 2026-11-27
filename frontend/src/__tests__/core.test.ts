@@ -1,12 +1,38 @@
 import { describe, expect, it } from 'vitest'
+import createDOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
 import mockSampleUrl from '../assets/mock-sample.svg'
+import indexHtml from '../../index.html?raw'
+import sanitizeConfig from '../sanitize-config.json'
 import styleMdCss from '../style-md.css?raw'
-import storeSource from '../store.ts?raw'
+import { CODE_MAX_CSS_VARS } from '../types'
 import { preprocess, resolveImgHref } from '../markdown'
 import { parseMarkdown } from '../mindmap'
 import { countPreviewText, countStats } from '../stats'
-import { remoteAllowed, stripSvgExternalRefs } from '../sanitize-common.js'
+import {
+  BENIGN_CASES,
+  BYPASS_CASES,
+  DANGEROUS_SUBSTRINGS,
+  HOSTILE_CASES,
+  REMOTE_PATTERN_CASES
+} from '../sanitize-cases.js'
+import {
+  createState,
+  remoteAllowed,
+  sanitizeWith,
+  splitConfig,
+  stripSvgExternalRefs
+} from '../sanitize-common.js'
 import { interpIn } from '../sync'
+
+const parts = splitConfig(sanitizeConfig as Record<string, any>)
+// 浏览器构建里 dompurify 默认导出已绑定 window；Node/Vitest 下是工厂函数。
+const DOMPurify: any =
+  typeof (createDOMPurify as any).sanitize === 'function'
+    ? createDOMPurify
+    : (createDOMPurify as any)(new JSDOM('').window)
+const sanitize = (html: string): string =>
+  sanitizeWith(DOMPurify, parts, html, createState(true, '', () => '', 'blocked'))
 
 describe('preprocess', () => {
   it('摘除脚注定义、保留围栏里的 #', () => {
@@ -42,7 +68,7 @@ describe('preprocess', () => {
 describe('mindmap', () => {
   it('围栏代码块里的 # 注释不生成节点', () => {
     const root = parseMarkdown('# 根\n\n```sh\n# 假节点\n```\n\n## 真节点\n')
-    const labels = JSON.stringify(root)
+    const labels = JSON.stringify(root, (key, value) => (key === 'parent' ? undefined : value))
     expect(labels).not.toContain('假节点')
     expect(labels).toContain('真节点')
   })
@@ -61,9 +87,23 @@ describe('stats', () => {
 })
 
 describe('sanitize-common', () => {
-  it('远程白名单按通配符匹配', () => {
-    expect(remoteAllowed('https://cdn.example.com/a.png', 'https://cdn.example.com/*')).toBe(true)
-    expect(remoteAllowed('https://evil.tld/a.png', 'https://cdn.example.com/*')).toBe(false)
+  it('共享用例：恶意与绕过 payload 全部被净化', () => {
+    for (const [input, name] of [...HOSTILE_CASES, ...BYPASS_CASES]) {
+      const got = sanitize(input).toLowerCase()
+      expect(DANGEROUS_SUBSTRINGS.filter((s) => got.includes(s)), name).toEqual([])
+    }
+  })
+
+  it('共享用例：良性内容保留', () => {
+    for (const [input, needle, name] of BENIGN_CASES) {
+      expect(sanitize(input).toLowerCase(), name).toContain(needle.toLowerCase())
+    }
+  })
+
+  it('远程白名单边界与绕过向量与构建期脚本同源', () => {
+    for (const [href, allow, expected, name] of REMOTE_PATTERN_CASES) {
+      expect(remoteAllowed(href, allow), name).toBe(expected)
+    }
   })
 
   it('SVG 远程与 data: 引用被剥离，本地锚点保留', () => {
@@ -108,7 +148,6 @@ describe('sync interpIn', () => {
 
 describe('渲染区代码块最大行数', () => {
   const css = styleMdCss
-  const storeSrc = storeSource
 
   it('图形卡片源码视图与错误提示都受行数变量约束', () => {
     const srcRule = css.match(/\.md-article \.md-diagram-code\s*\{([^}]*)\}/)?.[1] ?? ''
@@ -118,9 +157,20 @@ describe('渲染区代码块最大行数', () => {
     expect(hintRule).toContain('max-height: var(--code-max-h-dia, none)')
   })
 
-  it('applySettings 写入全部三个代码块的 CSS 变量', () => {
-    for (const name of ['--code-max-h', '--code-max-h-dia', '--code-max-h-diagram']) {
-      expect(storeSrc).toContain(`setProperty('${name}'`)
+  it('applySettings 与样式表共享同一组代码行数 CSS 变量', () => {
+    expect(CODE_MAX_CSS_VARS).toEqual(['--code-max-h', '--code-max-h-dia', '--code-max-h-diagram'])
+    for (const name of CODE_MAX_CSS_VARS) {
+      expect(css).toContain(name)
     }
+  })
+})
+
+describe('CSP', () => {
+  it('img-src 不阻断设置放行的远程图片', () => {
+    const meta = /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(indexHtml)?.[1] ?? ''
+    const imgSrc = meta.split(';').map((s) => s.trim()).find((s) => s.startsWith('img-src ')) ?? ''
+    expect(imgSrc).toContain('http:')
+    expect(imgSrc).toContain('https:')
+    expect(imgSrc).toContain('data:')
   })
 })

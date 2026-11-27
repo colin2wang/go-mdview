@@ -15,6 +15,13 @@ import {
   stripSvgStyleUrls,
   svgConfig
 } from '../src/sanitize-common.js'
+import {
+  BENIGN_CASES,
+  BYPASS_CASES,
+  DANGEROUS_SUBSTRINGS,
+  HOSTILE_CASES,
+  REMOTE_PATTERN_CASES
+} from '../src/sanitize-cases.js'
 
 // ---------- 环境与净化出口（与 src/markdown.ts sanitizeHtml 完全同一配置 + hook） ----------
 
@@ -28,13 +35,14 @@ const parts = splitConfig(sanitizeConfig)
 const window = new JSDOM('').window
 const DOMPurify = DOMPurifyPkg(window)
 const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+const PLACEHOLDER_FN = () => PLACEHOLDER
 
 function sanitizeHtml(html, blockRemote = true, remoteAllow = '') {
   return sanitizeWith(
     DOMPurify,
     parts,
     html,
-    createState(blockRemote, remoteAllow, PLACEHOLDER, 'blocked')
+    createState(blockRemote, remoteAllow, PLACEHOLDER_FN, 'blocked')
   )
 }
 
@@ -68,57 +76,7 @@ function checkPreserved(input, needle, name) {
   check(got.toLowerCase().includes(needle.toLowerCase()), name, `in: ${input}\n  got: ${got}`)
 }
 
-// ---------- 用例表 ----------
-
-// 危险子串：输出中出现任何一条即视为失败
-const DANGEROUS_SUBSTRINGS = [
-  '<script', 'javascript:', 'onerror', 'onload', 'formaction',
-  'http-equiv', '<base', '<meta', '<style', '<iframe', 'url('
-]
-
-// 恶意 payload：必须被清除
-const HOSTILE_CASES = [
-  ['<script>alert(1)</script>ok', 'script block removed'],
-  ['<img src=x onerror=alert(1)>', 'unquoted onerror removed'],
-  ['<img src="x" onerror="alert(1)">', 'double-quoted onerror removed'],
-  ["<img src='x' onerror='alert(1)'>", 'single-quoted onerror removed'],
-  ['<a href="javascript:alert(1)">c</a>', 'javascript: href removed'],
-  ["<a href='vbscript:x'>c</a>", 'vbscript: href removed'],
-  ['<svg onload=alert(1)></svg>', 'svg onload removed'],
-  ['<iframe src="//evil"></iframe>', 'iframe removed']
-]
-
-// 绕过向量（旧正则实现全部放行）
-const BYPASS_CASES = [
-  ['<a href="&#106;avascript:alert(1)">click</a>', 'HTML entity decode bypass'],
-  ['<a href="jav&#x09;ascript:alert(1)">click</a>', 'tab entity bypass'],
-  ['<button formaction="javascript:alert(1)">go</button>', 'formaction bypass'],
-  ['<meta http-equiv="refresh" content="0;url=https://evil.tld">', 'meta refresh redirect'],
-  ['<base href="https://evil.tld/">', 'base hijack of relative URLs'],
-  ['<style>body{background:url(https://evil.tld/beacon)}</style>', 'style url() beacon'],
-  ['<svg><animate attributeName="href" values="javascript:alert(1)"/></svg>', 'svg animate protocol bypass'],
-  ['<img src="https://evil.tld/track.png">', 'remote tracking img src blocked'],
-  ['<img srcset="https://evil.tld/a.png 1x, /mdimg/abc.png 2x">', 'remote srcset blocked'],
-  ['<video poster="https://evil.tld/p.png"></video>', 'remote poster blocked'],
-  ['<object data="https://evil.tld/x.html"></object>', 'remote object[data] blocked'],
-  ['<svg><image xlink:href="https://evil.tld/i.png"/></svg>', 'SVG xlink:href remote blocked'],
-  ['<svg><use href="//evil.tld/i.svg#x"/></svg>', 'SVG use href remote blocked']
-]
-
-// 良性内容必须保留（此前 FORBID_TAGS 误杀 button/input）
-const BENIGN_CASES = [
-  ['<p title="good">正常 <em>内容</em> 保留</p>', 'title="good"', 'normal content preserved'],
-  ['<img src="/mdimg/abc.png">', '/mdimg/abc.png', 'local replay image unaffected'],
-  ['<a href="https://a.b" target="_blank">x</a>', 'https://a.b', 'external link unaffected'],
-  ['<button type="button" class="code-copy" data-copy title="copy">C</button>', 'data-copy', 'renderer code-copy button preserved'],
-  ['<button type="button" class="md-diagram-btn" data-toggle-src>S</button>', 'data-toggle-src', 'diagram source button preserved'],
-  ['<li><input type="checkbox" checked>任务</li>', 'type="checkbox"', 'GFM task-list checkbox preserved'],
-  ['<select class="md-diagram-engine" data-mm-engine><option value="pele">Pele</option></select>', 'data-mm-engine', 'diagram engine select preserved'],
-  ['<pre><code class="hljs">const a = 1</code></pre>', '<code', 'code block preserved'],
-  ['<h2 id="intro" data-sl="12">标题</h2>', 'data-sl="12"', 'block line anchor preserved'],
-  ['<svg><rect width="10" height="10"><animate attributeName="opacity" values="0.3;1;0.3" from="0" to="1" dur="1.5s" begin="0.5s" repeatCount="indefinite" keyTimes="0;0.5;1"/></rect><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s" repeatCount="indefinite"/><set attributeName="opacity" to="1" begin="1s"/></svg>', '<animate', 'SMIL animation preserved'],
-  ['<svg><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s"/></svg>', 'type="rotate"', 'SMIL animateTransform attrs preserved']
-]
+// 用例表来自共享模块 src/sanitize-cases.js（Vitest 与构建期脚本使用同一份数据）
 
 // ---------- 执行 ----------
 
@@ -148,17 +106,16 @@ check(
   `got: ${badControls}`
 )
 
-// 4. 远程白名单：命中的 URL 不被替换，未命中的拒绝
+// 4. 远程白名单：命中的 URL 不被替换，绕过向量（@ / 后缀拼接 / query 干扰）必须拒绝
 const allowGot = sanitizeHtml('<img src="https://cdn.example.com/a.png">', true, 'https://cdn.example.com/*')
 check(
   allowGot.includes('https://cdn.example.com/a.png'),
   'remote allowlist match passes through',
   `got: ${allowGot}`
 )
-check(
-  !remoteAllowed('https://evil.tld/a.png', 'https://cdn.example.com/*'),
-  'remote allowlist miss rejected'
-)
+for (const [href, allow, expected, name] of REMOTE_PATTERN_CASES) {
+  check(remoteAllowed(href, allow) === expected, `remote pattern: ${name}`, `href=${href} allow=${allow}`)
+}
 
 // 5. SVG 清洗：远程与 data: 引用都清空，本地引用保留
 const svgGot = stripSvgExternalRefs('<svg><image href="data:image/svg+xml,x"/><use xlink:href="https://evil.tld/a"/><image href="#local"/></svg>')

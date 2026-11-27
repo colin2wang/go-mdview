@@ -28,8 +28,9 @@ export function setLang(v: string | undefined) {
 }
 
 type Dict = Record<string, string>
+type I18nKey = keyof typeof zhCN
 
-const zhCN: Dict = {
+const zhCN = {
   // 标题栏
   'mode.source': '源码',
   'mode.render': '渲染',
@@ -273,9 +274,9 @@ const zhCN: Dict = {
   'diag.mermaidErr': 'Mermaid 语法有误，已显示源码。',
   'code.copy.tip': '复制代码',
   'fn.back': '返回'
-}
+} as const satisfies Dict
 
-const en: Dict = {
+const en = {
   'mode.source': 'Source',
   'mode.render': 'Render',
   'mode.split': 'Split',
@@ -508,9 +509,9 @@ const en: Dict = {
   'diag.mermaidErr': 'Invalid Mermaid syntax; showing source.',
   'code.copy.tip': 'Copy code',
   'fn.back': 'Back'
-}
+} satisfies Record<I18nKey, string>
 
-const ja: Dict = {
+const ja = {
   'mode.source': 'ソース',
   'mode.render': 'レンダリング',
   'mode.split': '比較',
@@ -743,9 +744,9 @@ const ja: Dict = {
   'diag.mermaidErr': 'Mermaid の構文エラーのため、ソースを表示しています。',
   'code.copy.tip': 'コードをコピー',
   'fn.back': '戻る'
-}
+} satisfies Record<I18nKey, string>
 
-const de: Dict = {
+const de = {
   'mode.source': 'Quelle',
   'mode.render': 'Ansicht',
   'mode.split': 'Vergleich',
@@ -978,23 +979,30 @@ const de: Dict = {
   'diag.mermaidErr': 'Ungültige Mermaid-Syntax; Quelle wird angezeigt.',
   'code.copy.tip': 'Code kopieren',
   'fn.back': 'Zurück'
-}
+} satisfies Record<I18nKey, string>
 
-const DICTS: Record<Lang, Dict> = { 'zh-CN': zhCN, en, ja, de }
+export const DICTS: Record<Lang, Record<I18nKey, string>> = { 'zh-CN': zhCN, en, ja, de }
+export const I18N_KEYS = Object.keys(zhCN) as I18nKey[]
 
 /** 取词：{name} 占位符用 params 替换；缺 key 时回落中文，再缺失回落 key 本身。 */
 const paramReCache = new Map<string, RegExp>()
 
-export function t(key: string, params?: Record<string, string | number>): string {
-  let s = DICTS[lang.value][key] ?? zhCN[key] ?? key
-  if (params) {
-    const names = Object.keys(params).join('|')
-    let re = paramReCache.get(names)
-    if (!re) {
-      re = new RegExp(`\\{(${names})\\}`, 'g')
-      paramReCache.set(names, re)
-    }
-    s = s.replace(re, (m, k: string) => String(params[k] ?? m))
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** 替换 `{name}` 占位符；占位符名按字面量匹配，点号等正则元字符不会误命中。 */
+export function formatParams(template: string, params: Record<string, string | number>): string {
+  const namePattern = Object.keys(params).map(escapeRegExp).join('|')
+  if (!namePattern) return template
+  let re = paramReCache.get(namePattern)
+  if (!re) {
+    re = new RegExp(`\\{(${namePattern})\\}`, 'g')
+    paramReCache.set(namePattern, re)
   }
-  return s
+  return template.replace(re, (m, k: string) => String(params[k] ?? m))
+}
+
+export function t(key: string, params?: Record<string, string | number>): string {
+  // 词典键已由 satisfies 约束为同一集合；这里仍保留运行时回落兜底。
+  const s = (DICTS[lang.value] as Dict)[key] ?? (zhCN as Dict)[key] ?? key
+  return params ? formatParams(s, params) : s
 }

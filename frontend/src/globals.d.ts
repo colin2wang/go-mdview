@@ -5,7 +5,7 @@
 declare module 'codemirror/mode/*'
 declare module 'codemirror/addon/*'
 
-// katex 0.16.9 的 package.json 没有 types/exports.types 字段，TS 4.9 的 Node
+// katex 0.16.47 的 package.json 仍未在 exports 中声明类型入口，项目的 Node
 // 解析模式找不到 dist/katex.d.ts；这里给实际用到的两个 ESM 入口补最小声明。
 declare module 'katex' {
   const katex: any

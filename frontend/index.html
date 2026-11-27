@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 纵深防御：DOMPurify 仍是第一道防线。style-src 需保留 unsafe-inline，因为
+         highlight.js 主题、KaTeX / Mermaid 会注入 <style> 与内联样式。img-src 必须
+         放开 http/https，否则会连「设置里放行」的远程图片一起拦掉；真正需要拦截的
+         远程图已由 sanitize-common 的 hook 替换成本地 data: 占位图，不会发出请求。 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <title>mdview</title>
   </head>
   <body>

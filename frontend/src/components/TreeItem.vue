@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, ref } from 'vue'
+import { inject } from 'vue'
 import { store, openEntry, toggleFavorite } from '../store'
 import { showMenu } from '../context-menu'
 import { getApi } from '../api'

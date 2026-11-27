@@ -85,3 +85,76 @@ func TestPathAllowedSymlink(t *testing.T) {
 		t.Fatal("指向白名单外的符号链接必须拒绝")
 	}
 }
+
+func serveImgPath(p string) int {
+	req := httptest.NewRequest("GET", "/mdimg/"+hex.EncodeToString([]byte(p))+"/x.png", nil)
+	w := httptest.NewRecorder()
+	ImgHandler.ServeHTTP(w, req)
+	return w.Code
+}
+
+func TestImgHandlerTraversal(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed")
+	outside := filepath.Join(dir, "outside")
+	for _, d := range []string{allowed, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(allowed, "pic.png"), []byte("x"), 0o644)
+	_ = os.WriteFile(filepath.Join(outside, "secret.png"), []byte("x"), 0o644)
+	AllowImageDir(allowed)
+
+	// 解码后 .. 归一化仍在白名单内：应放行
+	inside := filepath.Join(allowed, "sub", "..", "pic.png")
+	if code := serveImgPath(inside); code != 200 {
+		t.Fatalf("白名单内归一化路径应放行: %d", code)
+	}
+	// 解码后 .. 逃逸到兄弟目录：必须拒绝
+	escape := filepath.Join(allowed, "..", "outside", "secret.png")
+	if code := serveImgPath(escape); code != 403 {
+		t.Fatalf(".. 逃逸路径应 403: %d", code)
+	}
+	// 前缀相近的兄弟目录不能借白名单前缀混入
+	sibling := filepath.Join(dir, "allowed-evil", "secret.png")
+	if err := os.MkdirAll(filepath.Dir(sibling), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(sibling, []byte("x"), 0o644)
+	if code := serveImgPath(sibling); code != 403 {
+		t.Fatalf("白名单前缀相近目录应 403: %d", code)
+	}
+}
+
+func TestPathAllowedSymlinkDir(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed")
+	outside := filepath.Join(dir, "outside")
+	if err := os.MkdirAll(allowed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(outside, "secret.png")
+	_ = os.WriteFile(secret, []byte("x"), 0o644)
+	AllowImageDir(allowed)
+
+	link := filepath.Join(allowed, "link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("当前环境无法创建符号链接: %v", err)
+	}
+	if PathAllowed(filepath.Join(link, "secret.png")) {
+		t.Fatal("经符号链接目录逃逸到白名单外必须拒绝")
+	}
+}
+
+func TestImgHandlerMethod(t *testing.T) {
+	req := httptest.NewRequest("POST", "/mdimg/00", nil)
+	w := httptest.NewRecorder()
+	ImgHandler.ServeHTTP(w, req)
+	if w.Code != 405 {
+		t.Fatalf("非 GET/HEAD 应 405: %d", w.Code)
+	}
+}

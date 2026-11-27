@@ -52,8 +52,15 @@ function srcsetUrls(value) {
  * 单次净化的上下文。JS 单线程且 DOMPurify.sanitize 是同步的，
  * 模块级 activeState 在 withState 内有效，不会被并发调用改写。
  */
-export function createState(blockRemote, remoteAllow, placeholder, blockedLabel) {
-  return { blockRemote: !!blockRemote, remoteAllow: remoteAllow ?? '', placeholder, blockedLabel: blockedLabel ?? '' }
+export function createState(blockRemote, remoteAllow, placeholder = () => '', blockedLabel = '') {
+  return {
+    blockRemote: !!blockRemote,
+    remoteAllow: remoteAllow ?? '',
+    // 统一为函数：远程拦截时才生成占位图，避免每次净化都付出编码成本；
+    // 调用方（含构建期脚本）必须传函数，d.ts 不再接受字符串形态。
+    placeholder,
+    blockedLabel: blockedLabel ?? ''
+  }
 }
 
 export function withState(state, fn) {
@@ -103,7 +110,7 @@ export function installHooks(DOMPurify, parts) {
       const urls = attr === 'srcset' ? srcsetUrls(val) : [String(val).trim()]
       if (!urls.length) return
       if (urls.every((u) => !isRemoteSrc(u) || remoteAllowed(u, state.remoteAllow))) return
-      node.setAttribute(attr, typeof state.placeholder === 'function' ? state.placeholder() : String(state.placeholder ?? ''))
+      node.setAttribute(attr, state.placeholder())
       if (state.blockedLabel && node.hasAttribute('alt')) node.setAttribute('alt', state.blockedLabel)
       else if (state.blockedLabel && tag === 'img') node.setAttribute('alt', state.blockedLabel)
     }

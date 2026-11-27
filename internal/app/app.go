@@ -97,6 +97,13 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 	return nil
 }
 
+// ServiceShutdown 应用退出时统一停止文件监视：不需要前端调用 StopWatch，
+// 也避免把清理职责暴露成可被前端误用的绑定方法（Wails v3 生命周期回调）。
+func (a *App) ServiceShutdown() error {
+	a.store.StopWatch()
+	return nil
+}
+
 // SetWindow 由 main 在创建窗口后注入；Service 启动早于 Run，无法在回调里创建。
 func (a *App) SetWindow(w *application.WebviewWindow) {
 	a.win = w

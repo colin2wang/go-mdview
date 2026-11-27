@@ -100,6 +100,8 @@ func PathAllowed(p string) bool {
 // ImgHandler 本地图片回放路由：/mdimg/{hex(绝对路径)}/{文件名}
 // 整段路径 hex 编码后作为单一 segment，天然规避路径穿越；
 // 目标路径必须在已登记目录子树内（见 AllowImageDir），否则 403。
+// 由 main.go 的 assetHandler 挂到 Wails 资产服务；本包不自行监听 TCP 端口，
+// 对外暴露面由 Wails 的资产服务决定，前端伪造的 hex 路径一律以白名单为准。
 var ImgHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
