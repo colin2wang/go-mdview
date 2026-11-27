@@ -50,6 +50,7 @@ export interface Settings {
   remoteAllow: string // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中放行
   useYaml: boolean // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
   mmMaxLen: number // 思维导图节点/备注单行最大字符数（超出折行），默认 20
+  codeMaxLines: number // 渲染区代码块最大显示行数（0 = 不限制），默认 20
   mermaidEngine: MermaidEngine // Mermaid 图表渲染引擎，默认 pele
   // 上次关闭时的普通窗口几何（0 = 未记录）与最大化标记，由 Go 端维护
   winW: number
@@ -75,6 +76,7 @@ export const defaultSettings: Settings = {
   remoteAllow: '',
   useYaml: false,
   mmMaxLen: 20,
+  codeMaxLines: 20,
   mermaidEngine: 'pele',
   winW: 0,
   winH: 0,

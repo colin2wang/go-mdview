@@ -27,6 +27,7 @@ const state = {
     remoteAllow: '',
     useYaml: false,
     mmMaxLen: 20,
+    codeMaxLines: 20,
     mermaidEngine: 'pele',
     winW: 0,
     winH: 0,

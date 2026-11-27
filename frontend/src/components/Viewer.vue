@@ -306,6 +306,7 @@ watch(
 )
 // 字号/编辑态切换会影响布局，对齐点表置脏，下次滚动前重建
 watch(() => store.settings?.fontSize, () => invalidateSync())
+watch(() => store.settings?.codeMaxLines, () => invalidateSync())
 watch(editing, () => invalidateSync())
 // 补全失效源（源码侧）：换行/行号切换、分栏宽度、窗口缩放都会改变源码几何，
 // 漏掉任何一个都会让源码刻度整体漂移（渲染→源码被钳位提前钉底的元凶）

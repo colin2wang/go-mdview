@@ -115,6 +115,8 @@
   border-radius: 0;
   padding: 14px 18px;
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: var(--code-max-h, none);
   margin: 0;
   scrollbar-width: thin;
 }
@@ -527,6 +529,9 @@
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: var(--code-max-h-diagram, none);
+  scrollbar-width: thin;
   user-select: text;
 }
 .md-article .md-diagram-code code {
@@ -555,8 +560,12 @@
   border-radius: 6px;
   font-family: var(--md-code-font);
   font-size: 12px;
+  line-height: 1.5;
   white-space: pre-wrap;
   margin: 0;
+  max-height: var(--code-max-h-dia, none);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 /* 公式 */

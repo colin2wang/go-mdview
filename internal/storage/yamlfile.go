@@ -78,6 +78,7 @@ func writeYamlSettings(st settings.Settings) error {
 		}
 	}
 	yamlWriteLine(&b, "Mind map: max characters per line for node/notes (8-60)", "mmMaxLen", strconv.Itoa(st.MmMaxLen))
+	yamlWriteLine(&b, "Max visible lines for code blocks in rendered view (0 = unlimited, default 20)", "codeMaxLines", strconv.Itoa(st.CodeMaxLines))
 	yamlWriteLine(&b, "Mermaid renderer: mermaid | pele", "mermaidEngine", yamlQuote(st.MermaidEngine))
 	yamlWriteLine(&b, "Use this YAML file as the settings source (keep true to stay in YAML mode)", "useYaml", strconv.FormatBool(st.UseYaml))
 	yamlWriteLine(&b, "Last opened folder / file (window restore bookkeeping)", "lastFolder", yamlQuote(st.LastFolder))
@@ -166,6 +167,10 @@ func loadYamlSettings(st *settings.Settings) {
 		case "mmMaxLen":
 			if n, e := strconv.Atoi(value); e == nil {
 				st.MmMaxLen = n
+			}
+		case "codeMaxLines":
+			if n, e := strconv.Atoi(value); e == nil {
+				st.CodeMaxLines = n
 			}
 		case "mermaidEngine":
 			st.MermaidEngine = yamlUnquote(value)

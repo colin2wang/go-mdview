@@ -1212,6 +1212,38 @@ button {
   text-align: right;
   font-weight: 500;
 }
+.step-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--md-pre-border);
+  border-radius: 5px;
+  background: var(--md-surface-2);
+  color: var(--md-text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.step-btn:hover:not(:disabled) {
+  color: var(--md-link);
+  border-color: var(--md-link);
+}
+.step-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* 步进按钮旁的数字不再沿用 38px 右对齐留白，否则 - 与数字间会空出一大截 */
+.set-val .step-btn + .fs-num {
+  min-width: 22px;
+  text-align: center;
+  margin-left: -5px;
+}
+.set-val .fs-num + .step-btn {
+  margin-left: -5px;
+}
 .set-switch {
   width: 36px;
   height: 20px;

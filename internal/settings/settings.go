@@ -37,6 +37,13 @@ const (
 	MaxMmMaxLen     = 60
 )
 
+// 渲染区代码块最大显示行数（超出滚动），0 = 不限制。与前端 Viewer/style 共用。
+const (
+	DefaultCodeMaxLines = 20
+	MinCodeMaxLines     = 0
+	MaxCodeMaxLines     = 500
+)
+
 // Settings 应用设置。全部有默认值，读取时零值补齐。
 type Settings struct {
 	Theme         string `json:"theme"`         // light | dark
@@ -54,6 +61,7 @@ type Settings struct {
 	RemoteAllow   string `json:"remoteAllow"`   // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中即放行
 	UseYaml       bool   `json:"useYaml"`       // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
 	MmMaxLen      int    `json:"mmMaxLen"`      // 思维导图节点/备注单行最大字符数，默认 DefaultMmMaxLen
+	CodeMaxLines  int    `json:"codeMaxLines"`  // 代码块最大显示行数（含 mermaid/svg 源码块），0 = 不限制，默认 DefaultCodeMaxLines
 	MermaidEngine string `json:"mermaidEngine"` // Mermaid 图表渲染引擎：mermaid | pele
 	WinW          int    `json:"winW"`          // 上次关闭时窗口宽 px（0 = 未记录）
 	WinH          int    `json:"winH"`          // 上次关闭时窗口高 px
@@ -76,6 +84,7 @@ var DefaultSettings = Settings{
 	RemoteAllow:   "",
 	UseYaml:       false,
 	MmMaxLen:      DefaultMmMaxLen,
+	CodeMaxLines:  DefaultCodeMaxLines,
 	MermaidEngine: MermaidEnginePele,
 }
 
@@ -139,6 +148,9 @@ func Normalize(st *Settings) {
 	if st.MmMaxLen < MinMmMaxLen || st.MmMaxLen > MaxMmMaxLen {
 		st.MmMaxLen = DefaultMmMaxLen
 	}
+	if st.CodeMaxLines < MinCodeMaxLines || st.CodeMaxLines > MaxCodeMaxLines {
+		st.CodeMaxLines = DefaultCodeMaxLines
+	}
 	st.ViewMode = ValidViewMode(st.ViewMode)
 	st.Language = ValidLanguage(st.Language)
 	st.MermaidEngine = ValidMermaidEngine(st.MermaidEngine)
@@ -153,6 +165,7 @@ func Clamp(st *Settings) {
 	st.FontSize = clampInt(st.FontSize, 12, 28)
 	st.SidebarWidth = clampInt(st.SidebarWidth, MinSidebarWidth, MaxSidebarWidth)
 	st.MmMaxLen = clampInt(st.MmMaxLen, MinMmMaxLen, MaxMmMaxLen)
+	st.CodeMaxLines = clampInt(st.CodeMaxLines, MinCodeMaxLines, MaxCodeMaxLines)
 	st.ViewMode = ValidViewMode(st.ViewMode)
 	st.Language = ValidLanguage(st.Language)
 	st.MermaidEngine = ValidMermaidEngine(st.MermaidEngine)

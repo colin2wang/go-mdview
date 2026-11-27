@@ -628,6 +628,16 @@ export async function applySettings(st: Settings | null = store.settings) {
   const theme: string = st?.theme === 'dark' ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
   document.documentElement.style.setProperty('--md-fs', `${st?.fontSize ?? 16}px`)
+  // 代码块最大行数：0 = 不限制（max-height: none）。三个变量分别对应
+  // .code-block pre（行盒 = 0.875em × 1.6 行高，上下 padding 28px）、
+  // 图形卡片「源码」视图 .md-diagram-code（12.5px × 1.6 + 28px）与
+  // 图形错误提示里的 .md-diagram-src-code（12px × 1.5 + 20px）。
+  const codeLines = st?.codeMaxLines ?? 20
+  const codeMax = (lineBox: string, padding: number) =>
+    codeLines > 0 ? `calc(${codeLines} * ${lineBox} + ${padding}px)` : 'none'
+  document.documentElement.style.setProperty('--code-max-h', codeMax('1.4em', 28))
+  document.documentElement.style.setProperty('--code-max-h-dia', codeMax('18px', 20))
+  document.documentElement.style.setProperty('--code-max-h-diagram', codeMax('20px', 28))
   setLang(st?.language)
   setHljsTheme(theme)
 }
@@ -662,7 +672,11 @@ function flushSettings() {
       const api = await getApi()
       if (theme !== undefined) await api.SetTheme(theme)
       const saved = await api.SaveSettings(st)
-      if (saved) store.settings = saved
+      if (saved) {
+        store.settings = saved
+        // 以 Go 规范化后的值重新落主题/字号/代码块行数等 DOM 状态
+        await applySettings(saved)
+      }
       const err = await api.GetLastError()
       if (err) toast(t('toast.settingsWriteFailed', { e: err }), 'error')
     })

@@ -66,6 +66,9 @@ function setFs(e: Event) {
   if (!Number.isNaN(v)) patchSettings({ fontSize: v })
 }
 // 思维导图节点/备注单行最大字符数（Go 端 8–60 校验，超界回落默认 20）
+const MM_LEN_MIN = 8
+const MM_LEN_MAX = 60
+const mmValue = computed(() => mmLocal.value ?? st.value?.mmMaxLen ?? 20)
 function setMmMaxLenInput(e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isNaN(v)) mmLocal.value = v
@@ -73,6 +76,29 @@ function setMmMaxLenInput(e: Event) {
 function setMmMaxLen(e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isNaN(v)) patchSettings({ mmMaxLen: v })
+}
+function stepMmMaxLen(delta: number) {
+  const next = Math.max(MM_LEN_MIN, Math.min(MM_LEN_MAX, mmValue.value + delta))
+  mmLocal.value = null
+  void patchSettings({ mmMaxLen: next })
+}
+// 代码块最大显示行数（滑块 0–200，Go 端 0–500 校验，0 = 不限制，默认 20）
+const CML_MIN = 0
+const CML_MAX = 200
+const cmlLocal = ref<number | null>(null)
+const cmlValue = computed(() => cmlLocal.value ?? st.value?.codeMaxLines ?? 20)
+function setCodeMaxLinesInput(e: Event) {
+  const v = parseInt((e.target as HTMLInputElement).value, 10)
+  if (!Number.isNaN(v)) cmlLocal.value = v
+}
+function setCodeMaxLines(e: Event) {
+  const v = parseInt((e.target as HTMLInputElement).value, 10)
+  if (!Number.isNaN(v)) patchSettings({ codeMaxLines: v })
+}
+function stepCodeMaxLines(delta: number) {
+  const next = Math.max(CML_MIN, Math.min(CML_MAX, cmlValue.value + delta))
+  cmlLocal.value = null
+  void patchSettings({ codeMaxLines: next })
 }
 function setWrap(e: Event) {
   patchSettings({ codeWrap: (e.target as HTMLInputElement).checked })
@@ -371,15 +397,70 @@ const assocTip = computed(() => {
               <span class="set-val">
                 <input
                   type="range"
-                  min="8"
-                  max="60"
+                  :min="MM_LEN_MIN"
+                  :max="MM_LEN_MAX"
                   step="1"
-                  :value="mmLocal ?? st?.mmMaxLen ?? 20"
+                  :value="mmValue"
                   data-testid="mmmaxlen-range"
                   @input="setMmMaxLenInput"
                   @change="setMmMaxLen"
                 />
-                <b class="fs-num" data-testid="mmmaxlen-num">{{ mmLocal ?? st?.mmMaxLen ?? 20 }}</b>
+                <button
+                  type="button"
+                  class="step-btn"
+                  aria-label="-"
+                  title="-"
+                  data-testid="mmmaxlen-minus"
+                  :disabled="mmValue <= MM_LEN_MIN"
+                  @click="stepMmMaxLen(-1)"
+                >-</button>
+                <b class="fs-num" data-testid="mmmaxlen-num">{{ mmValue }}</b>
+                <button
+                  type="button"
+                  class="step-btn"
+                  aria-label="+"
+                  title="+"
+                  data-testid="mmmaxlen-plus"
+                  :disabled="mmValue >= MM_LEN_MAX"
+                  @click="stepMmMaxLen(1)"
+                >+</button>
+              </span>
+            </div>
+            <div class="set-row">
+              <span class="set-label">
+                {{ t('set.codeMaxLines') }}
+                <em class="set-sub">{{ t('set.codeMaxLinesHint') }}</em>
+              </span>
+              <span class="set-val">
+                <input
+                  type="range"
+                  :min="CML_MIN"
+                  :max="CML_MAX"
+                  step="1"
+                  :value="cmlValue"
+                  data-testid="codemaxlines-range"
+                  @input="setCodeMaxLinesInput"
+                  @change="setCodeMaxLines"
+                />
+                <button
+                  type="button"
+                  class="step-btn"
+                  aria-label="-"
+                  title="-"
+                  data-testid="codemaxlines-minus"
+                  :disabled="cmlValue <= CML_MIN"
+                  @click="stepCodeMaxLines(-1)"
+                >-</button>
+                <b class="fs-num" data-testid="codemaxlines-num">{{ cmlValue === 0 ? '∞' : cmlValue }}</b>
+                <button
+                  type="button"
+                  class="step-btn"
+                  aria-label="+"
+                  title="+"
+                  data-testid="codemaxlines-plus"
+                  :disabled="cmlValue >= CML_MAX"
+                  @click="stepCodeMaxLines(1)"
+                >+</button>
               </span>
             </div>
             <div class="set-row">

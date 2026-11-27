@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import mockSampleUrl from '../assets/mock-sample.svg'
+import styleMdCss from '../style-md.css?raw'
+import storeSource from '../store.ts?raw'
 import { preprocess, resolveImgHref } from '../markdown'
 import { parseMarkdown } from '../mindmap'
 import { countPreviewText, countStats } from '../stats'
@@ -101,5 +103,24 @@ describe('sync interpIn', () => {
   it('点表不足返回 null', () => {
     expect(interpIn([], 5, 'y', 's')).toBeNull()
     expect(interpIn([{ y: 0, s: 0, line: 0 }], 5, 'y', 's')).toBeNull()
+  })
+})
+
+describe('渲染区代码块最大行数', () => {
+  const css = styleMdCss
+  const storeSrc = storeSource
+
+  it('图形卡片源码视图与错误提示都受行数变量约束', () => {
+    const srcRule = css.match(/\.md-article \.md-diagram-code\s*\{([^}]*)\}/)?.[1] ?? ''
+    const hintRule = css.match(/\.md-article \.md-diagram-src-code\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(srcRule).toContain('max-height: var(--code-max-h-diagram, none)')
+    expect(srcRule).toContain('overflow-y: auto')
+    expect(hintRule).toContain('max-height: var(--code-max-h-dia, none)')
+  })
+
+  it('applySettings 写入全部三个代码块的 CSS 变量', () => {
+    for (const name of ['--code-max-h', '--code-max-h-dia', '--code-max-h-diagram']) {
+      expect(storeSrc).toContain(`setProperty('${name}'`)
+    }
   })
 })
