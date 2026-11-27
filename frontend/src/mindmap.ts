@@ -1,30 +1,30 @@
 /* =====================================================================
- * mindmap.ts —— Markdown → XMind 风格思维导图（零依赖，单文件）
- *   • 解析 # ~ ###### 标题层级，> 引用块作为节点备注
- *   • 左右平衡布局 + 贝塞尔有机连线 + 四级节点样式
- *   • 浏览器：滚轮缩放 / 拖拽 / 点击折叠 / 导出 SVG / PNG
- *   • 深浅主题：文字与淡色底随主题切换
- * 该文件为纯渲染与交互层，工具条按钮由 MindMap.vue 负责（便于复用 i18n）。
+ * mindmap.ts — Markdown → XMind-style mind map (zero dependencies, single file)
+ *   • Parses # ~ ###### heading levels; > blockquotes become node notes
+ *   • Left/right balanced layout + Bezier organic edges + four node styles
+ *   • Browser: wheel zoom / drag / click to collapse / export SVG, PNG
+ *   • Light/dark themes: text and pale fills follow the theme
+ * Pure rendering and interaction layer; toolbar buttons live in MindMap.vue.
  * ===================================================================== */
 import { t } from './i18n'
 
-/* ---------------- 类型 ---------------- */
+/* ---------------- Types ---------------- */
 export interface MindNode {
   id: string
   title: string
-  notes: string[] // > 引用内容
-  depth: number // 根=0, ##=1, ###=2, ####=3 ...
+  notes: string[] // > quote content
+  depth: number // root=0, ##=1, ###=2, ####=3 ...
   parent: MindNode | null
   children: MindNode[]
   collapsed: boolean
-  color: string // 所属分支颜色
-  side: 0 | 1 | -1 // 0=未分配 1=右侧 -1=左侧
-  /* 布局结果 */
+  color: string // branch color
+  side: 0 | 1 | -1 // 0=unassigned 1=right -1=left
+  /* layout result */
   x: number
   y: number
   w: number
   h: number
-  extent: number // 子树占用的垂直高度
+  extent: number // vertical height occupied by the subtree
   titleLines: string[]
   noteLines: string[]
 }
@@ -37,30 +37,30 @@ export interface MindMapController {
   expandAll(): void
   load(markdown: string): void
   setDark(dark: boolean): void
-  /** 更新节点/备注单行最大字符数（设置项 mmMaxLen）并重排。 */
+  /** Updates the per-line max character count (mmMaxLen setting) and re-lays out. */
   setMaxLen(n: number): void
-  /** 导出为独立 SVG 文档字符串（含背景矩形）。 */
+  /** Exports as a standalone SVG document string (with background rectangle). */
   exportSvg(): string
   nodeCount(): number
-  /** 释放 window 级监听与 ResizeObserver（组件卸载时调用）。 */
+  /** Releases window-level listeners and the ResizeObserver (call on component unmount). */
   destroy(): void
 }
-/* ---------------- 配置 ---------------- */
+/* ---------------- Configuration ---------------- */
 const CFG = {
   font: `"PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif`,
   palette: ['#4F6DF5', '#00A8A8', '#E8574F', '#F59E0B', '#8B5CF6',
     '#EC4899', '#22A55B', '#0EA5E9', '#D97706', '#64748B'],
-  hGapRoot: 76, // 根 → 一级分支水平间距
-  hGap: 38, // 其余层级水平间距
-  vGapBranch: 28, // 一级分支之间垂直间距
-  vGap: 10, // 其余兄弟节点垂直间距
-  strokeW: [3.4, 2.2, 1.6, 1.2], // 连线宽度（按父层级）
-  style: [ // 各层级结构样式（颜色按主题在 render 时取）
-    /* 0 根节点   */ { size: 20, weight: 700, maxW: 400, padX: 26, padY: 18, lh: 30, noteSize: 11.5, noteLh: 17 },
-    /* 1 一级分支 */ { size: 15, weight: 700, maxW: 240, padX: 15, padY: 10, lh: 21, noteSize: 11, noteLh: 15 },
-    /* 2 二级     */ { size: 13.5, weight: 600, maxW: 190, padX: 12, padY: 8, lh: 19, noteSize: 11, noteLh: 15 },
-    /* 3 三级     */ { size: 12.5, weight: 600, maxW: 170, padX: 5, padY: 4, lh: 17, noteSize: 10.5, noteLh: 14 },
-    /* ≥4        */ { size: 12, weight: 400, maxW: 155, padX: 5, padY: 4, lh: 16, noteSize: 10.5, noteLh: 14 },
+  hGapRoot: 76, // horizontal gap root → level-1 branches
+  hGap: 38, // horizontal gap between other levels
+  vGapBranch: 28, // vertical gap between level-1 branches
+  vGap: 10, // vertical gap between other siblings
+  strokeW: [3.4, 2.2, 1.6, 1.2], // edge width (by parent depth)
+  style: [ // per-depth structural style (colors resolved at render time)
+    /* 0 root      */ { size: 20, weight: 700, maxW: 400, padX: 26, padY: 18, lh: 30, noteSize: 11.5, noteLh: 17 },
+    /* 1 branch    */ { size: 15, weight: 700, maxW: 240, padX: 15, padY: 10, lh: 21, noteSize: 11, noteLh: 15 },
+    /* 2 level 2   */ { size: 13.5, weight: 600, maxW: 190, padX: 12, padY: 8, lh: 19, noteSize: 11, noteLh: 15 },
+    /* 3 level 3   */ { size: 12.5, weight: 600, maxW: 170, padX: 5, padY: 4, lh: 17, noteSize: 10.5, noteLh: 14 },
+    /* ≥4          */ { size: 12, weight: 400, maxW: 155, padX: 5, padY: 4, lh: 16, noteSize: 10.5, noteLh: 14 },
   ],
 }
 const styleOf = (d: number) => CFG.style[Math.min(d, CFG.style.length - 1)]
@@ -75,7 +75,7 @@ const DEFS = `
   <filter id="mmShadowSm" x="-40%" y="-40%" width="180%" height="180%">
     <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#0F172A" flood-opacity="0.16"/>
   </filter>`
-/* ---------------- 主题色 ---------------- */
+/* ---------------- Theme colors ---------------- */
 const COL_LIGHT = ['#ffffff', '#ffffff', '#1f2937', '#334155', '#64748b']
 const NOTE_LIGHT = ['#c7d2fe', 'rgba(255,255,255,.88)', '#64748b', '#94a3b8', '#a3adb8']
 const COL_DARK = ['#ffffff', '#ffffff', '#e5e7eb', '#cbd5e1', '#94a3b8']
@@ -84,7 +84,7 @@ const textColor = (d: number, dark: boolean) => (dark ? COL_DARK : COL_LIGHT)[Ma
 const noteColor = (d: number, dark: boolean) => (dark ? NOTE_DARK : NOTE_LIGHT)[Math.min(d, 4)]
 const FILL_OPACITY = (dark: boolean) => (dark ? 0.2 : 0.12)
 const BG_COLOR = (dark: boolean) => (dark ? '#0f172a' : '#ffffff')
-/* ---------------- 文本测量与换行 ---------------- */
+/* ---------------- Text measurement and wrapping ---------------- */
 const CJK_RE = /[⺀-⻿一-鿿぀-ヿ㄰-ㆿ㐀-䶿가-힯豈-﫿ぁ-んァ-ヶ　-〿＀-￯]/
 const isCJK = (ch: string) => CJK_RE.test(ch)
 class Ruler {
@@ -102,18 +102,19 @@ class Ruler {
       this.ctx.font = `${weight} ${size}px ${CFG.font}`
       return this.ctx.measureText(text).width
     }
-    let w = 0 // 无 canvas 时的启发式估算
+    let w = 0 // heuristic estimate when canvas is unavailable
     for (const ch of text) w += isCJK(ch) ? size : size * 0.55
     return w
   }
 }
 const ruler = new Ruler()
-/** 节点/备注单行最大字符数：超长不可断单词（如 NEW/RUNNABLE/BLOCKED/…）按它硬折行。
- *  由设置 mmMaxLen 驱动，createMindMap(opts.maxLen) 每次实例化时重置——
- *  不能只在传了 maxLen 时改写，否则上一次实例的值会泄漏到未传 maxLen 的实例。 */
+/** Per-line max characters for nodes/notes; unbreakable words beyond it (NEW/RUNNABLE/BLOCKED/…) hard-wrap.
+ *  Driven by the mmMaxLen setting, reset on every createMindMap(opts.maxLen) —
+ *  it must be rewritten even when no maxLen is passed, otherwise the previous
+ *  instance's value leaks into instances without maxLen. */
 const DEFAULT_MAX_CHARS = 20
 let MAX_CHARS = DEFAULT_MAX_CHARS
-/** 自动换行：CJK 逐字可断，latin 按单词断，单词超过 MAX_CHARS 字符硬折行 */
+/** Word wrap: CJK breaks per character, latin per word, words beyond MAX_CHARS characters hard-wrap */
 function wrapText(text: string, maxW: number, size: number, weight: number): string[] {
   const lines: string[] = []
   let line = '', lw = 0, word = '', wordW = 0
@@ -148,7 +149,6 @@ function wrapText(text: string, maxW: number, size: number, weight: number): str
         lw += sw
       }
     } else {
-      // 硬折行：单词达到 MAX_CHARS，或放不下当前行/新行时，先把已积累的段落落行
       const cw = ruler.width(ch, size, weight)
       const fitsNow = line ? lw + wordW + cw <= maxW : wordW + cw <= maxW
       if (word.length + 1 > MAX_CHARS || !fitsNow) flushWord()
@@ -160,7 +160,7 @@ function wrapText(text: string, maxW: number, size: number, weight: number): str
   if (line) lines.push(line.trimEnd())
   return lines.length ? lines : ['']
 }
-/* ---------------- Markdown 解析 ---------------- */
+/* ---------------- Markdown parsing ---------------- */
 let __uid = 0
 function mkNode(title: string, depth: number, parent: MindNode | null): MindNode {
   return {
@@ -199,7 +199,7 @@ export function parseMarkdown(markdown: string): MindNode {
       } else if (line.trim().startsWith(fenceMark)) {
         inFence = false
       }
-      continue // 围栏代码里的 # 注释不是标题
+      continue // # comments inside fenced code are not headings
     }
     if (inFence) continue
     const h = /^(#{1,6})\s+(.+?)\s*$/.exec(line)
@@ -220,7 +220,7 @@ export function parseMarkdown(markdown: string): MindNode {
       current = node
       continue
     }
-    const q = /^>\s?(.*)$/.exec(line) // > 引用 → 当前节点备注
+    const q = /^>\s?(.*)$/.exec(line) // > quote → note of the current node
     if (q) {
       const t = q[1].trim()
       if (t) current.notes.push(t)
@@ -239,7 +239,7 @@ function fixDepths(n: MindNode, d: number): void {
   n.depth = d
   n.children.forEach((c) => fixDepths(c, d + 1))
 }
-/* ---------------- 布局 ---------------- */
+/* ---------------- Layout ---------------- */
 function measureNode(n: MindNode, showNotes: boolean): void {
   const st = styleOf(n.depth)
   n.titleLines = wrapText(n.title, st.maxW, st.size, st.weight)
@@ -292,7 +292,7 @@ function layoutTree(root: MindNode, showNotes: boolean): void {
     n.children.forEach(measureAll)
   }
   measureAll(root)
-  // 一级分支：配色 + 贪心左右平衡（首次分配后保持稳定，避免折叠时跳动）
+  // Level-1 branches: coloring + greedy left/right balancing (stable after first assignment to avoid jumps on collapse)
   let sumR = 0,
     sumL = 0
   for (let i = 0; i < root.children.length; i++) {
@@ -340,7 +340,7 @@ function treeBounds(root: MindNode) {
   walk(root)
   return { minX, minY, w: maxX - minX, h: maxY - minY }
 }
-/* ---------------- SVG 渲染 ---------------- */
+/* ---------------- SVG rendering ---------------- */
 const ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ESC[c])
 function collectEdges(n: MindNode, out: string[]): void {
@@ -462,7 +462,7 @@ function partsOf(root: MindNode, showNotes: boolean, dark: boolean) {
   collectNodes(root, nodes, dark)
   return { edges, nodes }
 }
-/** 生成独立 SVG 文档字符串（含背景，可用于导出 / 转 PNG）。 */
+/** Builds a standalone SVG document string (with background, usable for export / PNG conversion). */
 export function renderSvgDocument(root: MindNode, showNotes = true, dark = false): string {
   const { edges, nodes } = partsOf(root, showNotes, dark)
   const b = treeBounds(root)
@@ -481,7 +481,7 @@ export function renderSvgDocument(root: MindNode, showNotes = true, dark = false
 ${edges.join('')}${nodes.join('')}
 </svg>`
 }
-/* ---------------- 浏览器交互版 ---------------- */
+/* ---------------- Browser interactive version ---------------- */
 function walkAll(n: MindNode, fn: (n: MindNode) => void): void {
   fn(n)
   n.children.forEach((c) => walkAll(c, fn))
@@ -499,8 +499,9 @@ function countNodes(n: MindNode): number {
   return c
 }
 /**
- * 在 container 内挂载思维导图。工具条由外部（MindMap.vue）调用返回的方法实现。
- * dark 控制配色；load() 可重新解析文档；setDark() 切换主题后重绘。
+ * Mounts the mind map inside container. The toolbar is implemented externally
+ * (MindMap.vue) through the returned methods. dark controls the palette;
+ * load() re-parses the document; setDark() re-renders after a theme switch.
  */
 export function createMindMap(
   container: HTMLElement,
@@ -509,8 +510,8 @@ export function createMindMap(
 ): MindMapController {
   container.classList.add('mm-container')
   if (opts.maxLen && opts.maxLen >= 8) MAX_CHARS = Math.min(opts.maxLen, 60)
-  else MAX_CHARS = DEFAULT_MAX_CHARS // 显式重置：避免继承上一个实例的 maxLen
-  __uid = 0 // id 只需实例内唯一，单窗口同时只有一个导图实例，归零保持确定性
+  else MAX_CHARS = DEFAULT_MAX_CHARS // explicit reset: never inherit the previous instance's maxLen
+  __uid = 0 // ids only need to be unique within the instance; one map instance per window, so reset deterministically
   let root = parseMarkdown(markdown)
   let DARK = !!opts.dark
   let showNotes = true
@@ -597,7 +598,7 @@ export function createMindMap(
     }
   }
   window.addEventListener('pointerup', onUp)
-  // 容器首次拿到非零尺寸后再 fit：挂载瞬间 flex 布局可能还没稳定（画布 0 高时 fit 会早退）
+  // Fit only after the container first reports a non-zero size: flex layout may still be settling at mount (fit exits early at zero height)
   let sized = false
   const ro =
     typeof ResizeObserver !== 'undefined'

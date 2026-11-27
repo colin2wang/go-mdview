@@ -28,10 +28,10 @@ export const store = reactive({
   imgUrl: '',
   html: '',
   toc: [] as TocItem[],
-  /** 与 toc 同源的同步滚动锚点（标题源码行号 + DOM id），见 markdown.ts */
+  /** Sync-scroll anchors sharing the source of toc (heading source line numbers + DOM id), see markdown.ts */
   srcAnchors: [] as SrcAnchor[],
   activeHeading: '',
-  /** 跨文件锚点：wiki 链接带 #heading 时，渲染完成后由 Viewer 消费 */
+  /** Cross-file anchor: consumed by Viewer after rendering when a wiki link carries #heading */
   pendingAnchor: '',
   hasMath: false,
   hasMermaid: false,
@@ -42,43 +42,45 @@ export const store = reactive({
   viewMode: 'render' as ViewMode,
   demoMode: false,
   rendering: false,
-  /** 当前文件已被外部删除/改名且用户选择保留：内容仍在窗口中，但已失效 */
+  /** The current file was deleted/renamed externally and the user chose to keep it: content is still in the window but stale */
   currentMissing: false,
-  /** 外部删除确认弹窗：非空时显示「保留/关闭」询问 */
+  /** External-deletion confirm dialog: when set, shows a keep/close prompt */
   goneFile: null as string | null,
-  /** 源码编辑态与草稿提升到 store：关闭/重启/切换/重载/退出编辑共用同一份状态 */
+  /** Source edit state and draft hoisted into store: close/restart/switch/reload/exit share the same state */
   editing: false,
   draft: '',
-  /** 未保存改动确认弹窗：非空时显示「保存/放弃/取消」询问 */
+  /** Unsaved-changes confirm dialog: when set, shows a save/drop/cancel prompt */
   discardReason: '' as '' | 'close' | 'restart' | 'switch' | 'reload' | 'exit',
-  /** 「保存」按钮正在写盘，防止重复点击 */
+  /** The "save" button is writing to disk, guarding double clicks */
   discardSaving: false,
-  /** 内部导航历史：标题栏 ⟵/⟶ 按钮的回退/前进栈 */
+  /** Internal navigation history: back/forward stacks for the title bar ⟵/⟶ buttons */
   navBack: [] as NavLoc[],
   navForward: [] as NavLoc[]
 })
 
-/** 导航栈中的一个位置：文件 + 文内锚点。 */
+/** One position in the navigation stacks: file plus in-document anchor. */
 export interface NavLoc {
   path: string
   anchor: string
 }
 
-/** goBack/goForward 跳转进行中：openFile 内不再向历史栈追加记录。 */
+/** Set while a goBack/goForward jump is in flight: openFile does not push further history entries. */
 let navJumping = false
-/** 当前位置的文内锚点（同文件锚点跳转时随 navPush 更新）。 */
+/** In-document anchor of the current position (updated on navPush for same-file anchor jumps). */
 let navCurAnchor = ''
 
 /**
- * 记录一次用户发起的内部导航：把当前位置压入回退栈并清空前进栈。
- * prev 必须在 store.current 被替换之前捕获（openFile 早期），否则压进去的
- * 是刚打开的新文件，后退就失效了。程序化跳转（navJumping）不记。
+ * Records a user-initiated internal navigation: pushes the current position
+ * onto the back stack and clears the forward stack. prev must be captured
+ * before store.current is replaced (early in openFile), otherwise the newly
+ * opened file gets pushed and back breaks. Programmatic jumps (navJumping)
+ * are not recorded.
  */
 export function navPush(prev: NavLoc | null, nextAnchor: string) {
   if (navJumping) return
   if (prev) {
     const top = store.navBack[store.navBack.length - 1]
-    // 连续去重：同文件同锚点不重复压栈
+    // Consecutive de-duplication: same file and anchor is not pushed again
     if (!top || top.path !== prev.path || top.anchor !== prev.anchor) {
       store.navBack.push({ ...prev })
       if (store.navBack.length > 100) store.navBack.shift()
@@ -88,7 +90,7 @@ export function navPush(prev: NavLoc | null, nextAnchor: string) {
   navCurAnchor = nextAnchor
 }
 
-/** 同文件内的文内锚点跳转：当前位置（store.current 即旧文件）压栈。 */
+/** In-document anchor jump within the same file: the current position (store.current, i.e. the old file) is pushed. */
 export function navPushAnchor(anchor: string) {
   if (navJumping) return
   const cur = store.current
@@ -96,7 +98,7 @@ export function navPushAnchor(anchor: string) {
   navPush({ path: cur.path, anchor: navCurAnchor }, anchor)
 }
 
-/** 跳到 pos：锚点交给渲染完成后的 Viewer 消费；期间不记栈。 */
+/** Jumps to pos: the anchor is consumed by Viewer after rendering; no history entry is recorded meanwhile. */
 async function navJump(pos: NavLoc) {
   navJumping = true
   try {
@@ -108,7 +110,7 @@ async function navJump(pos: NavLoc) {
   }
 }
 
-/** 标题栏 ⟵：回退到上一个内部导航位置。 */
+/** Title bar ⟵: back to the previous internal navigation position. */
 export function navBack() {
   const pos = store.navBack.pop()
   if (!pos) return
@@ -117,7 +119,7 @@ export function navBack() {
   void navJump(pos)
 }
 
-/** 标题栏 ⟶：前进到下一个内部导航位置。 */
+/** Title bar ⟶: forward to the next internal navigation position. */
 export function navForward() {
   const pos = store.navForward.pop()
   if (!pos) return
@@ -137,32 +139,32 @@ const DISCARD_REASON_KEYS: Record<string, string> = {
 let draftTimer: number | undefined
 let discardResolve: ((proceed: boolean) => void) | null = null
 
-/** 是否有未保存的草稿改动。 */
+/** Whether there are unsaved draft changes. */
 export function hasUnsaved(): boolean {
   return store.editing && !!store.current && store.draft !== store.current.content
 }
 
-/** 同步未保存标记给 Go：标题栏 ✕ / 系统关闭都能被 BeforeClose 拦下来弹确认。 */
+/** Syncs the unsaved flag to Go: both title-bar ✕ and system close can be intercepted for a confirm dialog. */
 export function syncDraftDirty() {
   if (store.desktop) void getApi().then((api) => api.SetDraftDirty(hasUnsaved()))
 }
 
-/** 统一确认入口：无未保存改动直接放行；否则弹窗，返回 true=继续原操作（已保存或已放弃）。 */
+/** Unified confirm entry: passes straight through without unsaved changes; otherwise shows the dialog, resolving true = continue (saved or dropped). */
 export function confirmDiscard(reason: 'close' | 'restart' | 'switch' | 'reload' | 'exit'): Promise<boolean> {
   if (!hasUnsaved()) return Promise.resolve(true)
-  if (discardResolve) return Promise.resolve(false) // 已有确认弹窗未处理，拒绝重入
+  if (discardResolve) return Promise.resolve(false) // an unresolved dialog is open, re-entry rejected
   store.discardReason = reason
   return new Promise((resolve) => {
     discardResolve = resolve
   })
 }
 
-/** 确认弹窗正文（按触发出口给不同提示，全部走 i18n）。 */
+/** Confirm dialog body (different hint per trigger, all via i18n). */
 export function discardMessage(reason: string): string {
   return t(DISCARD_REASON_KEYS[reason] ?? 'discard.switch')
 }
 
-/** 确认弹窗「放弃」：丢弃草稿并继续原操作（各出口随后会 clearDraft）。 */
+/** Confirm dialog "drop": discards the draft and continues (each caller clears the draft afterwards). */
 export function resolveDiscardDrop() {
   const resolve = discardResolve
   discardResolve = null
@@ -170,7 +172,7 @@ export function resolveDiscardDrop() {
   resolve?.(true)
 }
 
-/** 确认弹窗「取消」：保留草稿、取消原操作（confirmDiscard resolve false）。 */
+/** Confirm dialog "cancel": keeps the draft and aborts (confirmDiscard resolves false). */
 export function resolveDiscardCancel() {
   const resolve = discardResolve
   discardResolve = null
@@ -178,7 +180,7 @@ export function resolveDiscardCancel() {
   resolve?.(false)
 }
 
-/** 确认弹窗「保存」：先把草稿写回原文件，再继续原操作；失败时保持弹窗供重试/改选。 */
+/** Confirm dialog "save": writes the draft back to the file first, then continues; keeps the dialog open on failure for retry. */
 export async function resolveDiscardSave() {
   if (!discardResolve || store.discardSaving) return
   store.discardSaving = true
@@ -194,7 +196,7 @@ export async function resolveDiscardSave() {
   }
 }
 
-/** 取消草稿重渲染定时器：换文件/退出编辑后不能让旧草稿覆盖正文。 */
+/** Cancels the draft re-render timer: after a file switch or leaving editing, a stale draft must not overwrite the body. */
 export function cancelDraftRender() {
   if (draftTimer !== undefined) {
     window.clearTimeout(draftTimer)
@@ -202,7 +204,7 @@ export function cancelDraftRender() {
   }
 }
 
-/** 编辑器输入：300ms 防抖后重渲染预览（draftSeq 负责丢弃过期结果）。 */
+/** Editor input: re-renders the preview after a 300ms debounce (draftSeq discards stale results). */
 export function setDraftText(v: string, debounce = true) {
   store.draft = v
   syncDraftDirty()
@@ -218,7 +220,7 @@ export function setDraftText(v: string, debounce = true) {
   }, 300)
 }
 
-/** 清空编辑态（保存成功 / 放弃修改 / 切换文件后调用）。 */
+/** Clears the edit state (after a successful save / dropping changes / switching files). */
 export function clearDraft() {
   cancelDraftRender()
   store.editing = false
@@ -226,7 +228,7 @@ export function clearDraft() {
   syncDraftDirty()
 }
 
-/** 非法/缺失的 viewMode 回落到 render。 */
+/** Falls back to render for an invalid/missing viewMode. */
 function normalizeViewMode(v: unknown): ViewMode {
   return v === 'source' || v === 'split' || v === 'mindmap' ? v : 'render'
 }
@@ -234,7 +236,7 @@ function normalizeViewMode(v: unknown): ViewMode {
 let toastSeq = 0
 export function toast(text: string, kind: 'info' | 'error' = 'info', opts: { dedupe?: boolean; duration?: number } = {}) {
   const duration = opts.duration ?? 2600
-  // 去重：相同文案+类型的存活气泡复用，只续期计时（连续自动刷新时同一消息不反复弹）
+  // De-duplication: a live toast with the same text and kind is reused, only the timer renewed (repeated auto-reloads do not re-pop the same message)
   if (opts.dedupe) {
     const exist = store.toasts.find((x) => x.text === text && x.kind === kind)
     if (exist) {
@@ -254,7 +256,7 @@ function removeToast(id: number) {
   if (i >= 0) store.toasts.splice(i, 1)
 }
 
-// ---------- 渲染 ----------
+// ---------- Render ----------
 
 async function renderCurrent(fc: FileContent) {
   store.rendering = true
@@ -273,7 +275,7 @@ async function renderCurrent(fc: FileContent) {
     store.hasMath = r.hasMath
     store.hasMermaid = r.hasMermaid
   } catch (e) {
-    // 异常文本可能含不可信内容（路径、markdown 片段），统一走净化出口。
+    // Error text may carry untrusted content (paths, markdown fragments); the sanitized outlet applies throughout.
     store.html = sanitizeHtml(
       `<div class="render-error"><h3>${t('error.renderFailed')}</h3><pre>${String(e)}</pre></div>`,
       store.settings?.blockRemote ?? true,
@@ -285,8 +287,9 @@ async function renderCurrent(fc: FileContent) {
 }
 
 /**
- * 对照模式的源码编辑：用编辑中的草稿重渲染正文。
- * 只改内存里的渲染结果，不写回文件、不记历史；解析失败时保留上一次结果。
+ * Split-mode source editing: re-renders the body from the editing draft.
+ * Only the in-memory render result changes, no file write, no history; the
+ * previous result is kept when parsing fails.
  */
 let draftSeq = 0
 export async function renderDraft(md: string) {
@@ -301,21 +304,22 @@ export async function renderDraft(md: string) {
       store.settings?.blockRemote ?? true,
       store.settings?.remoteAllow ?? ''
     )
-    if (seq !== draftSeq) return // 已有更新的草稿，丢弃过期结果
+    if (seq !== draftSeq) return // a newer draft exists, stale result discarded
     store.html = r.html
     store.toc = r.toc
     store.srcAnchors = r.anchors
     store.hasMath = r.hasMath
     store.hasMermaid = r.hasMermaid
   } catch {
-    /* 输入中途解析失败：保留上一次渲染结果 */
+    /* parse failed mid-typing: keep the previous render */
   } finally {
     if (seq === draftSeq) store.rendering = false
   }
 }
 
-// 语言切换只让 Vue 模板自动更新；图表卡片标题/按钮等文案是在 renderMarkdown
-// 时拼进 store.html 的，必须重渲染当前正文（编辑中重渲染草稿）才会跟着换语言。
+// Language switching only auto-updates Vue templates; copy such as diagram card
+// titles/buttons is baked into store.html at renderMarkdown time, so the current
+// body must be re-rendered (the draft while editing) to follow the language.
 watch(
   () => store.settings?.language,
   (lang, prev) => {
@@ -327,8 +331,9 @@ watch(
   }
 )
 
-// 远程资源拦截开关/白名单变化后，正文里已生成的 <img src> 不会自动跟着变，
-// 必须重渲染当前文档；编辑中则重渲染草稿，避免设置页改完仍显示旧占位图。
+// After the remote-blocking switch or whitelist changes, existing <img src>
+// in the body do not follow automatically; the current document must be
+// re-rendered (the draft while editing) so the old placeholder does not linger.
 watch(
   () => [store.settings?.blockRemote, store.settings?.remoteAllow] as const,
   ([block, allow], [prevBlock, prevAllow]) => {
@@ -340,7 +345,7 @@ watch(
   }
 )
 
-/** 保存编辑后的正文回原文件（源码/对照模式的「保存」按钮）。 */
+/** Saves the edited body back to the original file (the "save" button in source/split mode). */
 export async function saveSource(md: string): Promise<boolean> {
   const cur = store.current
   if (!cur) return false
@@ -348,7 +353,7 @@ export async function saveSource(md: string): Promise<boolean> {
     const api = await getApi()
     const fc = await api.SaveMarkdown(cur.path, md, cur.encoding)
     store.current = fc
-    store.currentMissing = false // 已删除文件被保存重建，恢复有效
+    store.currentMissing = false // a deleted file rebuilt by saving is valid again
     toast(t('toast.saved'))
     return true
   } catch (e) {
@@ -357,9 +362,9 @@ export async function saveSource(md: string): Promise<boolean> {
   }
 }
 
-// ---------- 外部文件修改监视 ----------
+// ---------- External file change watching ----------
 
-/** 后端 file:watch 事件负载（Go: mdv.FileEvent）。 */
+/** Backend file:watch event payload (Go: mdv.FileEvent). */
 interface WatchEvent {
   kind: 'changed' | 'gone'
   path: string
@@ -373,7 +378,7 @@ async function handleWatchEvent(ev: WatchEvent) {
   const cur = store.current
   if (!cur || cur.path !== ev.path) return
   if (ev.kind === 'gone') {
-    // 文件被外部删除/改名：不独占文件（外部始终可删），弹窗问是否在窗口中保留内容
+    // File deleted/renamed externally: the file is not locked (external deletion always possible), so a dialog asks whether to keep the content in the window
     store.goneFile = ev.path
     return
   }
@@ -385,18 +390,18 @@ async function handleWatchEvent(ev: WatchEvent) {
   }
   reloading = true
   try {
-    // 静默重载：不推历史、不改树根；保存/滚动位置由既有流程处理
+    // Silent reload: no history push, no tree re-rooting; save/scroll state is handled by the existing flows
     await openFile(ev.path, { pushHistory: false, reason: 'reload' })
-    // 3 秒气泡 + 去重：文件被反复修改/更新时同一消息只保留一条
+    // 3-second toast + de-duplication: one message only when the file changes repeatedly
     toast(t('toast.fileReloaded'), 'info', { dedupe: true, duration: 3000 })
   } catch {
-    /* openFile 内部已 toast */
+    /* toast already shown inside openFile */
   } finally {
     reloading = false
   }
 }
 
-/** 删除确认弹窗：选择「保留」——内容留在窗口并标记失效；「关闭」——清空视图。 */
+/** Deletion confirm dialog: "keep" leaves the content in the window and marks it stale; "close" clears the view. */
 export async function resolveGoneFile(keep: boolean) {
   const p = store.goneFile
   store.goneFile = null
@@ -416,12 +421,12 @@ export async function resolveGoneFile(keep: boolean) {
   }
 }
 
-// ---------- 打开 ----------
+// ---------- Open ----------
 
 const MD_KIND_EXTS = ['md', 'markdown', 'mdown', 'mkd']
 const IMG_KIND_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif']
 
-/** 按扩展名判断文件类别，决定查看器渲染方式。 */
+/** File kind by extension, deciding how the viewer renders it. */
 export function fileKind(path: string): 'markdown' | 'image' | 'text' {
   const ext = (path.split('.').pop() ?? '').toLowerCase()
   if (MD_KIND_EXTS.includes(ext)) return 'markdown'
@@ -433,19 +438,19 @@ export async function openFile(
   path: string,
   opts: { pushHistory?: boolean; reRoot?: boolean; reason?: 'switch' | 'reload' } = {}
 ): Promise<boolean> {
-  // 五个丢弃出口之一：切换文件（外部重载传 reason='reload'）。
+  // One of the five discard exits: file switch (external reload passes reason='reload').
   if (!(await confirmDiscard(opts.reason ?? 'switch'))) return false
-  // 导航历史：此刻 store.current 还是旧文件，先记下位置，成功后再入栈
+  // Navigation history: store.current is still the old file here, capture the position first and push after success
   const prevLoc: NavLoc | null = store.current ? { path: store.current.path, anchor: navCurAnchor } : null
   const api = await getApi()
   const kind = fileKind(path)
   try {
-    // 所有文件类型统一登记图片目录并等待完成，否则单独打开图片 /
-    // 启动恢复（pushHistory:false）时 /mdimg 会因白名单未登记而 403。
+    // Register the image directory for all file kinds and wait for it, otherwise /mdimg
+    // 403s for a lone image open or startup restore (pushHistory:false) because the whitelist is unregistered.
     await api.AllowImageDir(fileToDir(path))
     clearDraft()
     if (kind === 'image') {
-      // 图片：不走文本读取，直接用 /mdimg 回放路由
+      // Image: no text read, the /mdimg replay route is used directly
       store.current = {
         path, name: fileBase(path), dir: fileToDir(path),
         content: '', encoding: '', size: 0, modTime: 0, kind: 'image'
@@ -469,7 +474,7 @@ export async function openFile(
       if (fc.kind === 'markdown') {
         await renderCurrent(fc)
       } else {
-        // 纯文本：不渲染 Markdown，直接整段展示
+        // Plain text: no Markdown rendering, shown as one whole block
         store.html = ''
         store.toc = []
         store.srcAnchors = []
@@ -477,7 +482,7 @@ export async function openFile(
         store.hasMermaid = false
       }
     }
-    // 默认保持文件夹树停留在记忆的目录；仅关联打开/拖拽入口传 reRoot 切到文件所在目录
+    // The folder tree stays on the remembered directory by default; only association-open/drag entries pass reRoot to switch to the file's directory
     const dir = fileToDir(path)
     if (opts.reRoot && dir !== store.rootName) {
       store.rootName = dir
@@ -490,9 +495,9 @@ export async function openFile(
     if (opts.pushHistory !== false) {
       api.PushHistory(path).then(() => api.GetHistory().then((h) => (store.history = h)))
     }
-    // 内部导航历史：外部静默重载不算用户导航，不记栈
+    // Internal navigation history: external silent reloads are not user navigation, no entry recorded
     if (opts.reason !== 'reload') navPush(prevLoc, store.pendingAnchor)
-    // lastFolder 只在真正切换文件夹树根时更新，避免面板标题与实际树内容不符
+    // lastFolder updates only when the tree root actually switches, keeping the panel title consistent with the tree content
     const st = { ...(store.settings ?? defaultSettings), lastFile: path }
     if (opts.reRoot && store.rootName === dir) st.lastFolder = dir
     store.settings = st
@@ -541,7 +546,7 @@ export async function openFolder() {
   }
   store.rootName = dir
   store.tree = tree
-  // 目录树里的图片也要能回放（与单文件打开走同一登记入口）
+  // Images inside the tree must also replay (same registration entry as single-file open)
   await api.AllowImageDir(dir)
   const st = { ...(store.settings ?? defaultSettings), lastFolder: dir }
   store.settings = st
@@ -550,7 +555,7 @@ export async function openFolder() {
   toast(mdCount ? t('toast.loadedFolder', { n: mdCount }) : t('toast.noNotes'))
 }
 
-/** 只统计可预览的 Markdown 笔记，图片/文本文件不计入「笔记数」。 */
+/** Counts only previewable Markdown notes; images/text files do not count as notes. */
 export function countMd(nodes: MNode[]): number {
   let n = 0
   for (const x of nodes) {
@@ -563,12 +568,12 @@ export function countMd(nodes: MNode[]): number {
 export async function openWikiLink(title: string, anchor = '') {
   if (!store.current) return
   const api = await getApi()
-  // 支持 [[folder/note]] 与 [[note#heading]]：取 basename 建索引，锚点交给渲染完成后跳转
+  // Supports [[folder/note]] and [[note#heading]]: indexes by basename, the anchor is handed to post-render consumption
   const base = title.split(/[\\/]/).pop()?.replace(/\.md$/i, '') ?? title
   store.pendingAnchor = anchor.replace(/^#/, '')
   const hits = await api.FindByTitles(fileToDir(store.current.path), base)
   if (hits.length > 1) {
-    // 同名笔记不静默取第一个：弹列表让用户选
+    // Same-named notes never silently pick the first: a list is shown for the user to choose
     const { showMenu } = await import('./context-menu')
     showMenu(
       Math.round(window.innerWidth / 2),
@@ -583,9 +588,9 @@ export async function openWikiLink(title: string, anchor = '') {
   }
 }
 
-// ---------- 收藏/历史 ----------
+// ---------- Favorites/history ----------
 
-/** 面板/右键菜单统一入口：文件不存在时给出提示。reRoot 透传给 openFile（切换文件夹树根）。 */
+/** Unified entry for panel/context-menu: reports when the file does not exist. reRoot is forwarded to openFile (tree root switch). */
 export async function openEntry(path: string, opts: { pushHistory?: boolean; reRoot?: boolean } = {}) {
   if (!path) {
     toast(t('toast.noPathInfo'), 'error')
@@ -623,29 +628,29 @@ export async function clearHistory() {
   store.history = []
 }
 
-// ---------- 显示模式 ----------
+// ---------- Display mode ----------
 
-/** 显示模式：仅渲染 / 仅源码 / 源码 ⇄ 渲染对照。设置随 settings 一起落盘。 */
+/** Display mode: render only / source only / side-by-side. Persisted with settings. */
 export async function setViewMode(mode: ViewMode) {
   if (store.viewMode === mode) return
   store.viewMode = mode
   await patchSettings({ viewMode: mode })
 }
 
-// ---------- 设置 ----------
+// ---------- Settings ----------
 
-/** 把设置落到 DOM：主题类、正文字号变量、代码高亮主题联动。 */
+/** Applies settings to the DOM: theme class, body font-size variable, code highlighting theme linkage. */
 export async function applySettings(st: Settings | null = store.settings) {
   const theme: string = st?.theme === 'dark' ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
   document.documentElement.style.setProperty('--md-fs', `${st?.fontSize ?? 16}px`)
-  // 渲染区代码块/图形源码的行号：渲染期已生成逐行包装，这里只切根类即时显隐，
-  // 不触发整篇重渲染，避免同步锚点重建。
+  // Line numbers of rendered code blocks/diagram source: per-line wrapping is generated at render time, so only the root class toggles here,
+  // no full re-render, avoiding sync anchor rebuilds.
   document.documentElement.classList.toggle('__code_lineno', st?.codeBlockLineNo ?? true)
-  // 代码块最大行数：0 = 不限制（max-height: none）。三个变量分别对应
-  // .code-block pre（行盒 = 0.875em × 1.6 行高，上下 padding 28px）、
-  // 图形卡片「源码」视图 .md-diagram-code（12.5px × 1.6 + 28px）与
-  // 图形错误提示里的 .md-diagram-src-code（12px × 1.5 + 20px）。
+  // Code block max lines: 0 = unlimited (max-height: none). Three variables cover
+  // .code-block pre (line box = 0.875em × 1.6 line height, 28px padding),
+  // the diagram card "source" view .md-diagram-code (12.5px × 1.6 + 28px) and
+  // .md-diagram-src-code in the diagram error hint (12px × 1.5 + 20px).
   const codeLines = st?.codeMaxLines ?? 20
   const codeMax = (lineBox: string, padding: number) =>
     codeLines > 0 ? `calc(${codeLines} * ${lineBox} + ${padding}px)` : 'none'
@@ -666,7 +671,7 @@ export async function setTheme(theme: string) {
   await applySettings(store.settings)
 }
 
-/** 设置写盘：120ms 合并 + 串行落盘，以 Go 返回的规范化结果为准。 */
+/** Persists settings with 120ms coalescing and serial writes; the normalized result returned by Go is authoritative. */
 let settingsChain: Promise<void> = Promise.resolve()
 let settingsTimer: number | undefined
 let pendingSettings: Settings | null = null
@@ -689,7 +694,7 @@ function flushSettings() {
       const saved = await api.SaveSettings(st)
       if (saved) {
         store.settings = saved
-        // 以 Go 规范化后的值重新落主题/字号/代码块行数等 DOM 状态
+        // Re-apply DOM state (theme/font size/code max lines etc.) from Go's normalized values
         await applySettings(saved)
       }
       const err = await api.GetLastError()
@@ -712,7 +717,7 @@ export async function patchSettings(patch: Partial<Settings>) {
   })
 }
 
-// ---------- 窗口 ----------
+// ---------- Window ----------
 
 export async function togglePin() {
   const pinned = !(store.settings ?? defaultSettings).pinned
@@ -721,7 +726,7 @@ export async function togglePin() {
   await patchSettings({ pinned })
 }
 
-// ---------- 导出 ----------
+// ---------- Export ----------
 
 export async function exportHtml() {
   if (!store.current) {
@@ -731,8 +736,8 @@ export async function exportHtml() {
   const api = await getApi()
   const art = document.querySelector('.md-article')
   const inner = art ? art.innerHTML : store.html
-  // 导出是脱离应用的独立 HTML：强制开启远程拦截并二次净化，
-  // 后端再把 /mdimg/{hex}/{name} 内嵌为 base64（见 mdv.ExportHtml）。
+  // The export is a standalone HTML detached from the app: remote blocking is forced on and content is re-sanitized;
+  // the backend then embeds /mdimg/{hex}/{name} as base64 (see mdv.ExportHtml).
   const safe = sanitizeHtml(inner, true, '')
   const base = fileBase(store.current.path).replace(/\.md$/i, '')
   const out = await api.SaveHtmlDialog(
@@ -747,10 +752,10 @@ export function copyPath(path: string) {
   getApi().then((api) => api.CopyText(path)).then(() => toast(t('toast.copiedPath')))
 }
 
-// ---------- 初始化 ----------
+// ---------- Initialization ----------
 
 async function handleOpenEvent(path: string) {
-  // 关联启动 / 二次启动转发的文件：文件夹树切到文件所在目录
+  // File from association launch / second-instance forwarding: the tree re-roots to the file's directory
   await openFile(path, { reRoot: true })
   store.tab = 'toc'
 }
@@ -783,28 +788,28 @@ export async function initApp() {
   }
 
   if (!store.current) {
-    // 空状态：不渲染内置示例，等待用户打开文件/目录
+    // Empty state: no built-in demo rendered, waiting for the user to open a file/folder
     store.demoMode = false
     store.html = ''
   }
 
   if (isDesktop()) {
-    // v3 运行时：事件回调参数是 WailsEvent 对象，载荷在 ev.data
+    // v3 runtime: event callback arguments are WailsEvent objects, payload in ev.data
     const { Events } = await import('@wailsio/runtime')
     Events.On('mdv:openfile', (ev) => handleOpenEvent(ev.data as string))
-    // 外部修改/删除监视：后端 mdv watcher 经 Event.Emit 推送
+    // External modification/deletion watching: pushed by the backend mdv watcher via Event.Emit
     Events.On('file:watch', (ev) => handleWatchEvent(ev.data as WatchEvent))
-    // 系统级关闭（标题栏 ✕ / Alt+F4）被 Go 关闭拦截后，在这里统一弹确认
+    // System-level close (title-bar ✕ / Alt+F4) intercepted by Go surfaces the confirm dialog here
     Events.On('draft:close-request', async () => {
       if (await confirmDiscard('close')) {
         await api.SetDraftDirty(false)
         api.WindowClose()
       }
     })
-    // 原生拖放：Go 侧 EnableFileDrop + WindowFilesDropped 事件转发绝对路径
+    // Native drag & drop: Go-side EnableFileDrop + WindowFilesDropped forward absolute paths
     Events.On('mdv:files-dropped', (ev) => {
       const paths = (ev.data as string[]) ?? []
-      // 放开全部可预览类型（markdown / 图片 / 文本），交给 fileKind 分发
+      // All previewable kinds allowed (markdown / image / text), dispatched by fileKind
       const files = paths.filter((p) => fileKind(p) !== 'text' || /\.(txt|text|log|json|yaml|yml|ini|csv)$/i.test(p))
       if (!files.length) return
       if (files.length === 1) {

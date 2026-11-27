@@ -1,7 +1,9 @@
 /**
- * 渲染库统一入口：全部改为 npm 依赖 + ESM import，由 Vite 打包进 dist/assets，
- * 不再从 /static/ 注入手工放置的 UMD 文件。大体积库走动态 import 保持按需加载，
- * 失败不缓存以便下次重试；highlight.js 双主题用 ?raw 读入 CSS 文本后自建 style 节点切换。
+ * Unified entry point for render libraries: all npm dependencies imported as
+ * ESM and bundled by Vite into dist/assets. Large libraries use dynamic
+ * imports for on-demand loading; failures are not cached so the next access
+ * retries. The highlight.js dual theme reads CSS via ?raw and switches by
+ * creating style nodes.
  */
 import githubLightCss from 'highlight.js/styles/github.css?raw'
 import githubDarkCss from 'highlight.js/styles/github-dark.css?raw'
@@ -28,7 +30,7 @@ export function ensureHljs(): Promise<any> {
   })
 }
 
-/** 代码高亮（hljs 可用时高亮，否则纯转义）。 */
+/** Code highlighting (highlights when hljs is available, plain escaping otherwise). */
 export async function highlightCode(code: string, lang: string): Promise<string> {
   const esc = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -37,7 +39,7 @@ export async function highlightCode(code: string, lang: string): Promise<string>
     if (lang && hljs.getLanguage(lang)) {
       return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
     }
-    if (lang) return esc(code) // 指定了未知语言：不自动猜测，避免 yaml 被误判
+    if (lang) return esc(code)
     return esc(code)
   } catch {
     return esc(code)
@@ -45,7 +47,7 @@ export async function highlightCode(code: string, lang: string): Promise<string>
 }
 
 // ---------- marked ----------
-/** 每次渲染取全新实例，避免 marked.use() 跨调用累积。 */
+/** Returns a fresh instance per render, avoiding cross-call accumulation via marked.use(). */
 export async function freshMarked(): Promise<any> {
   const { Marked } = await once('marked', () => import('marked'))
   return new Marked()
@@ -73,7 +75,7 @@ export function maybeMath(html: string): boolean {
 }
 
 // ---------- Mermaid ----------
-/** Mermaid.js v11 的 ESM 入口是 default 导出。 */
+/** Mermaid.js v11's ESM entry is a default export. */
 export function ensureMermaid(): Promise<any> {
   return once('mermaid', async () => {
     const mod = await import('mermaid')
@@ -82,7 +84,7 @@ export function ensureMermaid(): Promise<any> {
 }
 
 // ---------- Pele ----------
-/** Pele 的 ESM 入口只有命名导出 render，没有 default。 */
+/** Pele's ESM entry has only the named export render, no default. */
 export function ensurePele(): Promise<any> {
   return once('pele', async () => {
     const mod = await import('pele')
@@ -91,8 +93,8 @@ export function ensurePele(): Promise<any> {
   })
 }
 
-// ---------- highlight.js 双主题 ----------
-/** 把两份主题 CSS 作为 style 节点装入 head，并按主题切换内容。 */
+// ---------- highlight.js dual theme ----------
+/** Installs both theme CSS files as style nodes in head and switches their content by theme. */
 export function setHljsTheme(theme: string): void {
   let light = document.getElementById('mdv-hljs-light') as HTMLStyleElement | null
   let dark = document.getElementById('mdv-hljs-dark') as HTMLStyleElement | null

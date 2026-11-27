@@ -1,8 +1,9 @@
 /**
- * 轻量 i18n：语言状态 + t() 取词助手。
- * 不引入 vue-i18n，文案量小，直接四份词典 + 点号 key。
- * 语言切换由 store.applySettings 写入 setLang()，t() 内读 lang.value，
- * 在模板/computed 中使用时随切换自动重渲染。
+ * Lightweight i18n: language state plus the t() lookup helper.
+ * No vue-i18n; the copy volume is small, so four dictionaries with dotted keys
+ * are used directly. Language switching is written by store.applySettings via
+ * setLang(), t() reads lang.value internally, and usages in templates and
+ * computeds re-render automatically on switch.
  */
 import { ref } from 'vue'
 
@@ -23,7 +24,6 @@ export function getLang(): Lang {
 
 export function setLang(v: string | undefined) {
   lang.value = (LANGS.some((l) => l.key === v) ? v : 'zh-CN') as Lang
-  // 同步 <html lang>：影响无障碍/拼写检查/字体回退
   document.documentElement.lang = lang.value
 }
 
@@ -31,7 +31,7 @@ type Dict = Record<string, string>
 type I18nKey = keyof typeof zhCN
 
 const zhCN = {
-  // 标题栏
+  // Title bar
   'mode.source': '源码',
   'mode.render': '渲染',
   'mode.split': '对照',
@@ -75,7 +75,7 @@ const zhCN = {
   'tip.min': '最小化',
   'tip.max': '最大化/还原',
   'tip.close': '关闭',
-  // 目录
+  // TOC
   'tab.toc': '目录',
   'tab.history': '历史',
   'tab.fav': '收藏',
@@ -85,25 +85,25 @@ const zhCN = {
   'toc.top.tip': '滚动到文档开头',
   'toc.bottom.tip': '滚动到文档结尾',
   'toc.empty': '打开文档后显示大纲',
-  // 历史
+  // History
   'hist.title': '最近打开',
   'hist.clear': '清空',
   'hist.search': '搜索文件名或目录',
   'hist.noMatch': '没有匹配的历史记录',
   'hist.empty': '暂无历史记录',
-  // 收藏
+  // Favorites
   'fav.title': '收藏',
   'fav.empty': '在文件上右键即可收藏',
   'fav.emptySub': '收藏的文档会保存在这里',
   'fav.unstar': '取消收藏',
-  // 文件面板
+  // File panel
   'files.none': '未选择目录',
   'files.openFolder': '打开目录',
   'files.refresh': '刷新',
   'files.collapse': '全部折叠',
   'files.pickFolder': '选择一个目录',
   'files.previewCount': '{n} / {m} 个文件可预览',
-  // 右键菜单 / 通用
+  // Context menu / common
   'menu.copyPath': '复制路径',
   'menu.reveal': '打开所在文件夹',
   'menu.open': '打开',
@@ -157,7 +157,7 @@ const zhCN = {
   'find.close': '关闭查找',
   'tree.noPreview': '无法预览',
   'tree.current': '当前',
-  // 渲染/源码视图
+  // Render/source views
   'empty.sub': '把 .md 文件拖进窗口，或',
   'empty.openFile': '打开文件…',
   'empty.openFolder': '打开目录…',
@@ -179,7 +179,7 @@ const zhCN = {
   'render.tag': '渲染结果',
   'pane.mode.read': '阅读模式',
   'pane.mode.edit': '编辑模式',
-  // 设置
+  // Settings
   'set.title': '设置',
   'set.appearance': '外观',
   'set.theme': '主题',
@@ -224,7 +224,7 @@ const zhCN = {
   'assoc.unsupportedMsg': '当前系统不支持文件关联',
   'set.about.desc': 'mdview · Go + Wails 构建的轻量 Markdown 阅读器',
   'set.about.hint': '拖拽 .md 进窗口即可打开；右键菜单可切换主题、导出 HTML；标题栏可切换渲染/源码/对照。',
-  // 灯箱
+  // Lightbox
   'lb.close': '关闭 (Esc)',
   'lb.loadFailed': '图片加载失败',
   'lb.retry': '重新加载',
@@ -988,12 +988,12 @@ const de = {
 export const DICTS: Record<Lang, Record<I18nKey, string>> = { 'zh-CN': zhCN, en, ja, de }
 export const I18N_KEYS = Object.keys(zhCN) as I18nKey[]
 
-/** 取词：{name} 占位符用 params 替换；缺 key 时回落中文，再缺失回落 key 本身。 */
+/** Lookup: {name} placeholders are replaced with params; a missing key falls back to Chinese, then to the key itself. */
 const paramReCache = new Map<string, RegExp>()
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** 替换 `{name}` 占位符；占位符名按字面量匹配，点号等正则元字符不会误命中。 */
+/** Replaces `{name}` placeholders; placeholder names match literally, so regex metacharacters like dots never mis-hit. */
 export function formatParams(template: string, params: Record<string, string | number>): string {
   const namePattern = Object.keys(params).map(escapeRegExp).join('|')
   if (!namePattern) return template
@@ -1006,7 +1006,6 @@ export function formatParams(template: string, params: Record<string, string | n
 }
 
 export function t(key: string, params?: Record<string, string | number>): string {
-  // 词典键已由 satisfies 约束为同一集合；这里仍保留运行时回落兜底。
   const s = (DICTS[lang.value] as Dict)[key] ?? (zhCN as Dict)[key] ?? key
   return params ? formatParams(s, params) : s
 }

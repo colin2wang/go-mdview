@@ -1,11 +1,14 @@
 /**
- * 同步滚动引擎 v2：以「对齐点表 marks」为唯一事实来源。
- *   每点 = { y: 渲染侧滚动位置, s: 源码侧滚动位置, line: 源码行号, id?: 标题锚点id }
- * 与 v1（内容坐标）不同，锚点直接存**滚动位置**，端点固定 (0,0) 与 (R,S)——
- * 两侧滚到底必然互为镜像，钳位语义与映射语义一致，源码刻度漂移不再表现为
- * 「渲染→源码提前钉底」。
- * 段内线性插值、段外端点外推；任何异步布局变化后 invalidateSync()，
- * 下一次滚动前由 Viewer 的 ensureMarks 调 rebuildSync 重建。
+ * Sync-scroll engine v2: the alignment-point table "marks" is the single
+ * source of truth.
+ *   each point = { y: render-side scroll position, s: source-side scroll
+ *   position, line: source line number, id?: heading anchor id }
+ * Anchors store scroll positions (not content coordinates); the endpoints are
+ * fixed at (0,0) and (R,S) — scrolling either side to the bottom mirrors the
+ * other exactly, so clamping and mapping share the same semantics.
+ * Piecewise-linear interpolation inside segments, extrapolation beyond the
+ * endpoints; after any asynchronous layout change call invalidateSync(), and
+ * Viewer's ensureMarks rebuilds via rebuildSync before the next scroll.
  */
 import { SCROLL_ALIGN } from './editor-bridge'
 import type { SrcAnchor } from './markdown'
@@ -24,7 +27,7 @@ let dirty = true
 let valid = false
 let dropped = 0
 
-/** 布局可能变化后必须调用（图片 load、Mermaid/KaTeX 完成、换行/字号/分栏变化） */
+/** Must be called after layout may have changed (image load, Mermaid/KaTeX completion, wrap/font-size/split changes). */
 export function invalidateSync(): void {
   dirty = true
 }
@@ -45,9 +48,10 @@ function cmHeightAt(cm: CodeMirror.Editor, line: number): number {
   return cm.heightAtLine(Math.max(0, Math.min(line, max)), 'local')
 }
 
-/** 源码几何校准：heightAtLine 的文档底必须与 scroller.scrollHeight 吻合。
- *  CM5 未测量行用估算行高、字体加载/换行切换后估算会整体漂移——漂移
- *  正是「渲染→源码被钳位提前到底」的元凶。 */
+/** Source geometry check: heightAtLine's document bottom must match scroller.scrollHeight.
+ *  CM5 estimates unmeasured lines with an estimated line height, and the
+ *  estimate drifts after font loading or wrap changes; drift is what makes
+ *  render→source mapping clamp prematurely to the bottom. */
 export function sourceGeometrySuspicious(cm: CodeMirror.Editor, srcSc: HTMLElement | null): boolean {
   if (!srcSc) return true
   const total = srcSc.scrollHeight
@@ -74,23 +78,21 @@ export function rebuildSync(
   const push = (line: number, contentY: number, id?: string) => {
     if (!Number.isFinite(contentY)) return
     const r = contentY - SCROLL_ALIGN
-    if (r <= 2 || r >= R - 2) return // 顶部/底部由端点覆盖
+    if (r <= 2 || r >= R - 2) return
     const s0 = cmHeightAt(cm, line) - SCROLL_ALIGN
     raw.push({ y: r, s: Math.max(0, Math.min(s0, S)), line, id })
   }
-  // 1) 块级锚点：data-sl（段落级精度，DOM 顺序即文档顺序）
-  // Array.from：项目 tsconfig 未开 downlevelIteration，NodeListOf 不能直接 for-of
   for (const el of Array.from(article.querySelectorAll<HTMLElement>('[data-sl]'))) {
     const line = Number(el.dataset.sl)
     if (Number.isFinite(line)) push(line, el.getBoundingClientRect().top - scTop)
   }
-  // 2) 标题锚点兜底（块级缺失时仍可对齐），携带 id 供 TOC 高亮共用
+  // Heading anchors as fallback (alignment still works when block anchors are missing), carrying id for TOC highlighting
   for (const a of anchors) {
     const el = article.querySelector<HTMLElement>(`[id="${CSS.escape(a.id)}"]`)
     if (el) push(a.line, el.getBoundingClientRect().top - scTop, a.id)
   }
   raw.sort((p, q) => p.y - q.y)
-  // 3) 单调性过滤：滚动单调 ⇒ s 必须随 y 递增；乱序点 = 行号映射漂移，剔除
+  // Monotonicity filter: scrolling is monotonic, so s must increase with y; out-of-order points are line-mapping drift
   const pts: SyncPoint[] = []
   dropped = 0
   for (const p of raw) {
@@ -105,29 +107,29 @@ export function rebuildSync(
   marks = [
     { y: 0, s: 0, line: 0 },
     ...pts,
-    { y: R, s: S, line: Number.MAX_SAFE_INTEGER } // 两端同时到底
+    { y: R, s: S, line: Number.MAX_SAFE_INTEGER }
   ]
   valid = true
   dirty = false
   return dropped ? 'ok-fixed' : 'ok'
 }
 
-/** 纯函数（便于单测）：分段线性插值，端点外推、退化段防抖。 */
+/** Pure function (unit-testable): piecewise-linear interpolation with endpoint extrapolation and degenerate-segment damping. */
 export function interpIn(pts: SyncPoint[], pos: number, key: 'y' | 's', o: 'y' | 's'): number | null {
   const n = pts.length
   if (n < 2) return null
   const seg = (i: number, j: number): number => {
     const d = pts[j][key] - pts[i][key]
-    if (d <= 0.5) return pts[i][o] // 退化段：保持上一点，防抖动
+    if (d <= 0.5) return pts[i][o]
     return pts[i][o] + ((pos - pts[i][key]) / d) * (pts[j][o] - pts[i][o])
   }
-  if (pos <= pts[1][key]) return seg(0, 1) // 首段外推
-  if (pos >= pts[n - 2][key]) return seg(n - 2, n - 1) // 尾段外推
+  if (pos <= pts[1][key]) return seg(0, 1)
+  if (pos >= pts[n - 2][key]) return seg(n - 2, n - 1)
   for (let i = 1; i < n - 2; i++) if (pos <= pts[i + 1][key]) return seg(i, i + 1)
   return pts[n - 2][o]
 }
 
-/** 入参/出参均为滚动位置 */
+/** Both argument and result are scroll positions */
 export function renderToSource(r: number): number | null {
   return interpIn(marks, r, 'y', 's')
 }
@@ -135,9 +137,9 @@ export function sourceToRender(s: number): number | null {
   return interpIn(marks, s, 's', 'y')
 }
 
-/** TOC 高亮与同步滚动共用同一套「当前标题」检测（入参为滚动位置）。 */
+/** TOC highlighting and sync scrolling share the same active-heading detection (argument is a scroll position). */
 export function activeHeadingId(scroller: HTMLElement): string | null {
-  const line = scroller.scrollTop + 96 // 激活线：视口顶下方 96px
+  const line = scroller.scrollTop + 96
   let hit: string | null = null
   for (const m of marks) {
     if (m.y > line) break
@@ -146,7 +148,7 @@ export function activeHeadingId(scroller: HTMLElement): string | null {
   return hit
 }
 
-/** 诊断出口（dev 下挂 window.__syncDiag） */
+/** Diagnostics outlet (mounted as window.__syncDiag in dev) */
 export function syncDiagnostics(sc: HTMLElement | null, cm: CodeMirror.Editor | null) {
   const srcSc = cm?.getScrollerElement() ?? null
   return {

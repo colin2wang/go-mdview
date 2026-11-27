@@ -2,8 +2,10 @@ import type { MNode, FileContent, Entry, Settings, AssocState } from './types'
 import * as App from '../bindings/mdview/internal/app/app.js'
 
 /**
- * 前端唯一依赖的后端接口，按领域分组。桌面端由 wails3 生成的 bindings 提供
- * （frontend/bindings/mdview/internal/app），浏览器/无头实测由 mock.ts 提供同形实现。
+ * Backend interface consumed by the frontend, grouped by domain. On the desktop
+ * it is provided by the wails3-generated bindings
+ * (frontend/bindings/mdview/internal/app); in browser tests mock.ts supplies
+ * a shape-compatible implementation.
  */
 
 export interface FileApi {
@@ -67,12 +69,10 @@ export interface AssocApi {
 export interface Api extends FileApi, HistoryApi, SettingsApi, WindowApi, ExportApi, AssocApi {}
 
 export function isDesktop(): boolean {
-  // v3 运行时自动注入 /wails/runtime.js 并挂载 window._wails；纯浏览器模式不存在
   return typeof window !== 'undefined' && (window as any)._wails !== undefined
 }
 
 function desktopApi(): Api {
-  // 显式逐项映射：生成的绑定缺失或签名漂移时，vue-tsc 会在编译期报错。
   const api: Api = {
     GetStartupFile: App.GetStartupFile,
     BuildInfo: App.BuildInfo,
@@ -94,8 +94,6 @@ function desktopApi(): Api {
     RemoveHistory: App.RemoveHistory,
     GetFavorites: App.GetFavorites,
     ToggleFavorite: App.ToggleFavorite,
-    // 生成的 Settings.viewMode 是 string，前端领域类型收窄为 ViewMode；
-    // 仅在返回处做一次显式收窄，方法缺失/参数漂移仍由编译期检查。
     GetSettings: async () => (await App.GetSettings()) as unknown as Settings,
     SaveSettings: async (s) => (await App.SaveSettings(s)) as unknown as Settings,
     GetLastError: App.GetLastError,

@@ -1,7 +1,8 @@
 /**
- * 源码编辑器实例桥。
- * 目录跳转（TocPanel）、状态栏等模块需要按行定位源码，但它们与 Viewer 没有父子关系，
- * 用一个模块级句柄共享当前唯一的 CodeMirror 实例（同时只会存在一个源码编辑器）。
+ * Bridge to the source editor instance. The TOC panel, status bar and other
+ * modules need line-level access to the source, but are not children of
+ * Viewer; this module-level handle shares the single CodeMirror instance
+ * (only one source editor exists at a time).
  */
 export const srcEditor: { cm: CodeMirror.Editor | null } = { cm: null }
 
@@ -9,7 +10,7 @@ export function setSrcEditor(cm: CodeMirror.Editor | null): void {
   srcEditor.cm = cm
 }
 
-/** 源码里所有 Markdown 标题行的行号（0-based），顺序与目录一致。 */
+/** Line numbers (0-based) of all Markdown heading lines in the source, in TOC order. */
 export function srcHeadingLines(): number[] {
   const cm = srcEditor.cm
   if (!cm) return []
@@ -33,7 +34,7 @@ export function srcHeadingLines(): number[] {
   return out
 }
 
-/** 与 .md-article 内标题的 scroll-margin-top 保持一致（style-md.css）。 */
+/** Matches the scroll-margin-top of headings inside .md-article (style-md.css). */
 export const SCROLL_ALIGN = 24
 
 export function srcScroller(): HTMLElement | null {
@@ -41,8 +42,10 @@ export function srcScroller(): HTMLElement | null {
 }
 
 /**
- * 像素级源码滚动。入参为**滚动位置**（SCROLL_ALIGN 已在 sync.ts 内消化）；
- * 返回写入的 top 与是否被钳位（钳位 = 映射目标超出源码最大滚动，调用方可据此自愈）。
+ * Pixel-level source scrolling. The argument is a scroll position
+ * (SCROLL_ALIGN is already absorbed inside sync.ts); returns the written top
+ * and whether it was clamped (the mapped target exceeded the maximum source
+ * scroll, callers can use this for self-healing).
  */
 export function scrollSrcToPx(px: number): { top: number; clamped: boolean } {
   const sc = srcScroller()
@@ -57,7 +60,7 @@ export function scrollSrcToPx(px: number): { top: number; clamped: boolean } {
   return { top, clamped: px > max + 1 }
 }
 
-/** 把第 line 行（0-based）滚到源码视口顶部。 */
+/** Scrolls line (0-based) to the top of the source viewport. */
 export function scrollSrcToLine(line: number, smooth = false): void {
   const cm = srcEditor.cm
   if (!cm) return

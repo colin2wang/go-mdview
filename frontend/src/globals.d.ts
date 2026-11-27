@@ -1,12 +1,14 @@
 /// <reference types="vite/client" />
 
-// CodeMirror 5 的 mode / addon 是纯副作用的 JS 文件，没有类型声明，
-// 这里用通配声明放行（只 import 不取绑定，不影响类型检查）
+// CodeMirror 5 modes/addons are side-effect-only JS files without type
+// declarations; wildcard declarations allow the imports (import only, no
+// bindings taken, type checking is unaffected)
 declare module 'codemirror/mode/*'
 declare module 'codemirror/addon/*'
 
-// katex 0.16.47 的 package.json 仍未在 exports 中声明类型入口，项目的 Node
-// 解析模式找不到 dist/katex.d.ts；这里给实际用到的两个 ESM 入口补最小声明。
+// katex 0.16.47 does not declare a types entry in package.json exports, so
+// Node resolution cannot find dist/katex.d.ts; minimal declarations for the
+// two ESM entry points used by the project.
 declare module 'katex' {
   const katex: any
   export default katex
@@ -16,10 +18,11 @@ declare module 'katex/contrib/auto-render' {
   export default renderMathInElement
 }
 
-// Wails v3 桌面端注入的运行时标志（/wails/runtime.js 自动挂载，
-// 浏览器/Mock 模式下不存在）。绑定经 frontend/bindings 导入，不再有 window.go。
+// Runtime flag injected by the Wails v3 desktop shell (/wails/runtime.js is
+// mounted automatically; absent in browser/mock mode). Bindings are imported
+// via frontend/bindings; there is no window.go.
 interface Window {
-  // WebView2/Chromium 私有 API，TS DOM 声明里没有
+  // WebView2/Chromium private API, missing from the TS DOM declarations
   find: (text: string, caseSensitive?: boolean, backwards?: boolean, wrapAround?: boolean, wholeWord?: boolean, searchInFrames?: boolean) => boolean
   _wails?: Record<string, any>
 }

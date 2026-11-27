@@ -3,11 +3,12 @@ import type { AssocState, Entry, FileContent, MNode, Settings } from './types'
 import { DEMO_MD, DEMO_IMAGE_SVG, fileBase, fileToDir, mockTree } from './demo'
 
 /**
- * 浏览器 / 无头实测用 Mock 实现：内存态 + 与桌面端同形返回。
- * window._wails 不存在时由 api.ts 自动切换到本实现。
+ * Mock implementation for browser/headless runs: in-memory state with
+ * shape-compatible returns. api.ts switches here automatically when
+ * window._wails is absent.
  */
 
-// Mock 模式演示路径：占位目录，不要写真实用户目录进仓库
+// Demo path in mock mode: placeholder directory, no real user directories in the repo
 const DEMO_DIR = 'C:\\demo\\vault\\Java'
 
 const state = {
@@ -42,7 +43,7 @@ const state = {
   saved: {} as Record<string, string>
 }
 
-// 浏览器/Mock 模式下没有注册表，关联状态只做内存态模拟
+// No registry exists in browser/mock mode; association state is simulated in memory
 export const mockAssoc: AssocState = {
   supported: false,
   exePath: '',
@@ -140,7 +141,7 @@ export const mockApi: Api = {
   RestartApp: async () => undefined,
   WindowFullscreenToggle: async () => undefined,
   SetWindowTitle: async () => {
-    document.title = String(document.title) // no-op，保持可断言
+    document.title = String(document.title) // no-op, keeps assertions possible
   },
   RevealInShell: async () => undefined,
   SaveHtmlDialog: async (_t, _h, name) => `mock://${name}`,
@@ -150,7 +151,7 @@ export const mockApi: Api = {
     try {
       await navigator.clipboard.writeText(t)
     } catch {
-      /* 无头环境忽略 */
+      /* ignored in headless environments */
     }
   },
   CopyImage: async (dataURL) => {
@@ -163,7 +164,7 @@ export const mockApi: Api = {
         await navigator.clipboard.write([new Ctor({ 'image/png': blob })])
       }
     } catch {
-      /* 无头环境忽略 */
+      /* ignored in headless environments */
     }
   },
   OpenExternalURL: async (url) => {
@@ -180,13 +181,13 @@ export const mockApi: Api = {
   }
 }
 
-// 供无头实测派发"拖拽打开"事件
+// Lets headless tests dispatch "open by drag" events
 export function dispatchMockOpenFile(path: string) {
   state.openEvents.push(path)
   window.dispatchEvent(new CustomEvent('mdv:mock-openfile', { detail: path }))
 }
 
-// 内置示例图片：将 demo.md 里的 assets/sample.svg 映射到 data URI
+// Built-in sample image: maps assets/sample.svg in demo.md to a data URI
 export function mockImageHref(): string {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(DEMO_IMAGE_SVG)
 }

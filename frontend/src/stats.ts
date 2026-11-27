@@ -1,7 +1,9 @@
 /**
- * 字数 / 行数统计（借鉴 mdeditor 的 word-count：纯函数，不依赖 DOM/组件实例）。
- *  - countStats: 源码口径（chars 含 Markdown 标记与空白，lines 按 \n 切分，空内容记 0）
- *  - countPreviewText: 预览口径，遍历渲染后 DOM 的文本节点，只算读者真正看得见的字
+ * Word and line counting (pure functions, no DOM or component dependencies).
+ *  - countStats: source-side view (chars include Markdown markup and whitespace,
+ *    lines are split on \n, empty content counts as 0)
+ *  - countPreviewText: preview-side view, walks text nodes of the rendered DOM
+ *    and counts only characters a reader actually sees
  */
 
 export interface CountStats {
@@ -15,7 +17,6 @@ export function countStats(content: string | null | undefined): CountStats {
     .replace(/[#*`~[\]()>_|\\-]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-  // 中文无空格：按字计词，拉丁文仍按空格分词（对纯中文不再恒等于 1）
   const cjk = (text.match(/[⺀-鿿]/g) ?? []).length
   const latin = text.replace(/[⺀-鿿]/g, ' ').trim()
   return {
@@ -25,7 +26,7 @@ export function countStats(content: string | null | undefined): CountStats {
   }
 }
 
-/** 跳过脚本/样式、隐藏的 KaTeX MathML、图形内部文字与 UI 按钮等非正文节点。 */
+/** Element classes excluded from preview counting: scripts/styles, hidden KaTeX MathML, diagram internals, UI buttons. */
 const SKIP_CLASS = ['katex-mathml', 'copy-btn', 'code-copy', 'code-line-num', 'md-diagram-src', 'md-diagram-code', 'mm-toolbar', 'hidden']
 
 export function countPreviewText(root: Node | null | undefined): number {

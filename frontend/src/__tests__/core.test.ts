@@ -26,7 +26,7 @@ import {
 import { interpIn } from '../sync'
 
 const parts = splitConfig(sanitizeConfig as Record<string, any>)
-// 浏览器构建里 dompurify 默认导出已绑定 window；Node/Vitest 下是工厂函数。
+// In browser builds the dompurify default export is bound to window; in Node/Vitest it is a factory function.
 const DOMPurify: any =
   typeof (createDOMPurify as any).sanitize === 'function'
     ? createDOMPurify

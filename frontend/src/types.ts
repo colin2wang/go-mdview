@@ -1,6 +1,6 @@
-// ---------- 与 Go 绑定对齐的数据类型 ----------
+// ---------- Data types aligned with the Go bindings ----------
 
-/** 代码行数限制写入的三个 CSS 变量（顺序：代码块 / 错误源码 / 图形源码）。 */
+/** CSS variables the code max-line limit is written to (order: code block / error source / diagram source). */
 export const CODE_MAX_CSS_VARS = ['--code-max-h', '--code-max-h-dia', '--code-max-h-diagram'] as const
 
 export interface MNode {
@@ -19,7 +19,7 @@ export interface FileContent {
   encoding: string
   size: number
   modTime: number
-  /** 文件类别：markdown 渲染 / image 图片预览 / text 纯文本预览（缺省按 markdown） */
+  /** File kind: markdown renders, image previews, text shows as plain text (defaults to markdown) */
   kind?: 'markdown' | 'image' | 'text'
 }
 
@@ -31,32 +31,32 @@ export interface Entry {
   openedAt: number
 }
 
-/** 正文显示模式：仅渲染 / 仅源码 / 左右对照 / 思维导图。 */
+/** Body display mode: render only / source only / side-by-side / mind map. */
 export type ViewMode = 'render' | 'source' | 'split' | 'mindmap'
 
-/** Mermaid 图表渲染引擎：经典 mermaid.js 或轻量 pele。 */
+/** Mermaid diagram engine: classic mermaid.js or lightweight pele. */
 export type MermaidEngine = 'mermaid' | 'pele'
 
 export interface Settings {
   theme: string // light | dark
   fontSize: number
   codeWrap: boolean
-  lineNo: boolean // 源码区显示行号（编辑/只读共用）
-  codeBlockLineNo: boolean // 渲染区代码块与图形源码显示行号，默认开
+  lineNo: boolean // show line numbers in the source pane (edit and read-only)
+  codeBlockLineNo: boolean // show line numbers in rendered code blocks and diagram source, default on
   sidebarWidth: number
   lastFolder: string
   lastFile: string
   pinned: boolean
   viewMode: ViewMode
-  language: string // 界面语言 zh-CN | en | ja | de
-  autoReload: boolean // 外部修改自动重载，默认开
-  blockRemote: boolean // 拦截远程资源（http(s) 图片等），默认开
-  remoteAllow: string // 远程资源白名单：URL 通配符（* ?），多值每行一个，命中放行
-  useYaml: boolean // 用 exe 同目录 mdview.yml 作为配置源（存在时优先于 settings.json）
-  mmMaxLen: number // 思维导图节点/备注单行最大字符数（超出折行），默认 20
-  codeMaxLines: number // 渲染区代码块最大显示行数（0 = 不限制），默认 20
-  mermaidEngine: MermaidEngine // Mermaid 图表渲染引擎，默认 pele
-  // 上次关闭时的普通窗口几何（0 = 未记录）与最大化标记，由 Go 端维护
+  language: string // UI language: zh-CN | en | ja | de
+  autoReload: boolean // reload on external modification, default on
+  blockRemote: boolean // block remote http(s) resources (images etc.), default on
+  remoteAllow: string // remote whitelist: URL wildcards (* ?), one per line, a match allows access
+  useYaml: boolean // use exe-adjacent mdview.yml as config source (preferred over settings.json when present)
+  mmMaxLen: number // mind map node/note single-line max characters (wraps beyond), default 20
+  codeMaxLines: number // max visible lines in rendered code blocks (0 = unlimited), default 20
+  mermaidEngine: MermaidEngine // Mermaid diagram engine, default pele
+  // Window geometry on last close (0 = not recorded) and maximized flag, maintained by the Go side
   winW: number
   winH: number
   winX: number
@@ -96,12 +96,12 @@ export interface TocItem {
   depth: number
 }
 
-/** 目录树节点：TocItem 加子级 */
+/** TOC tree node: TocItem plus children */
 export interface TocEntry extends TocItem {
   children: TocEntry[]
 }
 
-/** 文件关联状态（Go: mdv.AssocState）。 */
+/** File association state (Go: mdv.AssocState). */
 export interface AssocState {
   supported: boolean
   exePath: string

@@ -1,6 +1,6 @@
 import { nextTick, reactive } from 'vue'
 
-/** 右键菜单的模块级单例状态：任意组件 import { showMenu } 即可呼出。 */
+/** Module-level singleton state for the context menu; any component can pop it up via showMenu. */
 export const menuState = reactive({
   open: false,
   x: 0,
@@ -19,7 +19,6 @@ export function showMenu(x: number, y: number, items: MenuItem[]) {
   menuState.x = x
   menuState.y = y
   menuState.open = true
-  // 菜单项高度/宽度由 CSS 决定，按每项 40px 估算会在字体或缩放变化时溢出屏幕。
   void nextTick(() => {
     const el = document.querySelector<HTMLElement>('[data-testid="ctx-menu"]')
     if (!el || !menuState.open) return
