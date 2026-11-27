@@ -773,7 +773,7 @@ async function openFileByDialog() {
 }
 
 // ---------- 图片灯箱 ----------
-const lightbox = ref<{ open: boolean; src: string; svg: string; engine: MermaidEngine }>({
+const lightbox = ref<{ open: boolean; src: string; svg: string; engine: MermaidEngine | 'svg' }>({
   open: false,
   src: '',
   svg: '',
@@ -783,7 +783,7 @@ const lightbox = ref<{ open: boolean; src: string; svg: string; engine: MermaidE
 function openLightboxUrl(src: string) {
   lightbox.value = { open: true, src, svg: '', engine: 'mermaid' }
 }
-function openLightboxSvg(svg: string, engine: MermaidEngine) {
+function openLightboxSvg(svg: string, engine: MermaidEngine | 'svg') {
   lightbox.value = { open: true, src: '', svg, engine }
 }
 function closeLightbox() {
@@ -797,7 +797,10 @@ function onArtDblClick(e: MouseEvent) {
   if (holder) {
     const svgEl = holder.querySelector('.md-diagram-src svg')
     if (svgEl) {
-      openLightboxSvg(svgEl.outerHTML, holder.dataset.engine === 'pele' ? 'pele' : 'mermaid')
+      // 内联 SVG 卡片没有 data-engine，必须走通用 SVG 出口；否则 Mermaid 配置
+      // 会把 SMIL animate 节点剥掉，灯箱里只剩第一帧。
+      const engine = holder.dataset.diagram === 'svg' ? 'svg' : holder.dataset.engine === 'pele' ? 'pele' : 'mermaid'
+      openLightboxSvg(svgEl.outerHTML, engine)
       return
     }
   }

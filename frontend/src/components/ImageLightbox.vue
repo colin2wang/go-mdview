@@ -2,13 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { t } from '../i18n'
 import type { MermaidEngine } from '../types'
-import { sanitizeMermaidSvg, sanitizePeleSvg } from '../markdown'
+import { sanitizeMermaidSvg, sanitizePeleSvg, sanitizeSvg } from '../markdown'
 
 /**
  * 全屏图片灯箱：滚轮缩放、拖拽平移，ESC / 右上角 ✕ 关闭。
  * src 为图片地址；svg 为内联 SVG 文本（Mermaid / SVG 图形卡片双击时使用）。
  */
-const props = defineProps<{ src?: string; svg?: string; engine?: MermaidEngine }>()
+const props = defineProps<{ src?: string; svg?: string; engine?: MermaidEngine | 'svg' }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const scale = ref(1)
@@ -21,6 +21,8 @@ const reloadKey = ref(0)
 /** 灯箱是第二个 v-html 汇点：Mermaid / SVG 的 outerHTML 必须再次净化后才能落地。 */
 const safeSvg = computed(() => {
   if (!props.svg) return ''
+  // 内联 SVG 沿用正文的通用出口（保留 SMIL 动画），不能套 Mermaid 的二次净化配置。
+  if (props.engine === 'svg') return sanitizeSvg(props.svg)
   return props.engine === 'pele' ? sanitizePeleSvg(props.svg) : sanitizeMermaidSvg(props.svg)
 })
 

@@ -153,7 +153,12 @@ export function mermaidSvgConfig(parts) {
   return {
     ...svgConfig(parts, true),
     FORBID_TAGS: forbid,
-    ADD_TAGS: ['foreignObject', 'div', 'span', 'p', 'br', 'b', 'i', 'em', 'strong', 'code', 'table', 'tr', 'td', 'th'],
+    // 必须带上基础配置里的 SMIL 标签（animate / set / animateTransform / animateMotion）：
+    // 一旦显式给 ADD_TAGS，DOMPurify 不再用默认放行集，漏掉它们会让动画只剩首帧。
+    ADD_TAGS: [
+      ...(parts.cfg.ADD_TAGS ?? []),
+      'foreignObject', 'div', 'span', 'p', 'br', 'b', 'i', 'em', 'strong', 'code', 'table', 'tr', 'td', 'th'
+    ],
     // foreignObject 内的标签是 HTML 命名空间，DOMPurify 默认只在 annotation-xml
     // 里允许 HTML；不登记 foreignObject 会把 div 等连带文字一起删掉。
     // 配置必须是小写键的对象（数组会变成 {'0': ...} 而失效）。

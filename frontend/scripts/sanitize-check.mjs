@@ -154,6 +154,19 @@ check(
   'Mermaid config still blocks scripts, event handlers and remote refs',
   `got: ${mmBad}`
 )
+const mmAnimated = sanitizeWith(
+  DOMPurify,
+  parts,
+  '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="2">' +
+    '<animate attributeName="cx" from="0" to="10" dur="1s" repeatCount="indefinite"/></circle></svg>',
+  mmState,
+  mermaidSvgConfig(parts)
+)
+check(
+  /<animate[\s>]/i.test(mmAnimated),
+  'Mermaid config preserves SMIL animation nodes',
+  `got: ${mmAnimated}`
+)
 
 // 7. Pele 输出：classDef 内联配色保留，但脚本/事件属性/远程引用仍被拦截
 const peleState = createState(true, '', () => '', '')
